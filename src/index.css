@@ -2,6 +2,14 @@
 @import "tw-animate-css";
 @import "@wterm/react/css";
 
+/* ─── wterm overrides ──────────────────────────────────────── */
+/* wterm defaults to a floating-widget style; reset for full-pane use */
+.wterm {
+  border-radius: 0;
+  box-shadow: none;
+  padding: 14px 18px 18px;
+}
+
 /* ─── Keyframes ────────────────────────────────────────────── */
 @keyframes blink {
   0%,

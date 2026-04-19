@@ -1,15 +1,28 @@
+import { copyFileSync } from 'node:fs'
 import path from 'node:path'
 import tailwindcss from '@tailwindcss/vite'
 import { TanStackRouterVite } from '@tanstack/router-plugin/vite'
 import react from '@vitejs/plugin-react'
-import { defineConfig } from 'vite'
+import { defineConfig, type Plugin } from 'vite'
 
-// @ts-expect-error process is a nodejs global
+function wtermWasmPlugin(): Plugin {
+  return {
+    name: 'wterm-wasm',
+    buildStart() {
+      copyFileSync(
+        path.resolve(__dirname, 'node_modules/@wterm/core/wasm/wterm.wasm'),
+        path.resolve(__dirname, 'public/wterm.wasm'),
+      )
+    },
+  }
+}
+
 const host = process.env.TAURI_DEV_HOST
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
   plugins: [
+    wtermWasmPlugin(),
     TanStackRouterVite({ routesDirectory: './src/routes' }),
     react(),
     tailwindcss(),

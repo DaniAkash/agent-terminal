@@ -1,6 +1,6 @@
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { $projects } from '@/modules/stores/$projects'
-import { TerminalPlaceholder } from '@/screens/terminal/TerminalPlaceholder'
+import { Terminal } from '@/screens/terminal/Terminal'
 
 export const Route = createFileRoute('/$projectId/$tabId')({
   beforeLoad: ({ params }) => {
@@ -12,5 +12,5 @@ export const Route = createFileRoute('/$projectId/$tabId')({
       })
     }
   },
-  component: TerminalPlaceholder,
+  component: Terminal,
 })

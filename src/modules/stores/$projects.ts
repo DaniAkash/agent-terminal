@@ -2,6 +2,7 @@ import { atom } from 'nanostores'
 import { IPC } from '@/modules/ipc/commands'
 import {
   dedupeLabel,
+  makeTabKey,
   SEED_PROJECTS,
 } from '@/screens/workspace/workspace.helpers'
 import type { Project, Tab } from '@/screens/workspace/workspace.types'
@@ -76,12 +77,20 @@ export function reorderTabs(
 }
 
 export function removeProject(projectId: string): void {
-  const updated = $projects.get().filter((p) => p.id !== projectId)
+  const projects = $projects.get()
+  const project = projects.find((p) => p.id === projectId)
+  if (project) {
+    for (const tab of project.tabs) {
+      IPC.closeTab(makeTabKey(projectId, tab.id)).catch(() => {})
+    }
+  }
+  const updated = projects.filter((p) => p.id !== projectId)
   $projects.set(updated)
   IPC.saveProjects(updated)
 }
 
 export function removeTab(projectId: string, tabId: string): void {
+  IPC.closeTab(makeTabKey(projectId, tabId)).catch(() => {})
   const updated = $projects
     .get()
     .map((p) =>

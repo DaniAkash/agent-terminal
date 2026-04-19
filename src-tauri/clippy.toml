@@ -1,0 +1,8 @@
+# Clippy configuration for agent-terminal
+# Docs: https://rust-lang.github.io/rust-clippy/master/
+
+# Flag functions with a cognitive complexity above this threshold
+cognitive-complexity-threshold = 15
+
+# Minimum supported Rust edition (matches Cargo.toml edition = "2021")
+msrv = "1.75"
