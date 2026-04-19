@@ -3,7 +3,6 @@ import {
   DndContext,
   type DragEndEvent,
   PointerSensor,
-  useDndMonitor,
   useSensor,
   useSensors,
 } from '@dnd-kit/core'
@@ -13,7 +12,7 @@ import {
   useSortable,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { Link, useNavigate, useParams } from '@tanstack/react-router'
+import { useNavigate, useParams } from '@tanstack/react-router'
 import { Pin, X } from 'lucide-react'
 import { RunningDot } from '@/components/RunningDot'
 import { cn } from '@/lib/utils'
@@ -26,15 +25,11 @@ import {
 import { MONO_FONT } from '@/screens/workspace/workspace.helpers'
 import type { Project, Tab } from '@/screens/workspace/workspace.types'
 
-// Shared across all TabItem instances in the strip. Set true when a drag ends
-// so the Link's onClick can detect it and call e.preventDefault() instead of
-// navigating. Reset immediately so the next real click works normally.
-let tabDragJustEnded = false
-
 /* ---------------------------------------------------------------------------
  * TabItem — single sortable tab pill
  * -------------------------------------------------------------------------*/
 function TabItem({ tab, projectId }: { tab: Tab; projectId: string }) {
+  const navigate = useNavigate()
   const { tabId: activeTab } = useParams({ strict: false })
   const isActive = activeTab === tab.id
 
@@ -47,19 +42,9 @@ function TabItem({ tab, projectId }: { tab: Tab; projectId: string }) {
     isDragging,
   } = useSortable({ id: tab.id, disabled: tab.pinned })
 
-  // useDndMonitor fires synchronously with drag lifecycle events, so the flag
-  // is always set before the trailing click event that follows pointerup.
-  useDndMonitor({
-    onDragStart() {
-      tabDragJustEnded = false
-    },
-    onDragEnd() {
-      tabDragJustEnded = true
-    },
-    onDragCancel() {
-      tabDragJustEnded = false
-    },
-  })
+  // Destructure role out so Biome doesn't see a static role="button" on a div,
+  // but keep the rest of the a11y attributes (aria-describedby, tabIndex, etc.)
+  const { role: _role, ...safeAttributes } = attributes
 
   return (
     <div
@@ -70,37 +55,43 @@ function TabItem({ tab, projectId }: { tab: Tab; projectId: string }) {
         opacity: isDragging ? 0.5 : 1,
         zIndex: isDragging ? 50 : undefined,
       }}
-      {...attributes}
+      {...safeAttributes}
       {...listeners}
     >
-      <Link
-        to="/$projectId/$tabId"
-        params={{ projectId, tabId: tab.id }}
-        onClick={(e) => {
-          if (tabDragJustEnded) {
-            tabDragJustEnded = false
-            e.preventDefault()
-          }
-        }}
+      <div
         className={cn(
-          'relative -mb-px flex h-7 min-w-[90px] cursor-pointer items-center gap-1.5 rounded-t-[7px] px-3 text-[11.5px] transition-colors',
+          'relative -mb-px flex h-7 min-w-[90px] items-center rounded-t-[7px] text-[11.5px] transition-colors',
           isActive
             ? 'border-[var(--tab-border)] border-t border-r border-l bg-tab-active text-tab-fg-active'
             : 'bg-transparent text-tab-fg hover:text-tab-fg-active',
         )}
       >
-        {tab.running ? (
-          <RunningDot />
-        ) : (
-          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-current opacity-35" />
-        )}
-        <span className="truncate" style={{ fontFamily: MONO_FONT }}>
-          {tab.label}
-        </span>
+        {/* Navigation area — fills the pill, triggers route change */}
+        <button
+          type="button"
+          className="flex flex-1 cursor-pointer items-center gap-1.5 overflow-hidden pr-1 pl-3"
+          onClick={() =>
+            navigate({
+              to: '/$projectId/$tabId',
+              params: { projectId, tabId: tab.id },
+            })
+          }
+        >
+          {tab.running ? (
+            <RunningDot />
+          ) : (
+            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-current opacity-35" />
+          )}
+          <span className="truncate" style={{ fontFamily: MONO_FONT }}>
+            {tab.label}
+          </span>
+        </button>
+
+        {/* Pin / close action — sibling of nav button, not nested */}
         {tab.pinned ? (
           <button
             type="button"
-            className="ml-0.5 inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded opacity-40 hover:opacity-100"
+            className="mr-1.5 inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded opacity-40 hover:opacity-100"
             onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation()
@@ -112,7 +103,7 @@ function TabItem({ tab, projectId }: { tab: Tab; projectId: string }) {
         ) : (
           <button
             type="button"
-            className="ml-0.5 inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded opacity-40 hover:bg-sidebar-hover hover:opacity-100"
+            className="mr-1.5 inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded opacity-40 hover:bg-sidebar-hover hover:opacity-100"
             onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation()
@@ -122,7 +113,7 @@ function TabItem({ tab, projectId }: { tab: Tab; projectId: string }) {
             <X size={9} />
           </button>
         )}
-      </Link>
+      </div>
     </div>
   )
 }
