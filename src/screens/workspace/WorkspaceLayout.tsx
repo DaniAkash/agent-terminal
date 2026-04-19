@@ -38,12 +38,6 @@ export function WorkspaceLayout({ children }: { children: ReactNode }) {
       className="relative flex h-screen w-screen flex-col overflow-hidden"
       style={{ background: 'var(--background)' }}
     >
-      {/* macOS traffic-lights drag region overlay */}
-      <div
-        className="pointer-events-none absolute top-0 left-0 z-10 h-[38px]"
-        style={{ width: 232, WebkitAppRegion: 'drag' } as React.CSSProperties}
-      />
-
       {/* Body */}
       <div className="flex min-h-0 flex-1">
         {/* Sidebar placeholder — PR 2 fills this in */}
@@ -54,16 +48,21 @@ export function WorkspaceLayout({ children }: { children: ReactNode }) {
             borderColor: 'var(--sidebar-border)',
           }}
         >
-          {/* Sidebar header (reserves traffic-light space) */}
+          {/* Sidebar header — draggable, reserves traffic-light space */}
           <div
             className="flex h-[38px] shrink-0 items-center border-b px-3 pl-[78px] font-medium text-[12px]"
-            style={{
-              borderColor: 'var(--sidebar-border)',
-              color: 'var(--sidebar-foreground)',
-              letterSpacing: '0.01em',
-            }}
+            style={
+              {
+                borderColor: 'var(--sidebar-border)',
+                color: 'var(--sidebar-foreground)',
+                letterSpacing: '0.01em',
+                WebkitAppRegion: 'drag',
+              } as React.CSSProperties
+            }
           >
-            Workspaces
+            <span style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+              Workspaces
+            </span>
           </div>
           <div
             className="flex-1 overflow-y-auto py-1.5 text-[12.5px]"
@@ -81,7 +80,20 @@ export function WorkspaceLayout({ children }: { children: ReactNode }) {
         </div>
 
         {/* Main content */}
-        <div className="flex min-w-0 flex-1 flex-col">{children}</div>
+        <div className="flex min-w-0 flex-1 flex-col">
+          {/* Tab bar placeholder — draggable; PR 2 replaces this with the real tab bar */}
+          <div
+            className="h-[38px] shrink-0 border-b"
+            style={
+              {
+                background: 'var(--tab-bar-background)',
+                borderColor: 'var(--tab-border)',
+                WebkitAppRegion: 'drag',
+              } as React.CSSProperties
+            }
+          />
+          {children}
+        </div>
       </div>
 
       <StatusBar sessionsRunning={sessionsRunning} />
