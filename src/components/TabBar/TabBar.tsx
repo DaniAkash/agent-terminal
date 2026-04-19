@@ -153,6 +153,7 @@ export function TabBar({ project }: { project: Project }) {
 
   return (
     <div
+      data-tauri-drag-region
       className="flex h-[38px] shrink-0 items-end border-[var(--tab-border)] border-b bg-tab-bar px-2"
       style={{ gap: 2 }}
     >
