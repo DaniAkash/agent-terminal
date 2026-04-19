@@ -105,10 +105,10 @@ export function addTab(projectId: string): Tab | null {
     running: false,
     pinned: false,
   }
-  $projects.set(
-    projects.map((p) =>
-      p.id !== projectId ? p : { ...p, tabs: [...p.tabs, newTab] },
-    ),
+  const updated = projects.map((p) =>
+    p.id !== projectId ? p : { ...p, tabs: [...p.tabs, newTab] },
   )
+  $projects.set(updated)
+  IPC.saveProjects(updated)
   return newTab
 }
