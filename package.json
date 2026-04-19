@@ -4,7 +4,8 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "bun tauri dev",
+    "dev": "vite",
+    "tauri:dev": "tauri dev",
     "build": "bun tauri build",
     "preview": "vite preview",
     "lint": "biome check",
