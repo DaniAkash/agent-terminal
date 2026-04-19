@@ -9,7 +9,8 @@
     "build": "vite build",
     "tauri:build": "tauri build",
     "preview": "vite preview",
-    "lint": "biome check",
+    "lint": "biome check && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets",
+    "lint:rust": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets",
     "typecheck": "tsc --noEmit",
     "lint:fix": "biome check --write --unsafe"
   },
