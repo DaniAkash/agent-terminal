@@ -4,6 +4,11 @@ import { IPC } from '@/modules/ipc/commands'
 import { onPtyData, onPtyExit } from '@/modules/ipc/events'
 import { makeTabKey } from '@/screens/workspace/workspace.helpers'
 
+// Tracks in-flight openTab calls per tabKey. Prevents concurrent calls
+// (e.g. React StrictMode firing onReady twice when WASM is cached) from
+// spawning two ptys and showing a double prompt.
+const pendingOpens = new Set<string>()
+
 type Props = {
   projectId: string
   tabId: string
@@ -27,19 +32,25 @@ export function TerminalPane({ projectId, tabId, cwd }: Props) {
   // Pty lifecycle is owned by the store, not this component:
   //   - openTab is idempotent — returns true if a new pty was spawned,
   //     false if one is already running for this tabKey.
-  //   - If the pty is already running (returning to a tab, or StrictMode
-  //     dev re-mount), the terminal display is fresh but the shell is idle.
-  //     Sending \r makes the shell re-display the current prompt line.
-  //   - If the pty is new, the shell will send its initial prompt naturally
-  //     through the pty:data listener registered in the effect below.
+  //   - If a call is already in-flight for this tabKey (StrictMode fires
+  //     onReady twice when WASM is cached), skip it. The first call's pty
+  //     will send the initial prompt through the listeners below.
+  //   - If the pty is already running (returning to a tab), send \r to make
+  //     the shell re-display the prompt on the fresh terminal.
   const handleReady = useCallback(() => {
+    if (pendingOpens.has(tabKey)) return
+    pendingOpens.add(tabKey)
+
     IPC.openTab(tabKey, cwd)
       .then((isNew) => {
+        pendingOpens.delete(tabKey)
         if (!isNew) {
           IPC.writePty(tabKey, '\r').catch(() => {})
         }
       })
-      .catch(() => {})
+      .catch(() => {
+        pendingOpens.delete(tabKey)
+      })
   }, [tabKey, cwd])
 
   useEffect(() => {
