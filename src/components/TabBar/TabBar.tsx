@@ -118,9 +118,9 @@ export function TabBar({ project }: { project: Project }) {
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event
     if (!over || active.id === over.id) return
-    const oldIdx = project.tabs.findIndex((t) => t.id === active.id)
-    const newIdx = project.tabs.findIndex((t) => t.id === over.id)
-    if (project.tabs[newIdx]?.pinned) return
+    const oldIdx = orderedTabs.findIndex((t) => t.id === active.id)
+    const newIdx = orderedTabs.findIndex((t) => t.id === over.id)
+    if (orderedTabs[newIdx]?.pinned) return
     reorderTabs(project.id, oldIdx, newIdx)
   }
 
@@ -136,7 +136,6 @@ export function TabBar({ project }: { project: Project }) {
 
   return (
     <div
-      data-tauri-drag-region
       className="flex h-[38px] shrink-0 items-end border-[var(--tab-border)] border-b bg-tab-bar px-2"
       style={{ gap: 2 }}
     >
@@ -180,10 +179,13 @@ export function TabBar({ project }: { project: Project }) {
       <div className="flex-1" data-tauri-drag-region />
 
       <div
+        data-tauri-drag-region
         className="flex h-7 items-center pr-1"
         style={{ fontFamily: MONO_FONT, fontSize: 10.5 }}
       >
-        <span className="text-tab-fg opacity-50">{project.path}</span>
+        <span className="pointer-events-none text-tab-fg opacity-50">
+          {project.path}
+        </span>
       </div>
     </div>
   )

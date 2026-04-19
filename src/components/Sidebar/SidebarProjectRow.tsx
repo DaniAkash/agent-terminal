@@ -60,9 +60,9 @@ export function SidebarProjectRow({ project }: { project: Project }) {
   function handleTabDragEnd(event: DragEndEvent) {
     const { active, over } = event
     if (!over || active.id === over.id) return
-    const oldIdx = project.tabs.findIndex((t) => t.id === active.id)
-    const newIdx = project.tabs.findIndex((t) => t.id === over.id)
-    if (project.tabs[newIdx]?.pinned) return
+    const oldIdx = orderedTabs.findIndex((t) => t.id === active.id)
+    const newIdx = orderedTabs.findIndex((t) => t.id === over.id)
+    if (orderedTabs[newIdx]?.pinned) return
     reorderTabs(project.id, oldIdx, newIdx)
   }
 
@@ -75,13 +75,15 @@ export function SidebarProjectRow({ project }: { project: Project }) {
         opacity: isDragging ? 0.5 : 1,
       }}
       {...attributes}
+      {...(!project.pinned ? listeners : {})}
     >
       <ContextMenu>
-        <ContextMenuTrigger>
+        <ContextMenuTrigger className="block">
           <button
             type="button"
             className={cn(
-              'mx-1.5 flex h-[26px] w-[calc(100%-12px)] cursor-pointer select-none items-center gap-1.5 rounded-md px-1.5 text-[12.5px]',
+              'mx-1.5 flex h-[26px] w-[calc(100%-12px)] cursor-grab select-none items-center gap-1.5 rounded-md px-1.5 text-[12.5px]',
+              project.pinned && 'cursor-pointer',
               isActive
                 ? 'bg-sidebar-active text-sidebar-fg-strong'
                 : 'text-sidebar-fg hover:bg-sidebar-hover',
@@ -90,11 +92,9 @@ export function SidebarProjectRow({ project }: { project: Project }) {
           >
             <span
               className={cn(
-                'flex h-5 w-5 shrink-0 cursor-grab items-center justify-center rounded transition-transform duration-[140ms]',
-                project.pinned && 'cursor-default',
+                'flex h-5 w-5 shrink-0 items-center justify-center rounded transition-transform duration-[140ms]',
                 isOpen && 'rotate-90',
               )}
-              {...(!project.pinned ? listeners : {})}
             >
               <ChevronRight
                 size={10}

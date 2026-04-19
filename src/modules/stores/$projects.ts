@@ -63,13 +63,14 @@ export function reorderTabs(
   oldIndex: number,
   newIndex: number,
 ): void {
-  const updated = $projects
-    .get()
-    .map((p) =>
-      p.id !== projectId
-        ? p
-        : { ...p, tabs: arrayMove(p.tabs, oldIndex, newIndex) },
-    )
+  const updated = $projects.get().map((p) => {
+    if (p.id !== projectId) return p
+    const ordered = [
+      ...p.tabs.filter((t) => t.pinned),
+      ...p.tabs.filter((t) => !t.pinned),
+    ]
+    return { ...p, tabs: arrayMove(ordered, oldIndex, newIndex) }
+  })
   $projects.set(updated)
   IPC.saveProjects(updated)
 }
