@@ -48,21 +48,17 @@ export function WorkspaceLayout({ children }: { children: ReactNode }) {
             borderColor: 'var(--sidebar-border)',
           }}
         >
-          {/* Sidebar header — draggable, reserves traffic-light space */}
+          {/* Sidebar header — drag region, reserves traffic-light space */}
           <div
+            data-tauri-drag-region
             className="flex h-[38px] shrink-0 items-center border-b px-3 pl-[78px] font-medium text-[12px]"
-            style={
-              {
-                borderColor: 'var(--sidebar-border)',
-                color: 'var(--sidebar-foreground)',
-                letterSpacing: '0.01em',
-                WebkitAppRegion: 'drag',
-              } as React.CSSProperties
-            }
+            style={{
+              borderColor: 'var(--sidebar-border)',
+              color: 'var(--sidebar-foreground)',
+              letterSpacing: '0.01em',
+            }}
           >
-            <span style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-              Workspaces
-            </span>
+            Workspaces
           </div>
           <div
             className="flex-1 overflow-y-auto py-1.5 text-[12.5px]"
@@ -81,16 +77,14 @@ export function WorkspaceLayout({ children }: { children: ReactNode }) {
 
         {/* Main content */}
         <div className="flex min-w-0 flex-1 flex-col">
-          {/* Tab bar placeholder — draggable; PR 2 replaces this with the real tab bar */}
+          {/* Tab bar placeholder — drag region; PR 2 replaces with real tab bar */}
           <div
+            data-tauri-drag-region
             className="h-[38px] shrink-0 border-b"
-            style={
-              {
-                background: 'var(--tab-bar-background)',
-                borderColor: 'var(--tab-border)',
-                WebkitAppRegion: 'drag',
-              } as React.CSSProperties
-            }
+            style={{
+              background: 'var(--tab-bar-background)',
+              borderColor: 'var(--tab-border)',
+            }}
           />
           {children}
         </div>
