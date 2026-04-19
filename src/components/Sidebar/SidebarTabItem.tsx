@@ -1,6 +1,6 @@
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { Link, useParams } from '@tanstack/react-router'
+import { useNavigate, useParams } from '@tanstack/react-router'
 import { Pin } from 'lucide-react'
 import { RunningDot } from '@/components/RunningDot'
 import {
@@ -21,6 +21,7 @@ export function SidebarTabItem({
   tab: Tab
   projectId: string
 }) {
+  const navigate = useNavigate()
   const {
     attributes,
     listeners,
@@ -34,9 +35,12 @@ export function SidebarTabItem({
   })
   const isActive = activeProject === projectId && activeTab === tab.id
 
+  // Strip role so Biome doesn't see a static role="button" on a div
+  const { role: _role, ...safeAttributes } = attributes
+
   return (
     <ContextMenu>
-      <ContextMenuTrigger>
+      <ContextMenuTrigger className="block">
         <div
           ref={setNodeRef}
           style={{
@@ -44,18 +48,23 @@ export function SidebarTabItem({
             transition,
             opacity: isDragging ? 0.5 : 1,
           }}
-          {...attributes}
+          {...safeAttributes}
           {...listeners}
         >
-          <Link
-            to="/$projectId/$tabId"
-            params={{ projectId, tabId: tab.id }}
+          <button
+            type="button"
             className={cn(
-              'relative mx-1.5 flex h-[26px] items-center gap-2 rounded-md pr-2 pl-[34px]',
+              'relative mx-1.5 flex h-[26px] w-[calc(100%-12px)] items-center gap-2 rounded-md pr-2 pl-[34px]',
               isActive
                 ? 'bg-sidebar-active text-sidebar-fg-strong'
                 : 'text-sidebar-fg hover:bg-sidebar-hover',
             )}
+            onClick={() =>
+              navigate({
+                to: '/$projectId/$tabId',
+                params: { projectId, tabId: tab.id },
+              })
+            }
           >
             {isActive && (
               <span className="absolute top-1.5 bottom-1.5 left-3.5 w-0.5 rounded-sm bg-accent" />
@@ -68,7 +77,7 @@ export function SidebarTabItem({
             </span>
             {tab.running && <RunningDot />}
             {tab.pinned && <Pin size={9} className="shrink-0 opacity-50" />}
-          </Link>
+          </button>
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent className="w-40 text-[12px]">
