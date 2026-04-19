@@ -54,7 +54,7 @@ export function SidebarTabItem({
           <button
             type="button"
             className={cn(
-              'relative mx-1.5 flex h-[26px] w-[calc(100%-12px)] items-center gap-2 rounded-md pr-2 pl-[34px]',
+              'relative mx-1.5 flex h-[26px] w-[calc(100%-12px)] items-center gap-2 rounded-md pr-2 pl-[34px] text-left',
               isActive
                 ? 'bg-sidebar-active text-sidebar-fg-strong'
                 : 'text-sidebar-fg hover:bg-sidebar-hover',

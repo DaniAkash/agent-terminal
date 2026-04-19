@@ -82,7 +82,7 @@ export function SidebarProjectRow({ project }: { project: Project }) {
           <button
             type="button"
             className={cn(
-              'mx-1.5 flex h-[26px] w-[calc(100%-12px)] cursor-grab select-none items-center gap-1.5 rounded-md px-1.5 text-[12.5px]',
+              'mx-1.5 flex h-[26px] w-[calc(100%-12px)] cursor-grab select-none items-center gap-1.5 rounded-md px-1.5 text-left text-[12.5px]',
               project.pinned && 'cursor-pointer',
               isActive
                 ? 'bg-sidebar-active text-sidebar-fg-strong'
