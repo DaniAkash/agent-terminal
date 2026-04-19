@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "tauri:dev": "tauri dev",
-    "build": "bun tauri build",
+    "build": "vite build",
+    "tauri:build": "tauri build",
     "preview": "vite preview",
     "lint": "biome check",
     "typecheck": "tsc --noEmit",
