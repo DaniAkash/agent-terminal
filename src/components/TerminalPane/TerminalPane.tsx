@@ -4,12 +4,6 @@ import { IPC } from '@/modules/ipc/commands'
 import { onPtyData, onPtyExit } from '@/modules/ipc/events'
 import { makeTabKey } from '@/screens/workspace/workspace.helpers'
 
-// Module-level map so it survives React StrictMode's unmount→remount cycle.
-// When cleanup schedules a close, we store the timer here. If onReady fires
-// again for the same key before the timer fires, we cancel the close and
-// skip re-opening the pty (it's still alive).
-const pendingCloses = new Map<string, ReturnType<typeof setTimeout>>()
-
 type Props = {
   projectId: string
   tabId: string
@@ -28,21 +22,24 @@ export function TerminalPane({ projectId, tabId, cwd }: Props) {
     writeRef.current = write
   }, [write])
 
-  // Called by wterm once the WASM module is loaded and the terminal is ready
-  // to accept data. Opening the pty here ensures no output is lost before
-  // the terminal can display it.
+  // Called by wterm once the WASM module is loaded and the terminal is ready.
+  //
+  // Pty lifecycle is owned by the store, not this component:
+  //   - openTab is idempotent — returns true if a new pty was spawned,
+  //     false if one is already running for this tabKey.
+  //   - If the pty is already running (returning to a tab, or StrictMode
+  //     dev re-mount), the terminal display is fresh but the shell is idle.
+  //     Sending \r makes the shell re-display the current prompt line.
+  //   - If the pty is new, the shell will send its initial prompt naturally
+  //     through the pty:data listener registered in the effect below.
   const handleReady = useCallback(() => {
-    const pending = pendingCloses.get(tabKey)
-    if (pending) {
-      // StrictMode remount: the pty is still alive but the wterm instance is
-      // fresh (DOM was torn down and recreated). Cancel the scheduled close
-      // and send \r so the shell re-displays the prompt on the blank terminal.
-      clearTimeout(pending)
-      pendingCloses.delete(tabKey)
-      IPC.writePty(tabKey, '\r').catch(() => {})
-      return
-    }
-    IPC.openTab(tabKey, cwd).catch(() => {})
+    IPC.openTab(tabKey, cwd)
+      .then((isNew) => {
+        if (!isNew) {
+          IPC.writePty(tabKey, '\r').catch(() => {})
+        }
+      })
+      .catch(() => {})
   }, [tabKey, cwd])
 
   useEffect(() => {
@@ -57,15 +54,9 @@ export function TerminalPane({ projectId, tabId, cwd }: Props) {
     return () => {
       unlistenData.then((fn) => fn())
       unlistenExit.then((fn) => fn())
-      // Delay the actual pty close by 50ms. StrictMode's cleanup+remount
-      // happens synchronously, so handleReady will fire and cancel this
-      // timer before it ever runs. A real navigation unmount waits far
-      // longer than 50ms, so the close still happens correctly.
-      const timer = setTimeout(() => {
-        pendingCloses.delete(tabKey)
-        IPC.closeTab(tabKey).catch(() => {})
-      }, 50)
-      pendingCloses.set(tabKey, timer)
+      // Do NOT close the pty here. Pty lifetime is tied to the tab's
+      // existence in the store. removeTab() calls IPC.closeTab() when
+      // the user explicitly closes the tab.
     }
   }, [tabKey]) // intentionally excludes write — use writeRef instead
 

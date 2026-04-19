@@ -6,7 +6,7 @@ export const IPC = {
   saveProjects(_: Project[]): void {},
 
   openTab: (tabId: string, cwd?: string, shell?: string) =>
-    invoke<void>('open_tab', { tabId, cwd, shell }),
+    invoke<boolean>('open_tab', { tabId, cwd, shell }),
 
   writePty: (tabId: string, data: string) =>
     invoke<void>('write_pty', { tabId, data }),

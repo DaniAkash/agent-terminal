@@ -10,12 +10,15 @@ pub async fn open_tab(
     tab_id: String,
     cwd: Option<String>,
     shell: Option<String>,
-) -> Result<(), String> {
-    // Idempotent: absorbs React StrictMode's double-effect invocation in development.
+) -> Result<bool, String> {
+    // Returns true if a new pty was spawned, false if one was already running.
+    // The frontend uses this to decide whether to wait for the initial prompt
+    // or send \r to re-display the prompt on a freshly-mounted terminal.
     if pty_map.lock().unwrap().contains_key(&tab_id) {
-        return Ok(());
+        return Ok(false);
     }
-    spawn_pty(app, &pty_map, tab_id, cwd, shell)
+    spawn_pty(app, &pty_map, tab_id, cwd, shell)?;
+    Ok(true)
 }
 
 #[tauri::command]
