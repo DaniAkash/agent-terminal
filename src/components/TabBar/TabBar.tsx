@@ -3,6 +3,7 @@ import {
   DndContext,
   type DragEndEvent,
   PointerSensor,
+  useDndMonitor,
   useSensor,
   useSensors,
 } from '@dnd-kit/core'
@@ -25,6 +26,11 @@ import {
 import { MONO_FONT } from '@/screens/workspace/workspace.helpers'
 import type { Project, Tab } from '@/screens/workspace/workspace.types'
 
+// Shared across all TabItem instances in the strip. Set true when a drag ends
+// so the Link's onClick can detect it and call e.preventDefault() instead of
+// navigating. Reset immediately so the next real click works normally.
+let tabDragJustEnded = false
+
 /* ---------------------------------------------------------------------------
  * TabItem — single sortable tab pill
  * -------------------------------------------------------------------------*/
@@ -41,6 +47,20 @@ function TabItem({ tab, projectId }: { tab: Tab; projectId: string }) {
     isDragging,
   } = useSortable({ id: tab.id, disabled: tab.pinned })
 
+  // useDndMonitor fires synchronously with drag lifecycle events, so the flag
+  // is always set before the trailing click event that follows pointerup.
+  useDndMonitor({
+    onDragStart() {
+      tabDragJustEnded = false
+    },
+    onDragEnd() {
+      tabDragJustEnded = true
+    },
+    onDragCancel() {
+      tabDragJustEnded = false
+    },
+  })
+
   return (
     <div
       ref={setNodeRef}
@@ -56,6 +76,12 @@ function TabItem({ tab, projectId }: { tab: Tab; projectId: string }) {
       <Link
         to="/$projectId/$tabId"
         params={{ projectId, tabId: tab.id }}
+        onClick={(e) => {
+          if (tabDragJustEnded) {
+            tabDragJustEnded = false
+            e.preventDefault()
+          }
+        }}
         className={cn(
           'relative -mb-px flex h-7 min-w-[90px] cursor-pointer items-center gap-1.5 rounded-t-[7px] px-3 text-[11.5px] transition-colors',
           isActive
@@ -77,7 +103,7 @@ function TabItem({ tab, projectId }: { tab: Tab; projectId: string }) {
             className="ml-0.5 inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded opacity-40 hover:opacity-100"
             onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => {
-              e.preventDefault()
+              e.stopPropagation()
               toggleTabPin(projectId, tab.id)
             }}
           >
@@ -89,7 +115,7 @@ function TabItem({ tab, projectId }: { tab: Tab; projectId: string }) {
             className="ml-0.5 inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded opacity-40 hover:bg-sidebar-hover hover:opacity-100"
             onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => {
-              e.preventDefault()
+              e.stopPropagation()
               removeTab(projectId, tab.id)
             }}
           >
