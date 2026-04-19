@@ -10,5 +10,12 @@ export function Terminal() {
 
   if (!project) return null
 
-  return <TerminalPane projectId={projectId} tabId={tabId} cwd={project.path} />
+  return (
+    <TerminalPane
+      key={`${projectId}:${tabId}`}
+      projectId={projectId}
+      tabId={tabId}
+      cwd={project.path}
+    />
+  )
 }
