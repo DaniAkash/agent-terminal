@@ -34,10 +34,12 @@ export function TerminalPane({ projectId, tabId, cwd }: Props) {
   const handleReady = useCallback(() => {
     const pending = pendingCloses.get(tabKey)
     if (pending) {
-      // StrictMode remount: the pty is still alive — just cancel the
-      // scheduled close and skip re-opening.
+      // StrictMode remount: the pty is still alive but the wterm instance is
+      // fresh (DOM was torn down and recreated). Cancel the scheduled close
+      // and send \r so the shell re-displays the prompt on the blank terminal.
       clearTimeout(pending)
       pendingCloses.delete(tabKey)
+      IPC.writePty(tabKey, '\r').catch(() => {})
       return
     }
     IPC.openTab(tabKey, cwd).catch(() => {})
