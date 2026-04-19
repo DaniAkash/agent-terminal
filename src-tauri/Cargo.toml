@@ -1,0 +1,25 @@
+[package]
+name = "agent-terminal"
+version = "0.1.0"
+description = "Agent Terminal — a mouse-first project-scoped terminal workspace"
+authors = ["DaniAkash"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "agent_terminal_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["protocol-asset"] }
+tauri-plugin-opener = "2"
+portable-pty = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+dirs = "5"
+

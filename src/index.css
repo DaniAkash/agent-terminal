@@ -1,0 +1,273 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "@wterm/react/css";
+
+/* ─── Keyframes ────────────────────────────────────────────── */
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+@keyframes pulse-ring {
+  0% {
+    transform: scale(1);
+    opacity: 0.3;
+  }
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+/* ─── Tailwind v4 theme mapping ─────────────────────────────── */
+@theme inline {
+  /* shadcn semantic tokens */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+
+  /* App-specific design tokens */
+  --color-sidebar: var(--sidebar-background);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-fg: var(--sidebar-foreground);
+  --color-sidebar-fg-strong: var(--sidebar-foreground-strong);
+  --color-sidebar-hover: var(--sidebar-hover);
+  --color-sidebar-active: var(--sidebar-active);
+  --color-tab-bar: var(--tab-bar-background);
+  --color-tab-active: var(--tab-active-background);
+  --color-tab-fg: var(--tab-foreground);
+  --color-tab-fg-active: var(--tab-foreground-active);
+  --color-tab-border: var(--tab-border);
+  --color-terminal: var(--terminal-background);
+  --color-terminal-fg: var(--terminal-foreground);
+  --color-terminal-dim: var(--terminal-dim);
+  --color-terminal-muted: var(--terminal-muted);
+  --color-terminal-green: var(--terminal-green);
+  --color-terminal-yellow: var(--terminal-yellow);
+  --color-terminal-red: var(--terminal-red);
+  --color-terminal-cyan: var(--terminal-cyan);
+  --color-terminal-magenta: var(--terminal-magenta);
+  --color-terminal-prompt: var(--terminal-prompt);
+  --color-running-dot: var(--running-dot);
+  --color-status-bar: var(--status-bar-background);
+  --color-status-fg: var(--status-bar-foreground);
+  --color-accent-soft: var(--accent-soft);
+
+  /* Fonts */
+  --font-ui:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui,
+    sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+}
+
+/* ─── Light theme ───────────────────────────────────────────── */
+:root {
+  /* Window */
+  --background: #ffffff;
+  --foreground: rgba(20, 22, 25, 0.9);
+  --window-border: rgba(0, 0, 0, 0.08);
+  --window-shadow:
+    0 0 0 0.5px rgba(0, 0, 0, 0.15), 0 40px 80px -20px rgba(0, 0, 0, 0.25),
+    0 16px 40px -12px rgba(0, 0, 0, 0.15);
+
+  /* Sidebar */
+  --sidebar-background: #fafafa;
+  --sidebar-border: rgba(0, 0, 0, 0.06);
+  --sidebar-foreground: rgba(0, 0, 0, 0.55);
+  --sidebar-foreground-strong: rgba(0, 0, 0, 0.88);
+  --sidebar-hover: rgba(0, 0, 0, 0.03);
+  --sidebar-active: rgba(0, 0, 0, 0.05);
+  --sidebar-section-label: rgba(0, 0, 0, 0.4);
+
+  /* Tab bar */
+  --tab-bar-background: #fafafa;
+  --tab-bar-border: rgba(0, 0, 0, 0.06);
+  --tab-background: transparent;
+  --tab-active-background: #ffffff;
+  --tab-foreground: rgba(0, 0, 0, 0.5);
+  --tab-foreground-active: rgba(0, 0, 0, 0.88);
+  --tab-border: rgba(0, 0, 0, 0.08);
+
+  /* Terminal */
+  --terminal-background: #ffffff;
+  --terminal-foreground: rgba(20, 22, 25, 0.9);
+  --terminal-dim: rgba(20, 22, 25, 0.55);
+  --terminal-muted: rgba(20, 22, 25, 0.4);
+  --terminal-green: #2e8b3d;
+  --terminal-yellow: #a3741d;
+  --terminal-red: #c23648;
+  --terminal-magenta: #7a4dbf;
+  --terminal-cyan: #1e7a9e;
+
+  /* Status bar */
+  --status-bar-background: #fafafa;
+  --status-bar-border: rgba(0, 0, 0, 0.06);
+  --status-bar-foreground: rgba(0, 0, 0, 0.45);
+
+  /* Accent (fixed) */
+  --accent: oklch(0.55 0.18 225);
+  --accent-foreground: #ffffff;
+  --accent-soft: oklch(0.55 0.18 225 / 0.1);
+  --terminal-prompt: oklch(0.55 0.18 225);
+  --running-dot: #2e8b3d;
+
+  /* shadcn semantic tokens */
+  --card: var(--background);
+  --card-foreground: var(--foreground);
+  --popover: var(--sidebar-background);
+  --popover-foreground: var(--foreground);
+  --primary: var(--accent);
+  --primary-foreground: #ffffff;
+  --secondary: var(--sidebar-active);
+  --secondary-foreground: var(--foreground);
+  --muted: var(--sidebar-hover);
+  --muted-foreground: var(--sidebar-foreground);
+  --border: var(--window-border);
+  --input: var(--tab-border);
+  --ring: var(--accent);
+  --destructive: #c23648;
+  --radius: 0.5rem;
+
+  /* wterm ANSI color palette — light */
+  --term-fg: var(--terminal-foreground);
+  --term-bg: var(--terminal-background);
+  --term-color-0: #3b4252;
+  --term-color-1: var(--terminal-red);
+  --term-color-2: var(--terminal-green);
+  --term-color-3: var(--terminal-yellow);
+  --term-color-4: var(--terminal-prompt);
+  --term-color-5: var(--terminal-magenta);
+  --term-color-6: var(--terminal-cyan);
+  --term-color-7: #c0c8d8;
+  --term-color-8: #4c566a;
+  --term-color-9: #e06c75;
+  --term-color-10: #98c379;
+  --term-color-11: #e5c07b;
+  --term-color-12: #61afef;
+  --term-color-13: #c678dd;
+  --term-color-14: #56b6c2;
+  --term-color-15: #dde1e8;
+}
+
+/* ─── Dark theme ────────────────────────────────────────────── */
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* Window */
+    --background: #0e0f10;
+    --foreground: rgba(230, 232, 235, 0.92);
+    --window-border: rgba(255, 255, 255, 0.08);
+    --window-shadow:
+      0 0 0 0.5px rgba(0, 0, 0, 0.6), 0 40px 80px -20px rgba(0, 0, 0, 0.55),
+      0 16px 40px -12px rgba(0, 0, 0, 0.4);
+
+    /* Sidebar */
+    --sidebar-background: #141517;
+    --sidebar-border: rgba(255, 255, 255, 0.06);
+    --sidebar-foreground: rgba(255, 255, 255, 0.55);
+    --sidebar-foreground-strong: rgba(255, 255, 255, 0.9);
+    --sidebar-hover: rgba(255, 255, 255, 0.04);
+    --sidebar-active: rgba(255, 255, 255, 0.07);
+    --sidebar-section-label: rgba(255, 255, 255, 0.35);
+
+    /* Tab bar */
+    --tab-bar-background: #141517;
+    --tab-bar-border: rgba(255, 255, 255, 0.06);
+    --tab-background: transparent;
+    --tab-active-background: #0e0f10;
+    --tab-foreground: rgba(255, 255, 255, 0.5);
+    --tab-foreground-active: rgba(255, 255, 255, 0.95);
+    --tab-border: rgba(255, 255, 255, 0.08);
+
+    /* Terminal */
+    --terminal-background: #0e0f10;
+    --terminal-foreground: rgba(230, 232, 235, 0.92);
+    --terminal-dim: rgba(230, 232, 235, 0.5);
+    --terminal-muted: rgba(230, 232, 235, 0.35);
+    --terminal-green: #9ece6a;
+    --terminal-yellow: #e0af68;
+    --terminal-red: #f7768e;
+    --terminal-magenta: #bb9af7;
+    --terminal-cyan: #7dcfff;
+
+    /* Status bar */
+    --status-bar-background: #141517;
+    --status-bar-border: rgba(255, 255, 255, 0.06);
+    --status-bar-foreground: rgba(255, 255, 255, 0.45);
+
+    /* Accent (fixed) */
+    --accent: oklch(0.68 0.15 225);
+    --accent-foreground: #000000;
+    --accent-soft: oklch(0.68 0.15 225 / 0.14);
+    --terminal-prompt: oklch(0.68 0.15 225);
+    --running-dot: #9ece6a;
+
+    /* shadcn semantic tokens */
+    --card: var(--background);
+    --card-foreground: var(--foreground);
+    --popover: var(--sidebar-background);
+    --popover-foreground: var(--foreground);
+    --primary: var(--accent);
+    --primary-foreground: #000000;
+    --secondary: var(--sidebar-active);
+    --secondary-foreground: var(--foreground);
+    --muted: var(--sidebar-hover);
+    --muted-foreground: var(--sidebar-foreground);
+    --border: var(--window-border);
+    --input: var(--tab-border);
+    --ring: var(--accent);
+    --destructive: #f7768e;
+
+    /* wterm ANSI color palette — dark */
+    --term-fg: var(--terminal-foreground);
+    --term-bg: var(--terminal-background);
+    --term-color-0: #1a1b26;
+    --term-color-1: var(--terminal-red);
+    --term-color-2: var(--terminal-green);
+    --term-color-3: var(--terminal-yellow);
+    --term-color-4: var(--terminal-prompt);
+    --term-color-5: var(--terminal-magenta);
+    --term-color-6: var(--terminal-cyan);
+    --term-color-7: #c0caf5;
+    --term-color-8: #414868;
+    --term-color-9: #f7768e;
+    --term-color-10: #9ece6a;
+    --term-color-11: #e0af68;
+    --term-color-12: #7aa2f7;
+    --term-color-13: #bb9af7;
+    --term-color-14: #7dcfff;
+    --term-color-15: #ffffff;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-ui);
+  }
+}
