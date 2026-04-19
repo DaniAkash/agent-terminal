@@ -25,11 +25,6 @@ import {
 import { MONO_FONT } from '@/screens/workspace/workspace.helpers'
 import type { Project, Tab } from '@/screens/workspace/workspace.types'
 
-// Set true for one event-loop tick after a drag completes so that the
-// pointer-up → click sequence (which WKWebView does not suppress after DnD)
-// cannot accidentally navigate to the tab the pointer was hovering over.
-let tabDragJustEnded = false
-
 /* ---------------------------------------------------------------------------
  * TabItem — single sortable tab pill
  * -------------------------------------------------------------------------*/
@@ -57,9 +52,6 @@ function TabItem({ tab, projectId }: { tab: Tab; projectId: string }) {
       }}
       {...attributes}
       {...listeners}
-      onClickCapture={(e) => {
-        if (tabDragJustEnded) e.stopPropagation()
-      }}
     >
       <Link
         to="/$projectId/$tabId"
@@ -124,10 +116,6 @@ export function TabBar({ project }: { project: Project }) {
   ]
 
   function handleDragEnd(event: DragEndEvent) {
-    tabDragJustEnded = true
-    setTimeout(() => {
-      tabDragJustEnded = false
-    }, 0)
     const { active, over } = event
     if (!over || active.id === over.id) return
     const oldIdx = orderedTabs.findIndex((t) => t.id === active.id)
