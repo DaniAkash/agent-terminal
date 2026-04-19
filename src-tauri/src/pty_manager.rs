@@ -9,7 +9,7 @@ use tauri::{AppHandle, Emitter};
 pub struct PtyDataPayload {
     #[serde(rename = "tabId")]
     pub tab_id: String,
-    pub data: Vec<u8>,
+    pub data: String,
 }
 
 #[derive(Serialize, Clone)]
@@ -74,7 +74,7 @@ pub fn spawn_pty(
                         "pty:data",
                         PtyDataPayload {
                             tab_id: tab_id_thread.clone(),
-                            data: buf[..n].to_vec(),
+                            data: String::from_utf8_lossy(&buf[..n]).into_owned(),
                         },
                     )
                     .ok();

@@ -8,7 +8,7 @@ export const IPC = {
   openTab: (tabId: string, cwd?: string, shell?: string) =>
     invoke<void>('open_tab', { tabId, cwd, shell }),
 
-  writePty: (tabId: string, data: number[]) =>
+  writePty: (tabId: string, data: string) =>
     invoke<void>('write_pty', { tabId, data }),
 
   resizePty: (tabId: string, cols: number, rows: number) =>

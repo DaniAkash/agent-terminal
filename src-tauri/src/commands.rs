@@ -11,6 +11,10 @@ pub async fn open_tab(
     cwd: Option<String>,
     shell: Option<String>,
 ) -> Result<(), String> {
+    // Idempotent: absorbs React StrictMode's double-effect invocation in development.
+    if pty_map.lock().unwrap().contains_key(&tab_id) {
+        return Ok(());
+    }
     spawn_pty(app, &pty_map, tab_id, cwd, shell)
 }
 
@@ -18,11 +22,11 @@ pub async fn open_tab(
 pub async fn write_pty(
     pty_map: State<'_, PtyMap>,
     tab_id: String,
-    data: Vec<u8>,
+    data: String,
 ) -> Result<(), String> {
     let mut map = pty_map.lock().unwrap();
     if let Some(handle) = map.get_mut(&tab_id) {
-        handle.writer.write_all(&data).map_err(|e| e.to_string())?;
+        handle.writer.write_all(data.as_bytes()).map_err(|e| e.to_string())?;
     }
     Ok(())
 }
