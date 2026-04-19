@@ -1,5 +1,6 @@
 import { useStore } from '@nanostores/react'
 import { createFileRoute, Outlet, redirect } from '@tanstack/react-router'
+import { TabBar } from '@/components/TabBar/TabBar'
 import { $projects } from '@/modules/stores/$projects'
 
 export const Route = createFileRoute('/$projectId')({
@@ -19,6 +20,7 @@ function ProjectLayout() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      <TabBar project={project} />
       <Outlet />
     </div>
   )
