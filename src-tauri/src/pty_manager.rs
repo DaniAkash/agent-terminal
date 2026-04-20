@@ -28,15 +28,14 @@ pub struct PtyHandle {
 
 pub type PtyMap = Arc<Mutex<HashMap<String, PtyHandle>>>;
 
-/// 256 KB — captures a full burst of output in a single read() call on most
-/// shells. Reduces Channel message count by ~64× vs the old 4 KB buffer for
-/// high-throughput output (cat, build tools, find).
+/// 256 KB read buffer. A single read() call can return up to this many bytes
+/// when the kernel has burst output ready (build tools, cat, find). This IS
+/// the coalescing — no separate accumulation loop is needed.
+///
+/// For interactive use (prompt, keystroke echo) the kernel returns a small
+/// number of bytes immediately and read() blocks again. Those bytes are sent
+/// right away so the terminal never freezes waiting for a threshold.
 const READ_BUF_SIZE: usize = 256 * 1024;
-
-/// Flush the accumulation buffer once it exceeds this size even if the read
-/// loop has not blocked. Prevents unbounded accumulation during continuous
-/// high-speed streams.
-const FLUSH_THRESHOLD: usize = 32 * 1024;
 
 pub fn spawn_pty(
     app: AppHandle,
@@ -74,17 +73,10 @@ pub fn spawn_pty(
     let tab_id_thread = tab_id.clone();
     std::thread::spawn(move || {
         let mut buf = [0u8; READ_BUF_SIZE];
-        let mut accumulated = String::new();
 
         loop {
             match reader.read(&mut buf) {
                 Ok(0) | Err(_) => {
-                    // Flush any remaining accumulated data before signalling exit.
-                    if !accumulated.is_empty() {
-                        on_data
-                            .send(PtyDataPayload { data: std::mem::take(&mut accumulated) })
-                            .ok();
-                    }
                     app.emit(
                         "pty:exit",
                         PtyExitPayload { tab_id: tab_id_thread.clone() },
@@ -93,17 +85,15 @@ pub fn spawn_pty(
                     break;
                 }
                 Ok(n) => {
-                    accumulated.push_str(&String::from_utf8_lossy(&buf[..n]));
-
-                    // Flush when the buffer is large enough. For interactive sessions
-                    // (small writes, ~1–64 bytes per keystroke echo) accumulated stays
-                    // well below the threshold and is flushed on the next read block.
-                    // For burst output the threshold caps the message payload at 32 KB.
-                    if accumulated.len() >= FLUSH_THRESHOLD {
-                        on_data
-                            .send(PtyDataPayload { data: std::mem::take(&mut accumulated) })
-                            .ok();
-                    }
+                    // Send immediately — never hold data back. read() blocks until
+                    // the kernel has bytes, so whatever it returns is all that's
+                    // available right now. Waiting for more would freeze the terminal
+                    // for interactive output (prompts, keystroke echoes).
+                    on_data
+                        .send(PtyDataPayload {
+                            data: String::from_utf8_lossy(&buf[..n]).into_owned(),
+                        })
+                        .ok();
                 }
             }
         }
