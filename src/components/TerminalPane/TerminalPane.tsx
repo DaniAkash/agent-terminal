@@ -1,7 +1,7 @@
 import { Terminal, useTerminal } from '@wterm/react'
 import { useCallback, useEffect, useRef } from 'react'
 import { IPC } from '@/modules/ipc/commands'
-import { onPtyData, onPtyExit } from '@/modules/ipc/events'
+import { onPtyExit } from '@/modules/ipc/events'
 import { makeTabKey } from '@/screens/workspace/workspace.helpers'
 
 // Tracks in-flight openTab calls per tabKey. Prevents concurrent calls
@@ -19,9 +19,8 @@ export function TerminalPane({ projectId, tabId, cwd }: Props) {
   const { ref, write } = useTerminal()
   const tabKey = makeTabKey(projectId, tabId)
 
-  // Keep write in a ref so the IPC effect doesn't re-run when the
-  // function reference changes between renders, which would register
-  // duplicate onPtyData listeners and double every output byte.
+  // Keep write in a ref so the Channel callback captures it by reference
+  // rather than closing over a stale value from the first render.
   const writeRef = useRef(write)
   useEffect(() => {
     writeRef.current = write
@@ -33,15 +32,19 @@ export function TerminalPane({ projectId, tabId, cwd }: Props) {
   //   - openTab is idempotent — returns true if a new pty was spawned,
   //     false if one is already running for this tabKey.
   //   - If a call is already in-flight for this tabKey (StrictMode fires
-  //     onReady twice when WASM is cached), skip it. The first call's pty
-  //     will send the initial prompt through the listeners below.
+  //     onReady twice when WASM is cached), skip it.
   //   - If the pty is already running (returning to a tab), send \r to make
   //     the shell re-display the prompt on the fresh terminal.
+  //
+  // Data arrives via the per-tab Channel passed to openTab — no global event
+  // bus listener, no fan-out to other tabs.
   const handleReady = useCallback(() => {
     if (pendingOpens.has(tabKey)) return
     pendingOpens.add(tabKey)
 
-    IPC.openTab(tabKey, cwd)
+    IPC.openTab(tabKey, cwd, (data) => {
+      writeRef.current(data)
+    })
       .then((isNew) => {
         pendingOpens.delete(tabKey)
         if (!isNew) {
@@ -54,22 +57,17 @@ export function TerminalPane({ projectId, tabId, cwd }: Props) {
   }, [tabKey, cwd])
 
   useEffect(() => {
-    const unlistenData = onPtyData((id, data) => {
-      if (id === tabKey) writeRef.current(data)
-    })
-
     const unlistenExit = onPtyExit((id) => {
       if (id === tabKey) writeRef.current('\r\n[Process exited]\r\n')
     })
 
     return () => {
-      unlistenData.then((fn) => fn())
       unlistenExit.then((fn) => fn())
       // Do NOT close the pty here. Pty lifetime is tied to the tab's
       // existence in the store. removeTab() calls IPC.closeTab() when
       // the user explicitly closes the tab.
     }
-  }, [tabKey]) // intentionally excludes write — use writeRef instead
+  }, [tabKey])
 
   return (
     <Terminal
