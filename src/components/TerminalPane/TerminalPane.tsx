@@ -73,7 +73,6 @@ export function TerminalPane({ projectId, tabId, cwd }: Props) {
     <Terminal
       ref={ref}
       autoResize
-      wasmUrl="/wterm.wasm"
       className="h-full min-h-0 w-full"
       onReady={handleReady}
       onData={(input) => IPC.writePty(tabKey, input)}
