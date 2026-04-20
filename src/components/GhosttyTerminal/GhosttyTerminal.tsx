@@ -102,7 +102,14 @@ export const GhosttyTerminal = React.memo(function GhosttyTerminal({
 
       term.open(container)
       fitAddon.observeResize()
-      fitAddon.fit()
+
+      // Defer the initial fit() to after the browser has completed layout.
+      // fit() calls container.clientWidth/clientHeight — if called synchronously
+      // inside a promise callback the browser may not have painted yet, so the
+      // container reports 0×0 and the terminal stays at the default 80-column size.
+      requestAnimationFrame(() => {
+        if (!disposed) fitAddon.fit()
+      })
 
       termRef.current = term
       fitAddonRef.current = fitAddon
