@@ -59,6 +59,8 @@ export const GhosttyTerminal = React.memo(function GhosttyTerminal({
     if (!container) return
     let disposed = false
     let dataDisposableCleanup: (() => void) | null = null
+    let resizeObserver: ResizeObserver | null = null
+    let fitTimer: ReturnType<typeof setTimeout> | null = null
 
     ensureWasmInit().then(() => {
       if (disposed) return
@@ -95,24 +97,39 @@ export const GhosttyTerminal = React.memo(function GhosttyTerminal({
         },
       })
 
-      // FitAddon handles resize by measuring the container and calling term.resize().
-      // observeResize() sets up a ResizeObserver for automatic fit on container changes.
       const fitAddon = new FitAddon()
       term.loadAddon(fitAddon)
-
       term.open(container)
-      fitAddon.observeResize()
-
-      // Defer the initial fit() to after the browser has completed layout.
-      // fit() calls container.clientWidth/clientHeight — if called synchronously
-      // inside a promise callback the browser may not have painted yet, so the
-      // container reports 0×0 and the terminal stays at the default 80-column size.
-      requestAnimationFrame(() => {
-        if (!disposed) fitAddon.fit()
-      })
 
       termRef.current = term
       fitAddonRef.current = fitAddon
+
+      // Drive fit() via our own ResizeObserver instead of fitAddon.observeResize().
+      // The FitAddon's internal observer debounces callbacks — in WKWebView this can
+      // mean the initial fit fires after the terminal has already rendered at 80×24.
+      // Our observer has no debounce: it fires on every size change after layout.
+      //
+      // ResizeObserver fires once immediately when observation starts (if the element
+      // already has size), so this handles both the initial fit and all subsequent
+      // window/panel resize events.
+      resizeObserver = new ResizeObserver((entries) => {
+        if (disposed) return
+        for (const entry of entries) {
+          const { width, height } = entry.contentRect
+          if (width > 0 && height > 0) {
+            fitAddon.fit()
+            break
+          }
+        }
+      })
+      resizeObserver.observe(container)
+
+      // Belt-and-suspenders: also schedule fit() via setTimeout so that even if
+      // the ResizeObserver fires before the WASM font metrics are ready, we get a
+      // second chance once the event loop is idle.
+      fitTimer = setTimeout(() => {
+        if (!disposed) fitAddon.fit()
+      }, 50)
 
       // onData is an IEvent<string>: call it with a listener to get an IDisposable.
       const dataDisposable = term.onData((data) => onDataRef.current(data))
@@ -126,6 +143,8 @@ export const GhosttyTerminal = React.memo(function GhosttyTerminal({
 
     return () => {
       disposed = true
+      if (fitTimer !== null) clearTimeout(fitTimer)
+      resizeObserver?.disconnect()
       dataDisposableCleanup?.()
       fitAddonRef.current?.dispose()
       termRef.current?.dispose()
