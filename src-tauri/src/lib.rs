@@ -1,6 +1,9 @@
 mod commands;
+mod mod_engine;
 mod pty_manager;
 
+use mod_engine::{ModEngine, mods::EchoMod};
+use tauri::Manager;
 use pty_manager::PtyMap;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -11,6 +14,13 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .setup(|app| {
+            let mod_engine = ModEngine::builder()
+                .with_mod(EchoMod)
+                .build(app.handle().clone());
+            app.manage(mod_engine);
+            Ok(())
+        })
         .manage(pty_map)
         .invoke_handler(tauri::generate_handler![
             commands::open_tab,

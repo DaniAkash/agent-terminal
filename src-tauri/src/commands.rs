@@ -1,3 +1,4 @@
+use crate::mod_engine::ModEngine;
 use crate::pty_manager::{spawn_pty, PtyDataPayload, PtyMap};
 use portable_pty::PtySize;
 use std::io::Write;
@@ -8,6 +9,7 @@ use tauri::ipc::Channel;
 pub async fn open_tab(
     app: AppHandle,
     pty_map: State<'_, PtyMap>,
+    mod_engine: State<'_, ModEngine>,
     tab_id: String,
     cwd: Option<String>,
     shell: Option<String>,
@@ -19,13 +21,14 @@ pub async fn open_tab(
     if pty_map.lock().unwrap().contains_key(&tab_id) {
         return Ok(false);
     }
-    spawn_pty(app, &pty_map, tab_id, cwd, shell, on_data)?;
+    spawn_pty(app, &pty_map, mod_engine.handle(), tab_id, cwd, shell, on_data)?;
     Ok(true)
 }
 
 #[tauri::command]
 pub async fn write_pty(
     pty_map: State<'_, PtyMap>,
+    mod_engine: State<'_, ModEngine>,
     tab_id: String,
     data: String,
 ) -> Result<(), String> {
@@ -33,12 +36,14 @@ pub async fn write_pty(
     if let Some(handle) = map.get_mut(&tab_id) {
         handle.writer.write_all(data.as_bytes()).map_err(|e| e.to_string())?;
     }
+    mod_engine.handle().on_input(&tab_id, data.into_bytes());
     Ok(())
 }
 
 #[tauri::command]
 pub async fn resize_pty(
     pty_map: State<'_, PtyMap>,
+    mod_engine: State<'_, ModEngine>,
     tab_id: String,
     cols: u16,
     rows: u16,
@@ -50,6 +55,7 @@ pub async fn resize_pty(
             .resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
             .map_err(|e| e.to_string())?;
     }
+    mod_engine.handle().on_resize(&tab_id, cols, rows);
     Ok(())
 }
 
@@ -58,6 +64,10 @@ pub async fn close_tab(
     pty_map: State<'_, PtyMap>,
     tab_id: String,
 ) -> Result<(), String> {
+    // MOD on_close is triggered by the PTY read thread exiting (pty:exit), not
+    // here — close_tab only drops the master/writer, causing the thread to see
+    // EOF and fire on_close itself. This avoids a double on_close if the shell
+    // exits on its own before close_tab is called.
     pty_map.lock().unwrap().remove(&tab_id);
     Ok(())
 }
