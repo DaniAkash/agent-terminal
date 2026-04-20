@@ -1,5 +1,8 @@
-import { Terminal, useTerminal } from '@wterm/react'
-import { useCallback, useEffect, useRef } from 'react'
+import React, { useCallback, useEffect, useRef } from 'react'
+import {
+  GhosttyTerminal,
+  type GhosttyTerminalHandle,
+} from '@/components/GhosttyTerminal/GhosttyTerminal'
 import { IPC } from '@/modules/ipc/commands'
 import { onPtyExit } from '@/modules/ipc/events'
 import { makeTabKey } from '@/screens/workspace/workspace.helpers'
@@ -15,50 +18,59 @@ type Props = {
   cwd: string
 }
 
-export function TerminalPane({ projectId, tabId, cwd }: Props) {
-  const { ref, write } = useTerminal()
+export const TerminalPane = React.memo(function TerminalPane({
+  projectId,
+  tabId,
+  cwd,
+}: Props) {
   const tabKey = makeTabKey(projectId, tabId)
+  const handleRef = useRef<GhosttyTerminalHandle | null>(null)
 
-  // Keep write in a ref so the Channel callback captures it by reference
-  // rather than closing over a stale value from the first render.
-  const writeRef = useRef(write)
-  useEffect(() => {
-    writeRef.current = write
-  }, [write])
-
-  // Called by wterm once the WASM module is loaded and the terminal is ready.
+  // Called once when ghostty-web WASM finishes loading and the canvas is ready.
   //
   // Pty lifecycle is owned by the store, not this component:
   //   - openTab is idempotent — returns true if a new pty was spawned,
   //     false if one is already running for this tabKey.
   //   - If a call is already in-flight for this tabKey (StrictMode fires
   //     onReady twice when WASM is cached), skip it.
-  //   - If the pty is already running (returning to a tab), send \r to make
-  //     the shell re-display the prompt on the fresh terminal.
+  //   - If the pty is already running (reconnect path), send \r to make
+  //     the shell re-display the prompt.
   //
   // Data arrives via the per-tab Channel passed to openTab — no global event
   // bus listener, no fan-out to other tabs.
-  const handleReady = useCallback(() => {
-    if (pendingOpens.has(tabKey)) return
-    pendingOpens.add(tabKey)
+  const handleReady = useCallback(
+    (handle: GhosttyTerminalHandle) => {
+      handleRef.current = handle
 
-    IPC.openTab(tabKey, cwd, (data) => {
-      writeRef.current(data)
-    })
-      .then((isNew) => {
-        pendingOpens.delete(tabKey)
-        if (!isNew) {
-          IPC.writePty(tabKey, '\r').catch(() => {})
-        }
+      if (pendingOpens.has(tabKey)) return
+      pendingOpens.add(tabKey)
+
+      IPC.openTab(tabKey, cwd, (data) => {
+        handleRef.current?.write(data)
       })
-      .catch(() => {
-        pendingOpens.delete(tabKey)
-      })
-  }, [tabKey, cwd])
+        .then((isNew) => {
+          pendingOpens.delete(tabKey)
+          if (!isNew) {
+            IPC.writePty(tabKey, '\r').catch(() => {})
+          }
+        })
+        .catch(() => {
+          pendingOpens.delete(tabKey)
+        })
+    },
+    [tabKey, cwd],
+  )
+
+  const handleData = useCallback(
+    (input: string) => {
+      IPC.writePty(tabKey, input).catch(() => {})
+    },
+    [tabKey],
+  )
 
   useEffect(() => {
     const unlistenExit = onPtyExit((id) => {
-      if (id === tabKey) writeRef.current('\r\n[Process exited]\r\n')
+      if (id === tabKey) handleRef.current?.write('\r\n[Process exited]\r\n')
     })
 
     return () => {
@@ -70,13 +82,10 @@ export function TerminalPane({ projectId, tabId, cwd }: Props) {
   }, [tabKey])
 
   return (
-    <Terminal
-      ref={ref}
-      autoResize
-      className="h-full min-h-0 w-full"
+    <GhosttyTerminal
       onReady={handleReady}
-      onData={(input) => IPC.writePty(tabKey, input)}
-      onResize={(cols, rows) => IPC.resizePty(tabKey, cols, rows)}
+      onData={handleData}
+      className="h-full min-h-0 w-full"
     />
   )
-}
+})

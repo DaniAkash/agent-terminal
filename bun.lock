@@ -16,9 +16,9 @@
         "@tanstack/router-devtools": "^1.166.13",
         "@tauri-apps/api": "^2",
         "@tauri-apps/plugin-opener": "^2",
-        "@wterm/react": "^0.1.8",
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",
+        "ghostty-web": "^0.4.0",
         "lucide-react": "^1.8.0",
         "nanostores": "^1.2.0",
         "react": "^19.1.0",
@@ -408,12 +408,6 @@
 
     "@vitejs/plugin-react": ["@vitejs/plugin-react@4.7.0", "", { "dependencies": { "@babel/core": "^7.28.0", "@babel/plugin-transform-react-jsx-self": "^7.27.1", "@babel/plugin-transform-react-jsx-source": "^7.27.1", "@rolldown/pluginutils": "1.0.0-beta.27", "@types/babel__core": "^7.20.5", "react-refresh": "^0.17.0" }, "peerDependencies": { "vite": "^4.2.0 || ^5.0.0 || ^6.0.0 || ^7.0.0" } }, "sha512-gUu9hwfWvvEDBBmgtAowQCojwZmJ5mcLn3aufeCsitijs3+f2NsrPtlAWIR6OPiqljl96GVCUbLe0HyqIpVaoA=="],
 
-    "@wterm/core": ["@wterm/core@0.1.7", "", {}, "sha512-uP8R/OxO/cZUVOWD2q9SLgRTjqH6Ovd3se3SOJvwTi13yJazUF9hGlTrybLgNi4hmuGTHxHPSDSHvQrgf0KEeg=="],
-
-    "@wterm/dom": ["@wterm/dom@0.1.7", "", { "dependencies": { "@wterm/core": "0.1.7" } }, "sha512-235hVbza23+OIYuOror1y7L8MknISTg5yEobNqnNgUmUJ8GjCz5ertTZpZp6zE/1x4Ik2iBd8DjeG5J0g8MR+A=="],
-
-    "@wterm/react": ["@wterm/react@0.1.8", "", { "peerDependencies": { "@wterm/dom": "0.1.7", "react": "^18.0.0 || ^19.0.0", "react-dom": "^18.0.0 || ^19.0.0" } }, "sha512-eW+olCGansLe47Kz9oxsMJLAkysvHItxp7EBlpVmh3I+b98ge42vwekjH67x7ME+MShMpZ4KJhtLhqBtKV44fg=="],
-
     "accepts": ["accepts@2.0.0", "", { "dependencies": { "mime-types": "^3.0.0", "negotiator": "^1.0.0" } }, "sha512-5cvg6CtKwfgdmVqY1WIiXKc3Q1bkRqGLi+2W/6ao+6Y7gu/RCwRuAhGEzh5B4KlszSuTLgZYuqFqo5bImjNKng=="],
 
     "acorn": ["acorn@8.16.0", "", { "bin": { "acorn": "bin/acorn" } }, "sha512-UVJyE9MttOsBQIDKw1skb9nAwQuR5wuGD3+82K6JgJlm/Y+KI92oNsMNGZCYdDsVtRHSak0pcV5Dno5+4jh9sw=="],
@@ -623,6 +617,8 @@
     "get-stream": ["get-stream@9.0.1", "", { "dependencies": { "@sec-ant/readable-stream": "^0.4.1", "is-stream": "^4.0.1" } }, "sha512-kVCxPF3vQM/N0B1PmoqVUqgHP+EeVjmZSQn+1oCRPxd2P21P2F19lIgbR3HBosbB1PUhOAoctJnfEn2GbN2eZA=="],
 
     "get-tsconfig": ["get-tsconfig@4.13.7", "", { "dependencies": { "resolve-pkg-maps": "^1.0.0" } }, "sha512-7tN6rFgBlMgpBML5j8typ92BKFi2sFQvIdpAqLA2beia5avZDrMs0FLZiM5etShWq5irVyGcGMEA1jcDaK7A/Q=="],
+
+    "ghostty-web": ["ghostty-web@0.4.0", "", {}, "sha512-0puDBik2qapbD/QQBW9o5ZHfXnZBqZWx/ctBiVtKZ6ZLds4NYb+wZuw1cRLXZk9zYovIQ908z3rvFhexAvc5Hg=="],
 
     "glob-parent": ["glob-parent@5.1.2", "", { "dependencies": { "is-glob": "^4.0.1" } }, "sha512-AOIgSQCepiJYwP3ARnGx+5VnTu2HBYdzbGP45eLw1vr3zB3vZLeyed1sC9hnbcOc9/SrMyM5RPQrkGz4aS9Zow=="],
 
