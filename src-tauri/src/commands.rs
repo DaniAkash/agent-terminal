@@ -1,7 +1,8 @@
-use crate::pty_manager::{spawn_pty, PtyMap};
+use crate::pty_manager::{spawn_pty, PtyDataPayload, PtyMap};
 use portable_pty::PtySize;
 use std::io::Write;
 use tauri::{AppHandle, State};
+use tauri::ipc::Channel;
 
 #[tauri::command]
 pub async fn open_tab(
@@ -10,6 +11,7 @@ pub async fn open_tab(
     tab_id: String,
     cwd: Option<String>,
     shell: Option<String>,
+    on_data: Channel<PtyDataPayload>,
 ) -> Result<bool, String> {
     // Returns true if a new pty was spawned, false if one was already running.
     // The frontend uses this to decide whether to wait for the initial prompt
@@ -17,7 +19,7 @@ pub async fn open_tab(
     if pty_map.lock().unwrap().contains_key(&tab_id) {
         return Ok(false);
     }
-    spawn_pty(app, &pty_map, tab_id, cwd, shell)?;
+    spawn_pty(app, &pty_map, tab_id, cwd, shell, on_data)?;
     Ok(true)
 }
 
