@@ -10,9 +10,10 @@ export type PtyDataCallback = (data: string) => void
  * The onData callback is called directly by the Channel — no global event bus,
  * no fan-out to other tabs' listeners.
  *
- * The Channel lifetime is tied to the JS closure. When the TerminalPane
- * unmounts (tab closed), the closure is GC'd and the Rust reader thread
- * receives a send error, causing it to exit cleanly.
+ * When the tab is closed, IPC.closeTab() removes the pty from the map. The
+ * reader thread detects a Channel send error on the next write and exits.
+ * Do not rely on GC of the JS closure alone to stop the thread — always call
+ * IPC.closeTab() explicitly when tearing down a tab.
  */
 export function openTab(
   tabId: string,

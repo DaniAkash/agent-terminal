@@ -89,11 +89,18 @@ pub fn spawn_pty(
                     // the kernel has bytes, so whatever it returns is all that's
                     // available right now. Waiting for more would freeze the terminal
                     // for interactive output (prompts, keystroke echoes).
-                    on_data
+                    //
+                    // Break on send error: the Channel is dropped when the JS side
+                    // is GC'd (tab closed). Continuing to read and silently discard
+                    // output would leak the thread. Exit cleanly instead.
+                    if on_data
                         .send(PtyDataPayload {
                             data: String::from_utf8_lossy(&buf[..n]).into_owned(),
                         })
-                        .ok();
+                        .is_err()
+                    {
+                        break;
+                    }
                 }
             }
         }
