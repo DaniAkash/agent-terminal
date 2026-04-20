@@ -13,7 +13,6 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { useStore } from '@nanostores/react'
-import { useParams } from '@tanstack/react-router'
 import { ChevronRight, Folder, Pin } from 'lucide-react'
 import { RunningDot } from '@/components/RunningDot'
 import { SidebarTabItem } from '@/components/Sidebar/SidebarTabItem'
@@ -24,6 +23,10 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/context-menu'
 import { cn } from '@/lib/utils'
+import {
+  $activeProjectId,
+  navigateToProject,
+} from '@/modules/stores/$navigation'
 import {
   $expanded,
   removeProject,
@@ -36,8 +39,8 @@ import type { Project } from '@/screens/workspace/workspace.types'
 export function SidebarProjectRow({ project }: { project: Project }) {
   const expanded = useStore($expanded)
   const isOpen = !!expanded[project.id]
-  const { projectId: activeProject } = useParams({ strict: false })
-  const isActive = activeProject === project.id
+  const activeProjectId = useStore($activeProjectId)
+  const isActive = activeProjectId === project.id
 
   const {
     attributes,
@@ -88,7 +91,10 @@ export function SidebarProjectRow({ project }: { project: Project }) {
                 ? 'bg-sidebar-active text-sidebar-fg-strong'
                 : 'text-sidebar-fg hover:bg-sidebar-hover',
             )}
-            onClick={() => toggleExpanded(project.id)}
+            onClick={() => {
+              toggleExpanded(project.id)
+              navigateToProject(project.id)
+            }}
           >
             <span
               className={cn(

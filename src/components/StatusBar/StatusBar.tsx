@@ -1,4 +1,13 @@
-export function StatusBar({ sessionsRunning }: { sessionsRunning: number }) {
+import { useStore } from '@nanostores/react'
+import { $projects } from '@/modules/stores/$projects'
+
+export function StatusBar() {
+  const projects = useStore($projects)
+  const sessionsRunning = projects.reduce(
+    (n, p) => n + p.tabs.filter((t) => t.running).length,
+    0,
+  )
+
   return (
     <div
       className="flex h-6 shrink-0 items-center border-t px-3 text-[11px]"

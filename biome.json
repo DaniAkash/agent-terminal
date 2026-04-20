@@ -8,7 +8,7 @@
   },
   "files": {
     "ignoreUnknown": false,
-    "includes": ["**", "!src/routeTree.gen.ts", "!designs"]
+    "includes": ["**", "!designs"]
   },
   "formatter": {
     "enabled": true,

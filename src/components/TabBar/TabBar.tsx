@@ -12,7 +12,7 @@ import {
   useSortable,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { useNavigate, useParams } from '@tanstack/react-router'
+import { useStore } from '@nanostores/react'
 import { Pin, X } from 'lucide-react'
 import { RunningDot } from '@/components/RunningDot'
 import {
@@ -22,6 +22,11 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/context-menu'
 import { cn } from '@/lib/utils'
+import {
+  $activeTabId,
+  navigateToTab,
+  onTabRemoved,
+} from '@/modules/stores/$navigation'
 import {
   addTab,
   removeTab,
@@ -35,9 +40,8 @@ import type { Project, Tab } from '@/screens/workspace/workspace.types'
  * TabItem — single sortable tab pill
  * -------------------------------------------------------------------------*/
 function TabItem({ tab, projectId }: { tab: Tab; projectId: string }) {
-  const navigate = useNavigate()
-  const { tabId: activeTab } = useParams({ strict: false })
-  const isActive = activeTab === tab.id
+  const activeTabsByProject = useStore($activeTabId)
+  const isActive = activeTabsByProject[projectId] === tab.id
 
   const {
     attributes,
@@ -51,6 +55,11 @@ function TabItem({ tab, projectId }: { tab: Tab; projectId: string }) {
   // Destructure role out so Biome doesn't see a static role="button" on a div,
   // but keep the rest of the a11y attributes (aria-describedby, tabIndex, etc.)
   const { role: _role, ...safeAttributes } = attributes
+
+  function handleClose() {
+    onTabRemoved(projectId, tab.id)
+    removeTab(projectId, tab.id)
+  }
 
   return (
     <ContextMenu>
@@ -74,16 +83,11 @@ function TabItem({ tab, projectId }: { tab: Tab; projectId: string }) {
                 : 'bg-transparent text-tab-fg hover:text-tab-fg-active',
             )}
           >
-            {/* Navigation area — fills the pill, triggers route change */}
+            {/* Navigation area — fills the pill, triggers tab switch */}
             <button
               type="button"
               className="flex flex-1 cursor-pointer items-center gap-1.5 overflow-hidden pr-1 pl-3"
-              onClick={() =>
-                navigate({
-                  to: '/$projectId/$tabId',
-                  params: { projectId, tabId: tab.id },
-                })
-              }
+              onClick={() => navigateToTab(projectId, tab.id)}
             >
               {tab.running ? (
                 <RunningDot />
@@ -115,7 +119,7 @@ function TabItem({ tab, projectId }: { tab: Tab; projectId: string }) {
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={(e) => {
                   e.stopPropagation()
-                  removeTab(projectId, tab.id)
+                  handleClose()
                 }}
               >
                 <X size={9} />
@@ -128,10 +132,7 @@ function TabItem({ tab, projectId }: { tab: Tab; projectId: string }) {
         <ContextMenuItem onSelect={() => toggleTabPin(projectId, tab.id)}>
           {tab.pinned ? 'Unpin tab' : 'Pin tab'}
         </ContextMenuItem>
-        <ContextMenuItem
-          onSelect={() => removeTab(projectId, tab.id)}
-          className="text-destructive"
-        >
+        <ContextMenuItem onSelect={handleClose} className="text-destructive">
           Close tab
         </ContextMenuItem>
       </ContextMenuContent>
@@ -143,7 +144,6 @@ function TabItem({ tab, projectId }: { tab: Tab; projectId: string }) {
  * TabBar — horizontal DnD tab strip
  * -------------------------------------------------------------------------*/
 export function TabBar({ project }: { project: Project }) {
-  const navigate = useNavigate()
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
   )
@@ -165,10 +165,7 @@ export function TabBar({ project }: { project: Project }) {
   function handleAddTab() {
     const newTab = addTab(project.id)
     if (newTab) {
-      navigate({
-        to: '/$projectId/$tabId',
-        params: { projectId: project.id, tabId: newTab.id },
-      })
+      navigateToTab(project.id, newTab.id)
     }
   }
 

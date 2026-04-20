@@ -1,6 +1,6 @@
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { useNavigate, useParams } from '@tanstack/react-router'
+import { useStore } from '@nanostores/react'
 import { Pin } from 'lucide-react'
 import { RunningDot } from '@/components/RunningDot'
 import {
@@ -10,6 +10,11 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/context-menu'
 import { cn } from '@/lib/utils'
+import {
+  $activeProjectId,
+  $activeTabId,
+  navigateToTab,
+} from '@/modules/stores/$navigation'
 import { toggleTabPin } from '@/modules/stores/$projects'
 import { MONO_FONT } from '@/screens/workspace/workspace.helpers'
 import type { Tab } from '@/screens/workspace/workspace.types'
@@ -21,7 +26,11 @@ export function SidebarTabItem({
   tab: Tab
   projectId: string
 }) {
-  const navigate = useNavigate()
+  const activeProjectId = useStore($activeProjectId)
+  const activeTabsByProject = useStore($activeTabId)
+  const isActive =
+    activeProjectId === projectId && activeTabsByProject[projectId] === tab.id
+
   const {
     attributes,
     listeners,
@@ -30,10 +39,6 @@ export function SidebarTabItem({
     transition,
     isDragging,
   } = useSortable({ id: tab.id, disabled: tab.pinned })
-  const { projectId: activeProject, tabId: activeTab } = useParams({
-    strict: false,
-  })
-  const isActive = activeProject === projectId && activeTab === tab.id
 
   // Strip role so Biome doesn't see a static role="button" on a div
   const { role: _role, ...safeAttributes } = attributes
@@ -59,12 +64,7 @@ export function SidebarTabItem({
                 ? 'bg-sidebar-active text-sidebar-fg-strong'
                 : 'text-sidebar-fg hover:bg-sidebar-hover',
             )}
-            onClick={() =>
-              navigate({
-                to: '/$projectId/$tabId',
-                params: { projectId, tabId: tab.id },
-              })
-            }
+            onClick={() => navigateToTab(projectId, tab.id)}
           >
             {isActive && (
               <span className="absolute top-1.5 bottom-1.5 left-3.5 w-0.5 rounded-sm bg-accent" />
