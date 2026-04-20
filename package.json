@@ -12,6 +12,7 @@
     "lint": "biome check && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets",
     "lint:rust": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets",
     "typecheck": "tsc --noEmit",
+    "test": "bun test",
     "lint:fix": "biome check --write --unsafe && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --fix --allow-dirty --allow-staged"
   },
   "dependencies": {
@@ -22,8 +23,6 @@
     "@fontsource-variable/geist": "^5.2.8",
     "@nanostores/react": "^1.1.0",
     "@tailwindcss/vite": "^4.2.2",
-    "@tanstack/react-router": "^1.168.18",
-    "@tanstack/router-devtools": "^1.166.13",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-opener": "^2",
     "class-variance-authority": "^0.7.1",
@@ -40,7 +39,6 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.11",
-    "@tanstack/router-plugin": "^1.167.18",
     "@tauri-apps/cli": "^2",
     "@types/node": "^25.6.0",
     "@types/react": "^19.1.8",
