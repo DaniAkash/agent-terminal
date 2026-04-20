@@ -15,21 +15,29 @@ pub(super) enum ModMessage {
 /// commands clone this to dispatch events without holding a reference to
 /// `ModEngine` itself.
 ///
-/// All dispatch methods use `try_send` — they are non-blocking and silently
-/// drop messages when the engine is behind. The terminal always gets its bytes;
-/// MODs tolerate occasional dropped frames under extreme PTY load.
+/// Lifecycle messages (`Open`/`Close`) use an unbounded channel — they are
+/// never dropped, because losing them would leave MODs with uninitialised or
+/// leaked per-tab state and prevent the frontend GC event (`closed`) from
+/// firing.
+///
+/// Data messages (`Output`/`Input`/`Resize`) use a bounded channel (512).
+/// `try_send` is non-blocking and silently drops under extreme PTY load so
+/// the terminal thread is never stalled. MODs tolerate occasional missed frames.
 #[derive(Clone)]
 pub struct ModEngineHandle {
+    /// Bounded channel for high-volume data messages (Output/Input/Resize).
     tx: mpsc::Sender<ModMessage>,
+    /// Unbounded channel for lifecycle messages (Open/Close) — never dropped.
+    lifecycle_tx: mpsc::UnboundedSender<ModMessage>,
 }
 
 impl ModEngineHandle {
     pub fn on_tab_open(&self, tab_id: &str) {
-        let _ = self.tx.try_send(ModMessage::Open { tab_id: tab_id.to_string() });
+        let _ = self.lifecycle_tx.send(ModMessage::Open { tab_id: tab_id.to_string() });
     }
 
     pub fn on_tab_close(&self, tab_id: &str) {
-        let _ = self.tx.try_send(ModMessage::Close { tab_id: tab_id.to_string() });
+        let _ = self.lifecycle_tx.send(ModMessage::Close { tab_id: tab_id.to_string() });
     }
 
     pub fn on_output(&self, tab_id: &str, data: Vec<u8>) {
@@ -82,16 +90,33 @@ impl ModEngine {
     }
 
     fn start(mods: Vec<Box<dyn Mod>>, app: AppHandle) -> Self {
-        // 512-message pipeline buffer. try_send drops when full so the PTY thread
-        // is never blocked. 256-event outbound buffer to the frontend.
+        // Bounded channel for data messages (Output/Input/Resize).
+        // try_send drops when full so the PTY thread is never blocked.
         let (msg_tx, mut msg_rx) = mpsc::channel::<ModMessage>(512);
+        // Unbounded channel for lifecycle messages (Open/Close) — never dropped.
+        let (lifecycle_tx, mut lifecycle_rx) = mpsc::unbounded_channel::<ModMessage>();
+        // Outbound event buffer to the frontend.
         let (event_tx, mut event_rx) = mpsc::channel::<ModEvent>(256);
 
         // Task 1: dispatch PTY messages to every MOD in registration order.
+        // `biased` select gives lifecycle messages priority over data messages so
+        // Open/Close are always processed before any buffered Output/Input/Resize
+        // for the same tab.
         let event_tx_dispatch = event_tx.clone();
         tokio::spawn(async move {
             let mut mods = mods;
-            while let Some(msg) = msg_rx.recv().await {
+            loop {
+                let msg = tokio::select! {
+                    biased;
+                    msg = lifecycle_rx.recv() => match msg {
+                        Some(m) => m,
+                        None => break,
+                    },
+                    msg = msg_rx.recv() => match msg {
+                        Some(m) => m,
+                        None => break,
+                    },
+                };
                 match msg {
                     ModMessage::Open { tab_id } => {
                         let ctx = ModContext::new(&tab_id, &event_tx_dispatch);
@@ -124,6 +149,6 @@ impl ModEngine {
             }
         });
 
-        Self { handle: ModEngineHandle { tx: msg_tx } }
+        Self { handle: ModEngineHandle { tx: msg_tx, lifecycle_tx } }
     }
 }

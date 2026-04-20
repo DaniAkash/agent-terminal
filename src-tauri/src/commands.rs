@@ -32,11 +32,16 @@ pub async fn write_pty(
     tab_id: String,
     data: String,
 ) -> Result<(), String> {
-    let mut map = pty_map.lock().unwrap();
-    if let Some(handle) = map.get_mut(&tab_id) {
-        handle.writer.write_all(data.as_bytes()).map_err(|e| e.to_string())?;
-    }
-    mod_engine.handle().on_input(&tab_id, data.into_bytes());
+    let data_bytes = data.into_bytes();
+    {
+        let mut map = pty_map.lock().unwrap();
+        if let Some(handle) = map.get_mut(&tab_id) {
+            handle.writer.write_all(&data_bytes).map_err(|e| e.to_string())?;
+        } else {
+            return Ok(()); // Tab already closed — no-op, not an error.
+        }
+    } // Lock released before dispatching to MOD engine.
+    mod_engine.handle().on_input(&tab_id, data_bytes);
     Ok(())
 }
 
@@ -48,13 +53,17 @@ pub async fn resize_pty(
     cols: u16,
     rows: u16,
 ) -> Result<(), String> {
-    let map = pty_map.lock().unwrap();
-    if let Some(handle) = map.get(&tab_id) {
-        handle
-            .master
-            .resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
-            .map_err(|e| e.to_string())?;
-    }
+    {
+        let map = pty_map.lock().unwrap();
+        if let Some(handle) = map.get(&tab_id) {
+            handle
+                .master
+                .resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
+                .map_err(|e| e.to_string())?;
+        } else {
+            return Ok(()); // Tab already closed — no-op, not an error.
+        }
+    } // Lock released before dispatching to MOD engine.
     mod_engine.handle().on_resize(&tab_id, cols, rows);
     Ok(())
 }

@@ -10,7 +10,7 @@ import './index.css'
 
 async function bootstrap() {
   // Start MOD event listener before render so no events are missed.
-  startModListener()
+  await startModListener()
 
   try {
     const saved = (await IPC.listProjects()) as Project[]

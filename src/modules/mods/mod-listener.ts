@@ -29,6 +29,9 @@ export async function startModListener(): Promise<() => void> {
 }
 
 function dispatch({ tabId, event, data }: ModEventPayload): void {
+  // Guard against malformed payloads — Rust controls the emitter, but a
+  // bad payload should never crash the global listener.
+  if (data !== null && data !== undefined && typeof data !== 'object') return
   switch (event) {
     case 'status_changed': {
       const { status, exitCode } = data as {
