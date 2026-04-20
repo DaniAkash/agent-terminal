@@ -17,14 +17,6 @@ function ensureWasmInit(): Promise<void> {
   return initPromise
 }
 
-// Read current CSS variable value from the document root.
-// Used to pass theme colors to ghostty-web at mount time.
-function readCSSVar(name: string): string {
-  return getComputedStyle(document.documentElement)
-    .getPropertyValue(name)
-    .trim()
-}
-
 export type GhosttyTerminalHandle = {
   write: (data: string) => void
   focus: () => void
@@ -33,12 +25,14 @@ export type GhosttyTerminalHandle = {
 type Props = {
   onReady: (handle: GhosttyTerminalHandle) => void
   onData: (data: string) => void
+  onResize: (cols: number, rows: number) => void
   className?: string
 }
 
 export const GhosttyTerminal = React.memo(function GhosttyTerminal({
   onReady,
   onData,
+  onResize,
   className,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -49,53 +43,25 @@ export const GhosttyTerminal = React.memo(function GhosttyTerminal({
   // versions without needing to re-run when they change reference.
   const onReadyRef = useRef(onReady)
   const onDataRef = useRef(onData)
+  const onResizeRef = useRef(onResize)
   useEffect(() => {
     onReadyRef.current = onReady
     onDataRef.current = onData
-  }, [onReady, onData])
+    onResizeRef.current = onResize
+  }, [onReady, onData, onResize])
 
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
     let disposed = false
-    let dataDisposableCleanup: (() => void) | null = null
+    let disposablesCleanup: (() => void) | null = null
     let resizeObserver: ResizeObserver | null = null
     let fitTimer: ReturnType<typeof setTimeout> | null = null
 
     ensureWasmInit().then(() => {
       if (disposed) return
 
-      const term = new Terminal({
-        // Font settings
-        fontSize: 12.5,
-        fontFamily:
-          '"GeistMono Nerd Font", "GeistMono NF", "Geist Mono", monospace',
-        cursorBlink: true,
-        scrollback: 5000,
-        // Theme colors read from CSS variables at mount time.
-        // ghostty-web does not observe CSS variables — colors are set once at init.
-        theme: {
-          foreground: readCSSVar('--terminal-foreground'),
-          background: readCSSVar('--terminal-background'),
-          cursor: readCSSVar('--terminal-foreground'),
-          black: readCSSVar('--term-color-0'),
-          red: readCSSVar('--term-color-1'),
-          green: readCSSVar('--term-color-2'),
-          yellow: readCSSVar('--term-color-3'),
-          blue: readCSSVar('--term-color-4'),
-          magenta: readCSSVar('--term-color-5'),
-          cyan: readCSSVar('--term-color-6'),
-          white: readCSSVar('--term-color-7'),
-          brightBlack: readCSSVar('--term-color-8'),
-          brightRed: readCSSVar('--term-color-9'),
-          brightGreen: readCSSVar('--term-color-10'),
-          brightYellow: readCSSVar('--term-color-11'),
-          brightBlue: readCSSVar('--term-color-12'),
-          brightMagenta: readCSSVar('--term-color-13'),
-          brightCyan: readCSSVar('--term-color-14'),
-          brightWhite: readCSSVar('--term-color-15'),
-        },
-      })
+      const term = new Terminal()
 
       const fitAddon = new FitAddon()
       term.loadAddon(fitAddon)
@@ -104,14 +70,8 @@ export const GhosttyTerminal = React.memo(function GhosttyTerminal({
       termRef.current = term
       fitAddonRef.current = fitAddon
 
-      // Drive fit() via our own ResizeObserver instead of fitAddon.observeResize().
-      // The FitAddon's internal observer debounces callbacks — in WKWebView this can
-      // mean the initial fit fires after the terminal has already rendered at 80×24.
-      // Our observer has no debounce: it fires on every size change after layout.
-      //
-      // ResizeObserver fires once immediately when observation starts (if the element
-      // already has size), so this handles both the initial fit and all subsequent
-      // window/panel resize events.
+      // Drive fit() via our own ResizeObserver — no debounce, fires after layout.
+      // term.onResize notifies the PTY of the new cols/rows via onResize prop.
       resizeObserver = new ResizeObserver((entries) => {
         if (disposed) return
         for (const entry of entries) {
@@ -124,16 +84,23 @@ export const GhosttyTerminal = React.memo(function GhosttyTerminal({
       })
       resizeObserver.observe(container)
 
-      // Belt-and-suspenders: also schedule fit() via setTimeout so that even if
-      // the ResizeObserver fires before the WASM font metrics are ready, we get a
-      // second chance once the event loop is idle.
+      // Belt-and-suspenders: fit() again after 50ms in case the ResizeObserver
+      // fires before WASM font metrics are fully initialized.
       fitTimer = setTimeout(() => {
         if (!disposed) fitAddon.fit()
       }, 50)
 
-      // onData is an IEvent<string>: call it with a listener to get an IDisposable.
+      // onData / onResize are IEvent<T>: call with a listener to get an IDisposable.
       const dataDisposable = term.onData((data) => onDataRef.current(data))
-      dataDisposableCleanup = () => dataDisposable.dispose()
+      // onResize fires whenever fit() calls term.resize() — notify the PTY so the
+      // shell reformats its output to match the new cols/rows.
+      const resizeDisposable = term.onResize(({ cols, rows }) =>
+        onResizeRef.current(cols, rows),
+      )
+      disposablesCleanup = () => {
+        dataDisposable.dispose()
+        resizeDisposable.dispose()
+      }
 
       onReadyRef.current({
         write: (data) => termRef.current?.write(data),
@@ -145,7 +112,7 @@ export const GhosttyTerminal = React.memo(function GhosttyTerminal({
       disposed = true
       if (fitTimer !== null) clearTimeout(fitTimer)
       resizeObserver?.disconnect()
-      dataDisposableCleanup?.()
+      disposablesCleanup?.()
       fitAddonRef.current?.dispose()
       termRef.current?.dispose()
       termRef.current = null

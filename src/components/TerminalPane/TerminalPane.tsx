@@ -68,6 +68,13 @@ export const TerminalPane = React.memo(function TerminalPane({
     [tabKey],
   )
 
+  const handleResize = useCallback(
+    (cols: number, rows: number) => {
+      IPC.resizePty(tabKey, cols, rows).catch(() => {})
+    },
+    [tabKey],
+  )
+
   useEffect(() => {
     const unlistenExit = onPtyExit((id) => {
       if (id === tabKey) handleRef.current?.write('\r\n[Process exited]\r\n')
@@ -85,6 +92,7 @@ export const TerminalPane = React.memo(function TerminalPane({
     <GhosttyTerminal
       onReady={handleReady}
       onData={handleData}
+      onResize={handleResize}
       className="h-full min-h-0 w-full"
     />
   )
