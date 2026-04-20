@@ -11,8 +11,9 @@ type Props = {
 
 export function WorkspaceView({ project }: Props) {
   const activeTabsByProject = useStore($activeTabId)
-  const activeTabId =
-    activeTabsByProject[project.id] ?? project.tabs[0]?.id ?? ''
+  // No fallback to project.tabs[0] here — tab selection is driven by
+  // initNavigation() / navigateToProject() so the store is always authoritative.
+  const activeTabId = activeTabsByProject[project.id] ?? ''
 
   // Lazy mount: only create a TerminalPane when a tab is first visited.
   // Once mounted, the pane stays alive forever (CSS show/hide, not unmount).

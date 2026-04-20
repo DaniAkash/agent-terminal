@@ -1,10 +1,11 @@
 import { useStore } from '@nanostores/react'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Sidebar } from '@/components/Sidebar/Sidebar'
 import { StatusBar } from '@/components/StatusBar/StatusBar'
 import {
   $activeProjectId,
   $activeTabId,
+  navigateToProject,
   navigateToTab,
   onTabRemoved,
 } from '@/modules/stores/$navigation'
@@ -42,6 +43,8 @@ function onKeyDown(e: KeyboardEvent) {
     e.preventDefault()
     handleNewTab(projectId)
   } else if (e.key === 'w') {
+    // Guard: no active tab means nothing to close (avoids sending empty tabKey to backend)
+    if (!tabId) return
     e.preventDefault()
     handleCloseTab(projectId, tabId)
   } else if (/^[1-9]$/.test(e.key)) {
@@ -58,6 +61,29 @@ export function WorkspaceLayout() {
   const projects = useStore($projects)
   const activeProjectId = useStore($activeProjectId)
 
+  // Lazy-mount projects: only render WorkspaceView once a project becomes active.
+  // Already-mounted projects stay rendered and are CSS-hidden when inactive.
+  const [mountedProjects, setMountedProjects] = useState<Set<string>>(
+    () => new Set(activeProjectId ? [activeProjectId] : []),
+  )
+
+  useEffect(() => {
+    if (activeProjectId) {
+      setMountedProjects((prev) => {
+        if (prev.has(activeProjectId)) return prev
+        return new Set([...prev, activeProjectId])
+      })
+    }
+  }, [activeProjectId])
+
+  // Recovery: if the active project was removed, fall back to the first remaining one.
+  useEffect(() => {
+    const exists = projects.some((p) => p.id === activeProjectId)
+    if (!exists && projects.length > 0) {
+      navigateToProject(projects[0].id)
+    }
+  }, [projects, activeProjectId])
+
   useEffect(() => {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
@@ -67,19 +93,21 @@ export function WorkspaceLayout() {
     <div className="relative flex h-screen w-screen flex-col overflow-hidden bg-background">
       <div className="flex min-h-0 flex-1">
         <Sidebar />
-        {/* All projects rendered simultaneously — active one visible via CSS */}
         <div className="relative min-w-0 flex-1">
-          {projects.map((project) => (
-            <div
-              key={project.id}
-              className="absolute inset-0 flex flex-col"
-              style={{
-                display: project.id === activeProjectId ? 'flex' : 'none',
-              }}
-            >
-              <WorkspaceView project={project} />
-            </div>
-          ))}
+          {projects.map((project) => {
+            if (!mountedProjects.has(project.id)) return null
+            return (
+              <div
+                key={project.id}
+                className="absolute inset-0 flex flex-col"
+                style={{
+                  display: project.id === activeProjectId ? 'flex' : 'none',
+                }}
+              >
+                <WorkspaceView project={project} />
+              </div>
+            )
+          })}
         </div>
       </div>
       <StatusBar />
