@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useRef } from 'react'
 import {
-  GhosttyTerminal,
-  type GhosttyTerminalHandle,
-} from '@/components/GhosttyTerminal/GhosttyTerminal'
+  type XTermHandle,
+  XTermTerminal,
+} from '@/components/XTermTerminal/XTermTerminal'
 import { IPC } from '@/modules/ipc/commands'
 import { onPtyExit } from '@/modules/ipc/events'
 import { makeTabKey } from '@/screens/workspace/workspace.helpers'
@@ -24,22 +24,22 @@ export const TerminalPane = React.memo(function TerminalPane({
   cwd,
 }: Props) {
   const tabKey = makeTabKey(projectId, tabId)
-  const handleRef = useRef<GhosttyTerminalHandle | null>(null)
+  const handleRef = useRef<XTermHandle | null>(null)
 
-  // Called once when ghostty-web WASM finishes loading and the canvas is ready.
+  // Called once when the xterm canvas is ready.
   //
   // Pty lifecycle is owned by the store, not this component:
   //   - openTab is idempotent — returns true if a new pty was spawned,
   //     false if one is already running for this tabKey.
   //   - If a call is already in-flight for this tabKey (StrictMode fires
-  //     onReady twice when WASM is cached), skip it.
+  //     onReady twice on dev), skip it.
   //   - If the pty is already running (reconnect path), send \r to make
   //     the shell re-display the prompt.
   //
   // Data arrives via the per-tab Channel passed to openTab — no global event
   // bus listener, no fan-out to other tabs.
   const handleReady = useCallback(
-    (handle: GhosttyTerminalHandle) => {
+    (handle: XTermHandle) => {
       handleRef.current = handle
 
       if (pendingOpens.has(tabKey)) return
@@ -89,7 +89,7 @@ export const TerminalPane = React.memo(function TerminalPane({
   }, [tabKey])
 
   return (
-    <GhosttyTerminal
+    <XTermTerminal
       onReady={handleReady}
       onData={handleData}
       onResize={handleResize}
