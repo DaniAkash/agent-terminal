@@ -1,4 +1,3 @@
-import { CanvasAddon } from '@xterm/addon-canvas'
 import { FitAddon } from '@xterm/addon-fit'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { WebglAddon } from '@xterm/addon-webgl'
@@ -93,29 +92,19 @@ export const XTermTerminal = React.memo(function XTermTerminal({
     termRef.current = term
     fitAddonRef.current = fitAddon
 
-    // Renderer priority: WebGL → Canvas → DOM (built-in last resort).
-    // Canvas is explicitly loaded as the fallback so the DOM renderer is
-    // never used in normal operation.
-    const activateCanvasFallback = () => {
-      try {
-        term.loadAddon(new CanvasAddon())
-      } catch {
-        // Canvas also unavailable — xterm DOM renderer takes over automatically.
-      }
-    }
-
+    // WebGL renderer — falls back to xterm's built-in DOM renderer on context
+    // loss. The canvas addon is not used: it is v5-only and was removed in v6.
     try {
       webglAddon = new WebglAddon()
       webglAddon.onContextLoss(() => {
         webglAddon?.dispose()
         webglAddon = null
-        activateCanvasFallback()
+        // xterm DOM renderer takes over automatically after WebGL is disposed.
       })
       term.loadAddon(webglAddon)
     } catch {
-      // WebGL2 not available — fall back to canvas renderer.
+      // WebGL2 not available — xterm DOM renderer takes over automatically.
       webglAddon = null
-      activateCanvasFallback()
     }
 
     // Drive fit() via ResizeObserver — fires after layout, no debounce needed.
