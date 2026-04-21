@@ -1,10 +1,6 @@
 use std::collections::HashMap;
-use std::collections::VecDeque;
-use std::sync::{Arc, Mutex};
 
 use crate::mod_engine::{CwdRegistry, Mod, ModContext};
-
-type PortQueue = Arc<Mutex<VecDeque<(String, Vec<u16>)>>>;
 
 /// Periodically scans for agent processes (claude, codex, node) in the tab's cwd
 /// and emits `listening_ports` events with the TCP ports they are listening on.
@@ -14,8 +10,6 @@ pub struct ProcessInspectorMod {
     cwd_registry: CwdRegistry,
     /// Per-tab: abort handle for the background timer task.
     handles: HashMap<String, tokio::task::JoinHandle<()>>,
-    /// Results from async scan tasks, drained in on_output.
-    pending: PortQueue,
 }
 
 impl ProcessInspectorMod {
@@ -23,7 +17,6 @@ impl ProcessInspectorMod {
         Self {
             cwd_registry,
             handles: HashMap::new(),
-            pending: Arc::new(Mutex::new(VecDeque::new())) as PortQueue,
         }
     }
 }
@@ -35,9 +28,8 @@ impl Mod for ProcessInspectorMod {
 
     fn on_open(&mut self, ctx: &ModContext) {
         let tab_id = ctx.tab_id.to_string();
-        let cwd_registry = Arc::clone(&self.cwd_registry);
-        let pending = Arc::clone(&self.pending);
-        let tab_id_clone = tab_id.clone();
+        let cwd_registry = self.cwd_registry.clone();
+        let emitter = ctx.async_emitter();
 
         let handle = tokio::spawn(async move {
             let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(2));
@@ -45,44 +37,28 @@ impl Mod for ProcessInspectorMod {
                 interval.tick().await;
                 let cwd = {
                     let reg = cwd_registry.read().unwrap();
-                    reg.get(&tab_id_clone).cloned()
+                    reg.get(&tab_id).cloned()
                 };
                 let Some(cwd) = cwd else { continue };
 
                 let ports = scan_ports(&cwd).await;
-                pending.lock().unwrap().push_back((tab_id_clone.clone(), ports));
-            }
-        });
-
-        self.handles.insert(tab_id, handle);
-    }
-
-    fn on_output(&mut self, _data: &[u8], ctx: &ModContext) {
-        // Drain pending port scan results for this tab
-        let mut queue = self.pending.lock().unwrap();
-        let mut remaining = VecDeque::new();
-        while let Some((tid, ports)) = queue.pop_front() {
-            if tid == ctx.tab_id {
-                ctx.emit(
-                    self.id(),
+                emitter.emit(
+                    "process_inspector",
                     "listening_ports",
                     serde_json::json!({ "ports": ports }),
                 );
-                // Take only the latest result — discard older ones for same tab
-            } else {
-                remaining.push_back((tid, ports));
             }
-        }
-        *queue = remaining;
+        });
+
+        self.handles.insert(ctx.tab_id.to_string(), handle);
     }
+
+    fn on_output(&mut self, _data: &[u8], _ctx: &ModContext) {}
 
     fn on_close(&mut self, ctx: &ModContext) {
         if let Some(handle) = self.handles.remove(ctx.tab_id) {
             handle.abort();
         }
-        // Clean up any pending results for this tab
-        let mut queue = self.pending.lock().unwrap();
-        queue.retain(|(tid, _)| tid != ctx.tab_id);
     }
 }
 

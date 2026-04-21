@@ -1,8 +1,6 @@
 use std::collections::HashMap;
-use std::collections::VecDeque;
-use std::sync::{Arc, Mutex};
 
-use crate::mod_engine::{CwdRegistry, Mod, ModContext};
+use crate::mod_engine::{AsyncEmitter, CwdRegistry, Mod, ModContext};
 
 struct GitTabState {
     last_queried_cwd: Option<String>,
@@ -20,8 +18,6 @@ struct GitTabState {
 pub struct GitMonitorMod {
     cwd_registry: CwdRegistry,
     tabs: HashMap<String, GitTabState>,
-    /// Async git query results, drained in on_output.
-    pending: Arc<Mutex<VecDeque<(String, serde_json::Value)>>>,
 }
 
 impl GitMonitorMod {
@@ -29,16 +25,13 @@ impl GitMonitorMod {
         Self {
             cwd_registry,
             tabs: HashMap::new(),
-            pending: Arc::new(Mutex::new(VecDeque::new())),
         }
     }
 
-    fn spawn_git_query(&self, tab_id: &str, cwd: String) {
-        let tab_id = tab_id.to_string();
-        let pending = Arc::clone(&self.pending);
+    fn spawn_git_query(&self, cwd: String, emitter: AsyncEmitter) {
         tokio::spawn(async move {
             let data = query_git_info(&cwd).await;
-            pending.lock().unwrap().push_back((tab_id, data));
+            emitter.emit("git_monitor", "git_info", data);
         });
     }
 }
@@ -50,9 +43,8 @@ impl Mod for GitMonitorMod {
 
     fn on_open(&mut self, ctx: &ModContext) {
         let tab_id = ctx.tab_id.to_string();
-        let cwd_registry = Arc::clone(&self.cwd_registry);
-        let pending = Arc::clone(&self.pending);
-        let tab_id_clone = tab_id.clone();
+        let cwd_registry = self.cwd_registry.clone();
+        let emitter = ctx.async_emitter();
 
         // 60-second periodic refresh
         let timer = tokio::spawn(async move {
@@ -62,17 +54,17 @@ impl Mod for GitMonitorMod {
                 interval.tick().await;
                 let cwd = {
                     let reg = cwd_registry.read().unwrap();
-                    reg.get(&tab_id_clone).cloned()
+                    reg.get(&tab_id).cloned()
                 };
                 if let Some(cwd) = cwd {
                     let data = query_git_info(&cwd).await;
-                    pending.lock().unwrap().push_back((tab_id_clone.clone(), data));
+                    emitter.emit("git_monitor", "git_info", data);
                 }
             }
         });
 
         self.tabs.insert(
-            tab_id,
+            ctx.tab_id.to_string(),
             GitTabState {
                 last_queried_cwd: None,
                 timer: Some(timer),
@@ -81,21 +73,6 @@ impl Mod for GitMonitorMod {
     }
 
     fn on_output(&mut self, _data: &[u8], ctx: &ModContext) {
-        // Drain pending git results for this tab
-        {
-            let mut queue = self.pending.lock().unwrap();
-            let mut remaining = VecDeque::new();
-            while let Some((tid, data)) = queue.pop_front() {
-                if tid == ctx.tab_id {
-                    ctx.emit(self.id(), "git_info", data);
-                } else {
-                    remaining.push_back((tid, data));
-                }
-            }
-            *queue = remaining;
-        }
-
-        // Check for cwd change
         let Some(state) = self.tabs.get_mut(ctx.tab_id) else {
             return;
         };
@@ -108,7 +85,7 @@ impl Mod for GitMonitorMod {
         if let Some(ref cwd) = current_cwd {
             if state.last_queried_cwd.as_deref() != Some(cwd.as_str()) {
                 state.last_queried_cwd = Some(cwd.clone());
-                self.spawn_git_query(ctx.tab_id, cwd.clone());
+                self.spawn_git_query(cwd.clone(), ctx.async_emitter());
             }
         }
     }
@@ -119,9 +96,6 @@ impl Mod for GitMonitorMod {
                 handle.abort();
             }
         }
-        // Clean up pending results for this tab
-        let mut queue = self.pending.lock().unwrap();
-        queue.retain(|(tid, _)| tid != ctx.tab_id);
     }
 }
 

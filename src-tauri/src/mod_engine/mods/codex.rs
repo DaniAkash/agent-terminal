@@ -1,8 +1,6 @@
 use std::collections::HashMap;
-use std::collections::VecDeque;
-use std::sync::{Arc, Mutex};
 
-use crate::mod_engine::{CwdRegistry, Mod, ModContext};
+use crate::mod_engine::{AsyncEmitter, CwdRegistry, Mod, ModContext};
 use crate::mod_engine::osc_parser::OscParser;
 
 struct CodexTabState {
@@ -18,12 +16,6 @@ struct CodexTabState {
 pub struct CodexMod {
     cwd_registry: CwdRegistry,
     tabs: HashMap<String, CodexTabState>,
-    pending: Arc<Mutex<VecDeque<PendingEvent>>>,
-}
-
-enum PendingEvent {
-    Session { tab_id: String, data: serde_json::Value },
-    Clear { tab_id: String },
 }
 
 impl CodexMod {
@@ -31,20 +23,27 @@ impl CodexMod {
         Self {
             cwd_registry,
             tabs: HashMap::new(),
-            pending: Arc::new(Mutex::new(VecDeque::new())),
         }
     }
 
-    fn trigger_scan(&self, tab_id: &str, cwd: String, awaiting: bool) {
-        let tab_id = tab_id.to_string();
-        let pending = Arc::clone(&self.pending);
+    fn trigger_scan(&self, cwd: String, awaiting: bool, emitter: AsyncEmitter) {
         tokio::spawn(async move {
             match scan_codex_session(&cwd, awaiting).await {
                 Some(data) => {
-                    pending.lock().unwrap().push_back(PendingEvent::Session { tab_id, data });
+                    emitter.emit("codex", "codex_session", data);
+                    emitter.emit(
+                        "codex",
+                        "tab_type_changed",
+                        serde_json::json!({ "type": "agent", "agent": "codex" }),
+                    );
                 }
                 None => {
-                    pending.lock().unwrap().push_back(PendingEvent::Clear { tab_id });
+                    emitter.emit("codex", "codex_session_cleared", serde_json::json!({}));
+                    emitter.emit(
+                        "codex",
+                        "tab_type_changed",
+                        serde_json::json!({ "type": "shell" }),
+                    );
                 }
             }
         });
@@ -69,64 +68,6 @@ impl Mod for CodexMod {
     }
 
     fn on_output(&mut self, data: &[u8], ctx: &ModContext) {
-        // 1. Drain all pending events into a local vec
-        let events: Vec<PendingEvent> = {
-            let mut queue = self.pending.lock().unwrap();
-            queue.drain(..).collect()
-        };
-
-        // 2. Process events for this tab, requeue others
-        let mut requeue = VecDeque::new();
-        for event in events {
-            match event {
-                PendingEvent::Session { ref tab_id, .. } | PendingEvent::Clear { ref tab_id } => {
-                    if tab_id != ctx.tab_id {
-                        requeue.push_back(event);
-                    } else {
-                        match event {
-                            PendingEvent::Session { tab_id: _, data: session_data } => {
-                                if let Some(sid) = session_data.get("sessionId").and_then(|v| v.as_str()) {
-                                    if let Some(state) = self.tabs.get_mut(ctx.tab_id) {
-                                        state.active_session_id = Some(sid.to_string());
-                                        state.awaiting_agent = false;
-                                    }
-                                }
-                                ctx.emit(self.id(), "codex_session", session_data);
-                                ctx.emit(
-                                    self.id(),
-                                    "tab_type_changed",
-                                    serde_json::json!({ "type": "agent", "agent": "codex" }),
-                                );
-                            }
-                            PendingEvent::Clear { tab_id: _ } => {
-                                let should_clear = self
-                                    .tabs
-                                    .get(ctx.tab_id)
-                                    .map(|s| s.active_session_id.is_some())
-                                    .unwrap_or(false);
-                                if should_clear {
-                                    if let Some(state) = self.tabs.get_mut(ctx.tab_id) {
-                                        state.active_session_id = None;
-                                        state.awaiting_agent = false;
-                                    }
-                                    ctx.emit(self.id(), "codex_session_cleared", serde_json::json!({}));
-                                    ctx.emit(
-                                        self.id(),
-                                        "tab_type_changed",
-                                        serde_json::json!({ "type": "shell" }),
-                                    );
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        if !requeue.is_empty() {
-            self.pending.lock().unwrap().extend(requeue);
-        }
-
-        // 3. Parse OSC and read state — release mutable borrow before calling trigger_scan
         let (scan_trigger, staleness_scan_cwd): (Option<(String, bool)>, Option<String>) = {
             let Some(state) = self.tabs.get_mut(ctx.tab_id) else {
                 return;
@@ -161,10 +102,10 @@ impl Mod for CodexMod {
         };
 
         if let Some((cwd, awaiting)) = scan_trigger {
-            self.trigger_scan(ctx.tab_id, cwd, awaiting);
+            self.trigger_scan(cwd, awaiting, ctx.async_emitter());
         }
         if let Some(cwd) = staleness_scan_cwd {
-            self.trigger_scan(ctx.tab_id, cwd, false);
+            self.trigger_scan(cwd, false, ctx.async_emitter());
         }
     }
 
@@ -180,7 +121,7 @@ impl Mod for CodexMod {
                 }
             };
             if let Some(cwd) = cwd_opt {
-                self.trigger_scan(ctx.tab_id, cwd, true);
+                self.trigger_scan(cwd, true, ctx.async_emitter());
             }
         }
     }
