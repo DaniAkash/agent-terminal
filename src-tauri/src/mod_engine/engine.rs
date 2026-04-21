@@ -1,6 +1,6 @@
 use super::context::{ModContext, ModEvent};
 use super::Mod;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, async_runtime};
 use tokio::sync::mpsc;
 
 pub(super) enum ModMessage {
@@ -103,7 +103,7 @@ impl ModEngine {
         // Open/Close are always processed before any buffered Output/Input/Resize
         // for the same tab.
         let event_tx_dispatch = event_tx.clone();
-        tokio::spawn(async move {
+        async_runtime::spawn(async move {
             let mut mods = mods;
             loop {
                 let msg = tokio::select! {
@@ -143,7 +143,7 @@ impl ModEngine {
         });
 
         // Task 2: forward ModEvents to the Tauri frontend.
-        tokio::spawn(async move {
+        async_runtime::spawn(async move {
             while let Some(event) = event_rx.recv().await {
                 app.emit("mod:event", &event).ok();
             }
