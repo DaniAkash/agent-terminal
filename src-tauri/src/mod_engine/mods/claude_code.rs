@@ -78,7 +78,7 @@ impl Mod for ClaudeCodeMod {
     }
 
     fn on_output(&mut self, data: &[u8], ctx: &ModContext) {
-        let (scan_trigger, staleness_scan_cwd, session_active): (Option<(String, bool)>, Option<String>, Arc<AtomicBool>) = {
+        let (scan_trigger, clear_session, session_active): (Option<(String, bool)>, bool, Arc<AtomicBool>) = {
             let Some(state) = self.tabs.get_mut(ctx.tab_id) else {
                 return;
             };
@@ -89,12 +89,13 @@ impl Mod for ClaudeCodeMod {
                 reg.get(ctx.tab_id).cloned()
             };
 
-            // CWD change → trigger scan
+            // CWD change → only scan if we're already awaiting Claude (user typed "claude").
+            // Scanning on every cd causes false positives from recently-exited sessions.
             let scan_trigger = if let Some(ref cwd) = current_cwd {
                 if state.last_cwd.as_deref() != Some(cwd.as_str()) {
                     let awaiting = state.awaiting_agent;
                     state.last_cwd = Some(cwd.clone());
-                    Some((cwd.clone(), awaiting))
+                    if awaiting { Some((cwd.clone(), true)) } else { None }
                 } else {
                     None
                 }
@@ -102,22 +103,31 @@ impl Mod for ClaudeCodeMod {
                 None
             };
 
-            // OSC 133;A → staleness check (only if we previously found an active session)
+            // OSC 133;A = shell prompt drawn = Claude has exited (works for /exit and Ctrl+C).
+            // Do NOT use 133;B — that fires on command start, before Claude even runs.
             let has_osc_a = seqs.iter().any(|s| s.code == 133 && s.arg.starts_with('A'));
-            let staleness_scan_cwd = if has_osc_a && state.session_active.load(Ordering::Relaxed) {
-                current_cwd
-            } else {
-                None
-            };
+            let clear_session = has_osc_a && state.session_active.load(Ordering::Relaxed);
+            if clear_session {
+                state.session_active.store(false, Ordering::Relaxed);
+                state.awaiting_agent = false;
+            }
 
-            (scan_trigger, staleness_scan_cwd, Arc::clone(&state.session_active))
+            (scan_trigger, clear_session, Arc::clone(&state.session_active))
         };
 
         if let Some((cwd, awaiting)) = scan_trigger {
             self.trigger_scan(cwd, awaiting, Arc::clone(&session_active), ctx.async_emitter());
         }
-        if let Some(cwd) = staleness_scan_cwd {
-            self.trigger_scan(cwd, false, Arc::clone(&session_active), ctx.async_emitter());
+        if clear_session {
+            let emitter = ctx.async_emitter();
+            tokio::spawn(async move {
+                emitter.emit("claude_code", "claude_session_cleared", serde_json::json!({}));
+                emitter.emit(
+                    "claude_code",
+                    "tab_type_changed",
+                    serde_json::json!({ "type": "shell" }),
+                );
+            });
         }
     }
 
