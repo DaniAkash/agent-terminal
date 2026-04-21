@@ -36,8 +36,8 @@ export const IPC = {
 
   closeTab: (tabId: string) => invoke<void>('close_tab', { tabId }),
 
-  // Milestone 3: writes to ~/.config/agent-terminal/projects.json
-  saveProjects(_: Project[]): void {},
+  saveProjects: (projects: Project[]) =>
+    invoke<void>('save_projects', { projects }),
 
   listProjects: () => invoke<unknown[]>('list_projects'),
 }

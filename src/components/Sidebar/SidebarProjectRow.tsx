@@ -14,6 +14,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { useStore } from '@nanostores/react'
 import { ChevronRight, Folder, Pin } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import { RunningDot } from '@/components/RunningDot'
 import { SidebarTabItem } from '@/components/Sidebar/SidebarTabItem'
 import {
@@ -30,6 +31,7 @@ import {
 import {
   $expanded,
   removeProject,
+  renameProject,
   reorderTabs,
   toggleExpanded,
   toggleProjectPin,
@@ -44,6 +46,7 @@ export function SidebarProjectRow({ project }: { project: Project }) {
   const activeProjectId = useStore($activeProjectId)
   const isActive = activeProjectId === project.id
   const allTabMeta = useStore($tabMeta)
+  const [renaming, setRenaming] = useState(false)
 
   const {
     attributes,
@@ -74,6 +77,11 @@ export function SidebarProjectRow({ project }: { project: Project }) {
     reorderTabs(project.id, oldIdx, newIdx)
   }
 
+  function handleRename(newName: string) {
+    setRenaming(false)
+    if (newName) renameProject(project.id, newName)
+  }
+
   return (
     <div
       ref={setNodeRef}
@@ -97,8 +105,12 @@ export function SidebarProjectRow({ project }: { project: Project }) {
                 : 'text-sidebar-fg hover:bg-sidebar-hover',
             )}
             onClick={() => {
+              if (renaming) return
               toggleExpanded(project.id)
               navigateToProject(project.id)
+            }}
+            onDoubleClick={() => {
+              if (!renaming) setRenaming(true)
             }}
           >
             <span
@@ -122,12 +134,28 @@ export function SidebarProjectRow({ project }: { project: Project }) {
                   : 'var(--sidebar-foreground)',
               }}
             />
-            <span className="flex-1 truncate font-medium">{project.name}</span>
-            {anyRunning && !isOpen && <RunningDot />}
-            {project.pinned && <Pin size={9} className="shrink-0 opacity-50" />}
+            {renaming ? (
+              <InlineEdit
+                value={project.name}
+                onSave={handleRename}
+                onCancel={() => setRenaming(false)}
+                className="flex-1 bg-transparent text-[12.5px] outline-none"
+              />
+            ) : (
+              <span className="flex-1 truncate font-medium">
+                {project.name}
+              </span>
+            )}
+            {anyRunning && !isOpen && !renaming && <RunningDot />}
+            {project.pinned && !renaming && (
+              <Pin size={9} className="shrink-0 opacity-50" />
+            )}
           </button>
         </ContextMenuTrigger>
         <ContextMenuContent className="w-44 text-[12px]">
+          <ContextMenuItem onSelect={() => setRenaming(true)}>
+            Rename
+          </ContextMenuItem>
           <ContextMenuItem onSelect={() => toggleProjectPin(project.id)}>
             {project.pinned ? 'Unpin project' : 'Pin project'}
           </ContextMenuItem>
@@ -160,5 +188,51 @@ export function SidebarProjectRow({ project }: { project: Project }) {
         </DndContext>
       </div>
     </div>
+  )
+}
+
+/* ---------------------------------------------------------------------------
+ * InlineEdit — borderless input that replaces a label on double-click
+ * -------------------------------------------------------------------------*/
+
+function InlineEdit({
+  value,
+  onSave,
+  onCancel,
+  className,
+}: {
+  value: string
+  onSave: (v: string) => void
+  onCancel: () => void
+  className?: string
+}) {
+  const [draft, setDraft] = useState(value)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    inputRef.current?.focus()
+    inputRef.current?.select()
+  }, [])
+
+  return (
+    <input
+      ref={inputRef}
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onKeyDown={(e) => {
+        e.stopPropagation()
+        if (e.key === 'Enter') {
+          const trimmed = draft.trim()
+          trimmed ? onSave(trimmed) : onCancel()
+        }
+        if (e.key === 'Escape') onCancel()
+      }}
+      onBlur={() => {
+        const trimmed = draft.trim()
+        trimmed ? onSave(trimmed) : onCancel()
+      }}
+      onClick={(e) => e.stopPropagation()}
+      className={className}
+    />
   )
 }

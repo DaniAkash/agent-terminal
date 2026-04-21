@@ -13,7 +13,25 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { useStore } from '@nanostores/react'
-import { $projects, reorderProjects } from '@/modules/stores/$projects'
+import { open as openDialog } from '@tauri-apps/plugin-dialog'
+import { useState } from 'react'
+import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { navigateToProject, navigateToTab } from '@/modules/stores/$navigation'
+import {
+  $expanded,
+  $projects,
+  addProject,
+  reorderProjects,
+} from '@/modules/stores/$projects'
 import { $tabMeta } from '@/modules/stores/$tabMeta'
 import { makeTabKey } from '@/screens/workspace/workspace.helpers'
 import { SidebarProjectRow } from './SidebarProjectRow'
@@ -21,6 +39,7 @@ import { SidebarProjectRow } from './SidebarProjectRow'
 export function Sidebar() {
   const projects = useStore($projects)
   const allTabMeta = useStore($tabMeta)
+  const [dialogOpen, setDialogOpen] = useState(false)
   const sessionsRunning = projects.reduce(
     (n, p) =>
       n +
@@ -51,6 +70,13 @@ export function Sidebar() {
     reorderProjects(oldIndex, newIndex)
   }
 
+  function handleProjectAdded(project: ReturnType<typeof addProject>) {
+    setDialogOpen(false)
+    navigateToProject(project.id)
+    navigateToTab(project.id, 'shell')
+    $expanded.set({ ...$expanded.get(), [project.id]: true })
+  }
+
   return (
     <div className="flex h-full w-[232px] min-w-[232px] flex-col border-sidebar-border border-r bg-sidebar">
       {/* Header — drag region, reserves traffic-light space */}
@@ -68,23 +94,35 @@ export function Sidebar() {
 
       {/* Project tree */}
       <div className="flex-1 overflow-y-auto py-1.5">
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={handleDragEnd}
-        >
-          <SortableContext
-            items={ordered.map((p) => p.id)}
-            strategy={verticalListSortingStrategy}
+        {projects.length === 0 ? (
+          <div className="flex flex-col items-center justify-center gap-1 px-4 py-8 text-center">
+            <p className="text-[12px] text-sidebar-fg opacity-60">
+              No projects yet.
+            </p>
+            <p className="text-[11px] text-sidebar-fg opacity-40">
+              Add your first project to get started.
+            </p>
+          </div>
+        ) : (
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
           >
-            {ordered.map((p) => (
-              <SidebarProjectRow key={p.id} project={p} />
-            ))}
-          </SortableContext>
-        </DndContext>
+            <SortableContext
+              items={ordered.map((p) => p.id)}
+              strategy={verticalListSortingStrategy}
+            >
+              {ordered.map((p) => (
+                <SidebarProjectRow key={p.id} project={p} />
+              ))}
+            </SortableContext>
+          </DndContext>
+        )}
 
         <button
           type="button"
+          onClick={() => setDialogOpen(true)}
           className="mx-1.5 mt-1 flex h-[26px] w-[calc(100%-12px)] items-center gap-1.5 rounded-md px-3 text-[12px] text-sidebar-fg opacity-70 hover:bg-sidebar-hover hover:opacity-100"
         >
           <span className="text-[13px] leading-none">+</span>
@@ -110,6 +148,155 @@ export function Sidebar() {
           </span>
         </div>
       </div>
+
+      <AddProjectDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        onAdded={handleProjectAdded}
+      />
     </div>
+  )
+}
+
+/* ---------------------------------------------------------------------------
+ * AddProjectDialog — shadcn Dialog with name + path fields and folder picker
+ * -------------------------------------------------------------------------*/
+
+type AddProjectDialogProps = {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onAdded: (project: ReturnType<typeof addProject>) => void
+}
+
+function AddProjectDialog({
+  open,
+  onOpenChange,
+  onAdded,
+}: AddProjectDialogProps) {
+  const projects = useStore($projects)
+  const [name, setName] = useState('')
+  const [path, setPath] = useState('')
+  const [error, setError] = useState('')
+
+  function reset() {
+    setName('')
+    setPath('')
+    setError('')
+  }
+
+  async function browse() {
+    const selected = await openDialog({ directory: true, multiple: false })
+    if (typeof selected === 'string') {
+      setPath(selected)
+      if (!name.trim()) {
+        const parts = selected.split('/')
+        setName(parts[parts.length - 1] ?? '')
+      }
+    }
+  }
+
+  function submit() {
+    const n = name.trim()
+    const p = path.trim()
+    if (!n || !p) {
+      setError('Name and path are required')
+      return
+    }
+    if (projects.some((proj) => proj.path === p)) {
+      setError('This path is already added')
+      return
+    }
+    const project = addProject(n, p)
+    reset()
+    onAdded(project)
+  }
+
+  function handleOpenChange(isOpen: boolean) {
+    if (!isOpen) reset()
+    onOpenChange(isOpen)
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent className="w-[340px] gap-4 text-[13px]">
+        <DialogHeader>
+          <DialogTitle className="text-[13px]">Add project</DialogTitle>
+        </DialogHeader>
+
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="proj-name" className="text-[12px]">
+              Name
+            </Label>
+            <Input
+              id="proj-name"
+              value={name}
+              onChange={(e) => {
+                setName(e.target.value)
+                setError('')
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') submit()
+              }}
+              placeholder="Project name"
+              autoFocus
+              className="h-8 text-[12px]"
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="proj-path" className="text-[12px]">
+              Path
+            </Label>
+            <div className="flex gap-2">
+              <Input
+                id="proj-path"
+                value={path}
+                onChange={(e) => {
+                  setPath(e.target.value)
+                  setError('')
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') submit()
+                }}
+                placeholder="~/path/to/folder"
+                className="h-8 flex-1 text-[12px]"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 shrink-0 text-[12px]"
+                onClick={browse}
+              >
+                Browse
+              </Button>
+            </div>
+          </div>
+
+          {error && <p className="text-[11px] text-destructive">{error}</p>}
+        </div>
+
+        <DialogFooter className="gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="text-[12px]"
+            onClick={() => handleOpenChange(false)}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            className="text-[12px]"
+            onClick={submit}
+          >
+            Add
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }

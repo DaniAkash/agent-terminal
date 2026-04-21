@@ -82,7 +82,26 @@ pub async fn close_tab(
 }
 
 #[tauri::command]
+pub async fn save_projects(projects: serde_json::Value) -> Result<(), String> {
+    let path = projects_config_path()?;
+    std::fs::create_dir_all(path.parent().unwrap()).map_err(|e| e.to_string())?;
+    let json = serde_json::to_string_pretty(&projects).map_err(|e| e.to_string())?;
+    std::fs::write(&path, json).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn list_projects() -> Result<serde_json::Value, String> {
-    // Milestone 3: reads from ~/.config/agent-terminal/projects.json
-    Ok(serde_json::json!([]))
+    let path = projects_config_path()?;
+    if !path.exists() {
+        return Ok(serde_json::json!([]));
+    }
+    let raw = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    serde_json::from_str(&raw).map_err(|e| e.to_string())
+}
+
+fn projects_config_path() -> Result<std::path::PathBuf, String> {
+    let home = std::env::var("HOME").map_err(|e| e.to_string())?;
+    Ok(std::path::PathBuf::from(home)
+        .join(".config/agent-terminal/projects.json"))
 }
