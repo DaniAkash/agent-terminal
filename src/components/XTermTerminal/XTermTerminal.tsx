@@ -1,6 +1,7 @@
 import { FitAddon } from '@xterm/addon-fit'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { WebglAddon } from '@xterm/addon-webgl'
+import type { ITheme } from '@xterm/xterm'
 import { Terminal } from '@xterm/xterm'
 import React, { useEffect, useRef } from 'react'
 
@@ -14,6 +15,52 @@ type Props = {
   onData: (data: string) => void
   onResize: (cols: number, rows: number) => void
   className?: string
+}
+
+const DARK_THEME: ITheme = {
+  background: '#0d0d0d',
+  foreground: '#e8e8e8',
+  cursor: '#e8e8e8',
+  selectionBackground: '#3a3a3a',
+  black: '#1a1a1a',
+  red: '#e06c75',
+  green: '#98c379',
+  yellow: '#e5c07b',
+  blue: '#61afef',
+  magenta: '#c678dd',
+  cyan: '#56b6c2',
+  white: '#abb2bf',
+  brightBlack: '#4b5263',
+  brightRed: '#e06c75',
+  brightGreen: '#98c379',
+  brightYellow: '#e5c07b',
+  brightBlue: '#61afef',
+  brightMagenta: '#c678dd',
+  brightCyan: '#56b6c2',
+  brightWhite: '#ffffff',
+}
+
+const LIGHT_THEME: ITheme = {
+  background: '#fafafa',
+  foreground: '#383a42',
+  cursor: '#526fff',
+  selectionBackground: '#d0d1d3',
+  black: '#383a42',
+  red: '#e45649',
+  green: '#50a14f',
+  yellow: '#c18401',
+  blue: '#4078f2',
+  magenta: '#a626a4',
+  cyan: '#0184bc',
+  white: '#a0a1a7',
+  brightBlack: '#4f525e',
+  brightRed: '#e45649',
+  brightGreen: '#50a14f',
+  brightYellow: '#c18401',
+  brightBlue: '#4078f2',
+  brightMagenta: '#a626a4',
+  brightCyan: '#0184bc',
+  brightWhite: '#383a42',
 }
 
 export const XTermTerminal = React.memo(function XTermTerminal({
@@ -45,31 +92,12 @@ export const XTermTerminal = React.memo(function XTermTerminal({
     let fitTimer: ReturnType<typeof setTimeout> | null = null
     let webglAddon: WebglAddon | null = null
 
+    const darkMq = window.matchMedia('(prefers-color-scheme: dark)')
+
     // xterm is fully synchronous — no WASM init required.
     const term = new Terminal({
       allowProposedApi: true, // required by @xterm/addon-webgl
-      theme: {
-        background: '#0d0d0d',
-        foreground: '#e8e8e8',
-        cursor: '#e8e8e8',
-        selectionBackground: '#3a3a3a',
-        black: '#1a1a1a',
-        red: '#e06c75',
-        green: '#98c379',
-        yellow: '#e5c07b',
-        blue: '#61afef',
-        magenta: '#c678dd',
-        cyan: '#56b6c2',
-        white: '#abb2bf',
-        brightBlack: '#4b5263',
-        brightRed: '#e06c75',
-        brightGreen: '#98c379',
-        brightYellow: '#e5c07b',
-        brightBlue: '#61afef',
-        brightMagenta: '#c678dd',
-        brightCyan: '#56b6c2',
-        brightWhite: '#ffffff',
-      },
+      theme: darkMq.matches ? DARK_THEME : LIGHT_THEME,
       fontFamily: '"Geist Mono", "Cascadia Code", "Fira Code", monospace',
       fontSize: 13,
       lineHeight: 1.2,
@@ -107,6 +135,12 @@ export const XTermTerminal = React.memo(function XTermTerminal({
       webglAddon = null
     }
 
+    // Swap theme instantly when the OS colour scheme changes.
+    const onColorSchemeChange = (e: MediaQueryListEvent) => {
+      if (!disposed) term.options.theme = e.matches ? DARK_THEME : LIGHT_THEME
+    }
+    darkMq.addEventListener('change', onColorSchemeChange)
+
     // Drive fit() via ResizeObserver — fires after layout, no debounce needed.
     // term.onResize notifies the PTY of the new cols/rows via the onResize prop.
     resizeObserver = new ResizeObserver((entries) => {
@@ -138,6 +172,7 @@ export const XTermTerminal = React.memo(function XTermTerminal({
 
     return () => {
       disposed = true
+      darkMq.removeEventListener('change', onColorSchemeChange)
       if (fitTimer !== null) clearTimeout(fitTimer)
       resizeObserver?.disconnect()
       dataDisposable.dispose()
