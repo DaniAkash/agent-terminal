@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 
 use crate::mod_engine::{AsyncEmitter, CwdRegistry, Mod, ModContext};
 use crate::mod_engine::osc_parser::OscParser;
@@ -6,8 +7,11 @@ use crate::mod_engine::osc_parser::OscParser;
 struct ClaudeTabState {
     parser: OscParser,
     last_cwd: Option<String>,
-    active_session_id: Option<String>,
+    /// Shared with async scan tasks — set true when a live session is found, false when cleared.
+    session_active: Arc<AtomicBool>,
     awaiting_agent: bool,
+    /// Rolling input buffer — cleared on Enter, used to detect "claude" typed across keystrokes.
+    input_buf: Vec<u8>,
 }
 
 /// Monitors `~/.claude/projects/` for active Claude Code sessions in the tab's cwd.
@@ -29,14 +33,11 @@ impl ClaudeCodeMod {
         }
     }
 
-    fn trigger_scan(&self, cwd: String, awaiting: bool, emitter: AsyncEmitter) {
+    fn trigger_scan(&self, cwd: String, awaiting: bool, session_active: Arc<AtomicBool>, emitter: AsyncEmitter) {
         tokio::spawn(async move {
             match scan_claude_session(&cwd, awaiting).await {
                 Some(data) => {
-                    if let Some(sid) = data.get("sessionId").and_then(|v| v.as_str()) {
-                        // Store session id via a separate event field — emitter is stateless
-                        let _ = sid; // tab state update handled on next on_output via cwd comparison
-                    }
+                    session_active.store(true, Ordering::Relaxed);
                     emitter.emit("claude_code", "claude_session", data);
                     emitter.emit(
                         "claude_code",
@@ -45,6 +46,7 @@ impl ClaudeCodeMod {
                     );
                 }
                 None => {
+                    session_active.store(false, Ordering::Relaxed);
                     emitter.emit("claude_code", "claude_session_cleared", serde_json::json!({}));
                     emitter.emit(
                         "claude_code",
@@ -68,14 +70,15 @@ impl Mod for ClaudeCodeMod {
             ClaudeTabState {
                 parser: OscParser::new(),
                 last_cwd: None,
-                active_session_id: None,
+                session_active: Arc::new(AtomicBool::new(false)),
                 awaiting_agent: false,
+                input_buf: Vec::new(),
             },
         );
     }
 
     fn on_output(&mut self, data: &[u8], ctx: &ModContext) {
-        let (scan_trigger, staleness_scan_cwd): (Option<(String, bool)>, Option<String>) = {
+        let (scan_trigger, staleness_scan_cwd, session_active): (Option<(String, bool)>, Option<String>, Arc<AtomicBool>) = {
             let Some(state) = self.tabs.get_mut(ctx.tab_id) else {
                 return;
             };
@@ -99,40 +102,61 @@ impl Mod for ClaudeCodeMod {
                 None
             };
 
-            // OSC 133;A → staleness check
+            // OSC 133;A → staleness check (only if we previously found an active session)
             let has_osc_a = seqs.iter().any(|s| s.code == 133 && s.arg.starts_with('A'));
-            let staleness_scan_cwd = if has_osc_a && state.active_session_id.is_some() {
+            let staleness_scan_cwd = if has_osc_a && state.session_active.load(Ordering::Relaxed) {
                 current_cwd
             } else {
                 None
             };
 
-            (scan_trigger, staleness_scan_cwd)
+            (scan_trigger, staleness_scan_cwd, Arc::clone(&state.session_active))
         };
 
         if let Some((cwd, awaiting)) = scan_trigger {
-            self.trigger_scan(cwd, awaiting, ctx.async_emitter());
+            self.trigger_scan(cwd, awaiting, Arc::clone(&session_active), ctx.async_emitter());
         }
         if let Some(cwd) = staleness_scan_cwd {
-            self.trigger_scan(cwd, false, ctx.async_emitter());
+            self.trigger_scan(cwd, false, Arc::clone(&session_active), ctx.async_emitter());
         }
     }
 
     fn on_input(&mut self, data: &[u8], ctx: &ModContext) {
-        if data.windows(6).any(|w| w == b"claude") {
-            // Extract cwd and set flag before calling trigger_scan
-            let cwd_opt = {
-                let state = self.tabs.get_mut(ctx.tab_id);
-                if let Some(state) = state {
-                    state.awaiting_agent = true;
-                    state.last_cwd.clone()
-                } else {
-                    None
-                }
+        // Phase 1: update buffer state, extract what we need (mutable borrow ends here)
+        let scan_info: Option<(String, Arc<AtomicBool>)> = {
+            let Some(state) = self.tabs.get_mut(ctx.tab_id) else {
+                return;
             };
-            if let Some(cwd) = cwd_opt {
-                self.trigger_scan(cwd, true, ctx.async_emitter());
+
+            let mut trigger = false;
+            for &b in data {
+                if b == b'\r' || b == b'\n' {
+                    let line = String::from_utf8_lossy(&state.input_buf).to_lowercase();
+                    if line.contains("claude") {
+                        state.awaiting_agent = true;
+                        trigger = true;
+                    }
+                    state.input_buf.clear();
+                } else if b == 0x7f || b == 0x08 {
+                    state.input_buf.pop();
+                } else if b >= 0x20 {
+                    state.input_buf.push(b);
+                    if state.input_buf.len() > 256 {
+                        state.input_buf.drain(..128);
+                    }
+                }
             }
+
+            if trigger {
+                state.last_cwd.clone().map(|cwd| (cwd, Arc::clone(&state.session_active)))
+            } else {
+                None
+            }
+        };
+
+        // Phase 2: trigger scan outside the mutable borrow
+        if let Some((cwd, session_active)) = scan_info {
+            self.trigger_scan(cwd, true, session_active, ctx.async_emitter());
         }
     }
 
@@ -146,11 +170,10 @@ impl Mod for ClaudeCodeMod {
 async fn scan_claude_session(cwd: &str, awaiting_agent: bool) -> Option<serde_json::Value> {
     let home = dirs::home_dir()?;
 
-    // Encode cwd: replace all '/' with '-', strip leading '-'
+    // Encode cwd: replace all '/' with '-' (Claude keeps the leading '-')
     let encoded = cwd.replace('/', "-");
-    let encoded = encoded.trim_start_matches('-');
 
-    let dir = home.join(".claude").join("projects").join(encoded);
+    let dir = home.join(".claude").join("projects").join(&encoded);
     if !dir.exists() {
         return None;
     }
