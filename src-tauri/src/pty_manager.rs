@@ -1,3 +1,4 @@
+use crate::mod_engine::ModEngineHandle;
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use serde::Serialize;
 use std::collections::HashMap;
@@ -40,6 +41,7 @@ const READ_BUF_SIZE: usize = 256 * 1024;
 pub fn spawn_pty(
     app: AppHandle,
     pty_map: &PtyMap,
+    mod_handle: ModEngineHandle,
     tab_id: String,
     cwd: Option<String>,
     shell: Option<String>,
@@ -70,6 +72,10 @@ pub fn spawn_pty(
     let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
     let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
 
+    // Notify MODs before the read thread starts so on_open is always processed
+    // before any on_output messages in the engine's ordered channel.
+    mod_handle.on_tab_open(&tab_id);
+
     let tab_id_thread = tab_id.clone();
     std::thread::spawn(move || {
         let mut buf = [0u8; READ_BUF_SIZE];
@@ -82,17 +88,11 @@ pub fn spawn_pty(
                         PtyExitPayload { tab_id: tab_id_thread.clone() },
                     )
                     .ok();
+                    mod_handle.on_tab_close(&tab_id_thread);
                     break;
                 }
                 Ok(n) => {
-                    // Send immediately — never hold data back. read() blocks until
-                    // the kernel has bytes, so whatever it returns is all that's
-                    // available right now. Waiting for more would freeze the terminal
-                    // for interactive output (prompts, keystroke echoes).
-                    //
-                    // Break on send error: the Channel is dropped when the JS side
-                    // is GC'd (tab closed). Continuing to read and silently discard
-                    // output would leak the thread. Exit cleanly instead.
+                    // Send to terminal — always first, never skipped.
                     if on_data
                         .send(PtyDataPayload {
                             data: String::from_utf8_lossy(&buf[..n]).into_owned(),
@@ -101,6 +101,9 @@ pub fn spawn_pty(
                     {
                         break;
                     }
+                    // Forward to MOD engine — non-blocking, silently drops under load.
+                    // The terminal always gets every byte regardless of engine backpressure.
+                    mod_handle.on_output(&tab_id_thread, buf[..n].to_vec());
                 }
             }
         }

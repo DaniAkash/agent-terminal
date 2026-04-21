@@ -1,6 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { IPC } from '@/modules/ipc/commands'
+import { startModListener } from '@/modules/mods/mod-listener'
 import { initNavigation } from '@/modules/stores/$navigation'
 import { $projects } from '@/modules/stores/$projects'
 import { WorkspaceLayout } from '@/screens/workspace/WorkspaceLayout'
@@ -8,6 +9,9 @@ import type { Project } from '@/screens/workspace/workspace.types'
 import './index.css'
 
 async function bootstrap() {
+  // Start MOD event listener before render so no events are missed.
+  await startModListener()
+
   try {
     const saved = (await IPC.listProjects()) as Project[]
     if (saved.length > 0) {
