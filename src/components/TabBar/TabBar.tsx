@@ -24,6 +24,7 @@ import {
 } from '@/components/ui/context-menu'
 import { cn } from '@/lib/utils'
 import {
+  $activeProjectId,
   $activeTabId,
   navigateToTab,
   onTabRemoved,
@@ -34,6 +35,7 @@ import {
   reorderTabs,
   toggleTabPin,
 } from '@/modules/stores/$projects'
+import { $tabMeta } from '@/modules/stores/$tabMeta'
 import { MONO_FONT, makeTabKey } from '@/screens/workspace/workspace.helpers'
 import type { Project, Tab } from '@/screens/workspace/workspace.types'
 
@@ -162,7 +164,12 @@ export function TabBar({ project }: { project: Project }) {
   }
 
   function handleAddTab() {
-    const newTab = addTab(project.id)
+    const projectId = $activeProjectId.get()
+    const tabId = $activeTabId.get()[projectId]
+    const cwd = tabId
+      ? ($tabMeta.get()[makeTabKey(projectId, tabId)]?.cwd ?? '')
+      : ''
+    const newTab = addTab(project.id, cwd || undefined)
     if (newTab) {
       navigateToTab(project.id, newTab.id)
     }

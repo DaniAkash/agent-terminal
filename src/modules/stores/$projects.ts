@@ -100,7 +100,7 @@ export function removeTab(projectId: string, tabId: string): void {
   IPC.saveProjects(updated)
 }
 
-export function addTab(projectId: string): Tab | null {
+export function addTab(projectId: string, inheritCwd?: string): Tab | null {
   const projects = $projects.get()
   const project = projects.find((p) => p.id === projectId)
   if (!project) return null
@@ -110,6 +110,7 @@ export function addTab(projectId: string): Tab | null {
     label,
     cmd: '',
     pinned: false,
+    lastCwd: inheritCwd || undefined,
   }
   const updated = projects.map((p) =>
     p.id !== projectId ? p : { ...p, tabs: [...p.tabs, newTab] },
@@ -119,16 +120,26 @@ export function addTab(projectId: string): Tab | null {
   return newTab
 }
 
-export function addProject(name: string, path: string): Project {
+export function addProject(inheritCwd?: string): Project {
+  const projects = $projects.get()
+  const name = `Project ${projects.length + 1}`
   const id = `${slugify(name)}-${randomSuffix()}`
   const project: Project = {
     id,
-    name: name.trim(),
-    path: path.trim(),
+    name,
+    path: inheritCwd ?? '',
     pinned: false,
-    tabs: [{ id: 'shell', label: 'shell', cmd: '', pinned: false }],
+    tabs: [
+      {
+        id: 'shell',
+        label: 'shell',
+        cmd: '',
+        pinned: false,
+        lastCwd: inheritCwd || undefined,
+      },
+    ],
   }
-  const updated = [...$projects.get(), project]
+  const updated = [...projects, project]
   $projects.set(updated)
   $expanded.set({ ...$expanded.get(), [id]: true })
   IPC.saveProjects(updated)
