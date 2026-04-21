@@ -34,7 +34,7 @@ import {
   reorderTabs,
   toggleTabPin,
 } from '@/modules/stores/$projects'
-import { MONO_FONT } from '@/screens/workspace/workspace.helpers'
+import { MONO_FONT, makeTabKey } from '@/screens/workspace/workspace.helpers'
 import type { Project, Tab } from '@/screens/workspace/workspace.types'
 
 /* ---------------------------------------------------------------------------
@@ -90,7 +90,7 @@ function TabItem({ tab, projectId }: { tab: Tab; projectId: string }) {
               className="flex flex-1 cursor-pointer items-center gap-1.5 overflow-hidden pr-1 pl-3"
               onClick={() => navigateToTab(projectId, tab.id)}
             >
-              <TabStatusIcon tabId={tab.id} />
+              <TabStatusIcon tabId={makeTabKey(projectId, tab.id)} />
               <span className="truncate" style={{ fontFamily: MONO_FONT }}>
                 {tab.label}
               </span>
@@ -218,7 +218,9 @@ export function TabBar({ project }: { project: Project }) {
         className="flex h-7 items-center gap-2 pr-1"
         style={{ fontFamily: MONO_FONT, fontSize: 10.5 }}
       >
-        {activeTabId && <GitBadge tabId={activeTabId} />}
+        {activeTabId && (
+          <GitBadge tabId={makeTabKey(project.id, activeTabId)} />
+        )}
         <span className="pointer-events-none text-tab-fg opacity-50">
           {project.path}
         </span>

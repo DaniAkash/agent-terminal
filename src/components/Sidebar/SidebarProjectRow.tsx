@@ -35,6 +35,7 @@ import {
   toggleProjectPin,
 } from '@/modules/stores/$projects'
 import { $tabMeta } from '@/modules/stores/$tabMeta'
+import { makeTabKey } from '@/screens/workspace/workspace.helpers'
 import type { Project } from '@/screens/workspace/workspace.types'
 
 export function SidebarProjectRow({ project }: { project: Project }) {
@@ -61,7 +62,7 @@ export function SidebarProjectRow({ project }: { project: Project }) {
     ...project.tabs.filter((t) => !t.pinned),
   ]
   const anyRunning = project.tabs.some(
-    (t) => allTabMeta[t.id]?.status === 'running',
+    (t) => allTabMeta[makeTabKey(project.id, t.id)]?.status === 'running',
   )
 
   function handleTabDragEnd(event: DragEndEvent) {

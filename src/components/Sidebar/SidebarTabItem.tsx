@@ -18,7 +18,7 @@ import {
 } from '@/modules/stores/$navigation'
 import { toggleTabPin } from '@/modules/stores/$projects'
 import { $tabMeta } from '@/modules/stores/$tabMeta'
-import { MONO_FONT } from '@/screens/workspace/workspace.helpers'
+import { MONO_FONT, makeTabKey } from '@/screens/workspace/workspace.helpers'
 import type { Tab } from '@/screens/workspace/workspace.types'
 
 export function SidebarTabItem({
@@ -33,7 +33,7 @@ export function SidebarTabItem({
   const allTabMeta = useStore($tabMeta)
   const isActive =
     activeProjectId === projectId && activeTabsByProject[projectId] === tab.id
-  const tabMeta = allTabMeta[tab.id]
+  const tabMeta = allTabMeta[makeTabKey(projectId, tab.id)]
   const prUrl = tabMeta?.git?.pr?.url
 
   const {
@@ -94,7 +94,7 @@ export function SidebarTabItem({
                 #{tabMeta.git.pr.number}
               </button>
             )}
-            <TabStatusIcon tabId={tab.id} />
+            <TabStatusIcon tabId={makeTabKey(projectId, tab.id)} />
             {tab.pinned && <Pin size={9} className="shrink-0 opacity-50" />}
           </button>
         </div>
