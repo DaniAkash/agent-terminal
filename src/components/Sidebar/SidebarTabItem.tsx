@@ -81,18 +81,19 @@ export function SidebarTabItem({
               {tab.label}
             </span>
             {tabMeta?.git?.pr && prUrl && (
-              <button
-                type="button"
+              <a
+                href={prUrl}
                 className="shrink-0 rounded px-1 text-[9.5px] text-accent opacity-70 hover:opacity-100"
                 style={{ fontFamily: MONO_FONT }}
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={(e) => {
+                  e.preventDefault()
                   e.stopPropagation()
                   openUrl(prUrl).catch(() => {})
                 }}
               >
                 #{tabMeta.git.pr.number}
-              </button>
+              </a>
             )}
             <TabStatusIcon tabId={makeTabKey(projectId, tab.id)} />
             {tab.pinned && <Pin size={9} className="shrink-0 opacity-50" />}

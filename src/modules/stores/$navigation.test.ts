@@ -168,9 +168,7 @@ describe('onTabRemoved()', () => {
         name: 'solo',
         path: '~',
         pinned: false,
-        tabs: [
-          { id: 'only', label: 'only', cmd: '', running: false, pinned: false },
-        ],
+        tabs: [{ id: 'only', label: 'only', cmd: '', pinned: false }],
       },
     ])
     navigateToTab('solo', 'only')

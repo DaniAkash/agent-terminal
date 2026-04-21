@@ -30,7 +30,7 @@ export function TabStatusIcon({ tabId }: Props) {
       <span
         className={`shrink-0 text-violet-400 ${isRunning ? 'opacity-90' : 'opacity-50'}`}
         style={{ fontSize: 10, lineHeight: 1 }}
-        aria-label="AI agent active"
+        aria-hidden="true"
       >
         ✦
       </span>
