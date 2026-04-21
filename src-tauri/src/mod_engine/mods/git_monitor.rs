@@ -61,7 +61,7 @@ impl Mod for GitMonitorMod {
             loop {
                 interval.tick().await;
                 let cwd = {
-                    let reg = cwd_registry.read().await;
+                    let reg = cwd_registry.read().unwrap();
                     reg.get(&tab_id_clone).cloned()
                 };
                 if let Some(cwd) = cwd {
@@ -101,7 +101,7 @@ impl Mod for GitMonitorMod {
         };
 
         let current_cwd = {
-            let reg = self.cwd_registry.blocking_read();
+            let reg = self.cwd_registry.read().unwrap();
             reg.get(ctx.tab_id).cloned()
         };
 

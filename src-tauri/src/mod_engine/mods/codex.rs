@@ -134,7 +134,7 @@ impl Mod for CodexMod {
             let seqs = state.parser.feed(data);
 
             let current_cwd = {
-                let reg = self.cwd_registry.blocking_read();
+                let reg = self.cwd_registry.read().unwrap();
                 reg.get(ctx.tab_id).cloned()
             };
 

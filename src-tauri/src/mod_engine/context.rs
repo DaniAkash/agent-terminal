@@ -1,7 +1,7 @@
 use serde::Serialize;
 use std::collections::HashMap;
-use std::sync::Arc;
-use tokio::sync::{RwLock, mpsc};
+use std::sync::{Arc, RwLock};
+use tokio::sync::mpsc;
 
 /// A structured event emitted by a MOD and forwarded to the frontend via `mod:event`.
 #[derive(Serialize, Clone)]

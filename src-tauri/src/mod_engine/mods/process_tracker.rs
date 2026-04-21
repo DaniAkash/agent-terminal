@@ -62,9 +62,14 @@ impl Mod for ProcessTrackerMod {
             if seq.code != 133 {
                 continue;
             }
-
             let new_status = if seq.arg.starts_with('A') {
-                ProcStatus::Idle
+                // OSC 133;A = prompt mark. Only revert to Idle from Running or
+                // Idle itself. Error and Done must persist until the next command
+                // starts (OSC 133;B) so the user can see the outcome.
+                match &state.status {
+                    ProcStatus::Error(_) | ProcStatus::Done(_) => continue,
+                    _ => ProcStatus::Idle,
+                }
             } else if seq.arg.starts_with('B') {
                 ProcStatus::Running
             } else if let Some(rest) = seq.arg.strip_prefix('D') {
@@ -115,3 +120,4 @@ impl Mod for ProcessTrackerMod {
         self.tabs.remove(ctx.tab_id);
     }
 }
+

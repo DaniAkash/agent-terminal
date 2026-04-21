@@ -44,7 +44,7 @@ impl Mod for ProcessInspectorMod {
             loop {
                 interval.tick().await;
                 let cwd = {
-                    let reg = cwd_registry.read().await;
+                    let reg = cwd_registry.read().unwrap();
                     reg.get(&tab_id_clone).cloned()
                 };
                 let Some(cwd) = cwd else { continue };

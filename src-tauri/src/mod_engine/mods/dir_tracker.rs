@@ -45,9 +45,9 @@ impl Mod for DirTrackerMod {
                 continue;
             };
 
-            // Write to registry (async-aware: use blocking_write on tokio RwLock)
+            // Write to registry
             {
-                let mut reg = self.cwd_registry.blocking_write();
+                let mut reg = self.cwd_registry.write().unwrap();
                 reg.insert(ctx.tab_id.to_string(), path.clone());
             }
 
@@ -62,7 +62,7 @@ impl Mod for DirTrackerMod {
     fn on_close(&mut self, ctx: &ModContext) {
         self.parsers.remove(ctx.tab_id);
         {
-            let mut reg = self.cwd_registry.blocking_write();
+            let mut reg = self.cwd_registry.write().unwrap();
             reg.remove(ctx.tab_id);
         }
         // Signal the frontend to GC tabMeta for this tab.
