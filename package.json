@@ -24,6 +24,7 @@
     "@nanostores/react": "^1.1.0",
     "@tailwindcss/vite": "^4.2.2",
     "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-dialog": "^2.7.0",
     "@tauri-apps/plugin-opener": "^2",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-unicode11": "^0.9.0",

@@ -13,7 +13,17 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { useStore } from '@nanostores/react'
-import { $projects, reorderProjects } from '@/modules/stores/$projects'
+import {
+  $activeProjectId,
+  $activeTabId,
+  navigateToProject,
+  navigateToTab,
+} from '@/modules/stores/$navigation'
+import {
+  $projects,
+  addProject,
+  reorderProjects,
+} from '@/modules/stores/$projects'
 import { $tabMeta } from '@/modules/stores/$tabMeta'
 import { makeTabKey } from '@/screens/workspace/workspace.helpers'
 import { SidebarProjectRow } from './SidebarProjectRow'
@@ -47,8 +57,19 @@ export function Sidebar() {
     if (!over || active.id === over.id) return
     const oldIndex = projects.findIndex((p) => p.id === active.id)
     const newIndex = projects.findIndex((p) => p.id === over.id)
-    if (projects[newIndex]?.pinned) return
+    if (projects[oldIndex]?.pinned !== projects[newIndex]?.pinned) return
     reorderProjects(oldIndex, newIndex)
+  }
+
+  function handleAddProject() {
+    const projectId = $activeProjectId.get()
+    const tabId = $activeTabId.get()[projectId]
+    const cwd = tabId
+      ? ($tabMeta.get()[makeTabKey(projectId, tabId)]?.cwd ?? '')
+      : ''
+    const project = addProject(cwd || undefined)
+    navigateToProject(project.id)
+    navigateToTab(project.id, 'shell')
   }
 
   return (
@@ -68,27 +89,39 @@ export function Sidebar() {
 
       {/* Project tree */}
       <div className="flex-1 overflow-y-auto py-1.5">
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={handleDragEnd}
-        >
-          <SortableContext
-            items={ordered.map((p) => p.id)}
-            strategy={verticalListSortingStrategy}
+        {projects.length === 0 ? (
+          <div className="flex flex-col items-center justify-center gap-1 px-4 py-8 text-center">
+            <p className="text-[12px] text-sidebar-fg opacity-60">
+              No projects yet.
+            </p>
+            <p className="text-[11px] text-sidebar-fg opacity-40">
+              Click below to add your first project.
+            </p>
+          </div>
+        ) : (
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
           >
-            {ordered.map((p) => (
-              <SidebarProjectRow key={p.id} project={p} />
-            ))}
-          </SortableContext>
-        </DndContext>
+            <SortableContext
+              items={ordered.map((p) => p.id)}
+              strategy={verticalListSortingStrategy}
+            >
+              {ordered.map((p) => (
+                <SidebarProjectRow key={p.id} project={p} />
+              ))}
+            </SortableContext>
+          </DndContext>
+        )}
 
         <button
           type="button"
+          onClick={handleAddProject}
           className="mx-1.5 mt-1 flex h-[26px] w-[calc(100%-12px)] items-center gap-1.5 rounded-md px-3 text-[12px] text-sidebar-fg opacity-70 hover:bg-sidebar-hover hover:opacity-100"
         >
           <span className="text-[13px] leading-none">+</span>
-          <span>Add project…</span>
+          <span>New project</span>
         </button>
       </div>
 

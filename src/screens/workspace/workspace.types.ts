@@ -3,6 +3,7 @@ export type Tab = {
   label: string
   cmd: string
   pinned: boolean
+  lastCwd?: string
 }
 
 export type Project = {

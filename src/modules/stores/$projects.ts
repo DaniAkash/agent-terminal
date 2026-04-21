@@ -3,15 +3,17 @@ import { IPC } from '@/modules/ipc/commands'
 import {
   dedupeLabel,
   makeTabKey,
-  SEED_PROJECTS,
+  randomSuffix,
+  slugify,
 } from '@/screens/workspace/workspace.helpers'
 import type { Project, Tab } from '@/screens/workspace/workspace.types'
 
-export const $projects = atom<Project[]>(structuredClone(SEED_PROJECTS))
-export const $expanded = atom<Record<string, boolean>>({
-  'claude-ui': true,
-  'api-service': true,
-})
+export const $projects = atom<Project[]>([])
+export const $expanded = atom<Record<string, boolean>>({})
+
+function persist(projects: Project[]): void {
+  IPC.saveProjects(projects).catch(() => {})
+}
 
 function arrayMove<T>(arr: T[], from: number, to: number): T[] {
   const result = [...arr]
@@ -34,7 +36,7 @@ export function toggleProjectPin(projectId: string): void {
     ...updated.filter((p) => !p.pinned),
   ]
   $projects.set(sorted)
-  IPC.saveProjects(sorted)
+  persist(sorted)
 }
 
 export function toggleTabPin(projectId: string, tabId: string): void {
@@ -50,13 +52,13 @@ export function toggleTabPin(projectId: string, tabId: string): void {
     return { ...p, tabs: sorted }
   })
   $projects.set(updated)
-  IPC.saveProjects(updated)
+  persist(updated)
 }
 
 export function reorderProjects(oldIndex: number, newIndex: number): void {
   const reordered = arrayMove($projects.get(), oldIndex, newIndex)
   $projects.set(reordered)
-  IPC.saveProjects(reordered)
+  persist(reordered)
 }
 
 export function reorderTabs(
@@ -73,7 +75,7 @@ export function reorderTabs(
     return { ...p, tabs: arrayMove(ordered, oldIndex, newIndex) }
   })
   $projects.set(updated)
-  IPC.saveProjects(updated)
+  persist(updated)
 }
 
 export function removeProject(projectId: string): void {
@@ -86,7 +88,7 @@ export function removeProject(projectId: string): void {
   }
   const updated = projects.filter((p) => p.id !== projectId)
   $projects.set(updated)
-  IPC.saveProjects(updated)
+  persist(updated)
 }
 
 export function removeTab(projectId: string, tabId: string): void {
@@ -99,24 +101,91 @@ export function removeTab(projectId: string, tabId: string): void {
         : { ...p, tabs: p.tabs.filter((t) => t.id !== tabId) },
     )
   $projects.set(updated)
-  IPC.saveProjects(updated)
+  persist(updated)
 }
 
-export function addTab(projectId: string): Tab | null {
+export function addTab(projectId: string, inheritCwd?: string): Tab | null {
   const projects = $projects.get()
   const project = projects.find((p) => p.id === projectId)
   if (!project) return null
   const label = dedupeLabel(project.tabs.map((t) => t.label))
   const newTab: Tab = {
-    id: `${projectId}-${label}`,
+    id: `${label}-${randomSuffix()}`,
     label,
     cmd: '',
     pinned: false,
+    lastCwd: inheritCwd || undefined,
   }
   const updated = projects.map((p) =>
     p.id !== projectId ? p : { ...p, tabs: [...p.tabs, newTab] },
   )
   $projects.set(updated)
-  IPC.saveProjects(updated)
+  persist(updated)
   return newTab
+}
+
+export function addProject(inheritCwd?: string): Project {
+  const projects = $projects.get()
+  const name = `Project ${projects.length + 1}`
+  const id = `${slugify(name)}-${randomSuffix()}`
+  const project: Project = {
+    id,
+    name,
+    path: inheritCwd ?? '',
+    pinned: false,
+    tabs: [
+      {
+        id: 'shell',
+        label: 'shell',
+        cmd: '',
+        pinned: false,
+        lastCwd: inheritCwd || undefined,
+      },
+    ],
+  }
+  const updated = [...projects, project]
+  $projects.set(updated)
+  $expanded.set({ ...$expanded.get(), [id]: true })
+  persist(updated)
+  return project
+}
+
+export function renameProject(projectId: string, newName: string): void {
+  const updated = $projects
+    .get()
+    .map((p) => (p.id === projectId ? { ...p, name: newName.trim() } : p))
+  $projects.set(updated)
+  persist(updated)
+}
+
+export function renameTab(
+  projectId: string,
+  tabId: string,
+  newLabel: string,
+): void {
+  const updated = $projects.get().map((p) => {
+    if (p.id !== projectId) return p
+    return {
+      ...p,
+      tabs: p.tabs.map((t) =>
+        t.id === tabId ? { ...t, label: newLabel.trim() } : t,
+      ),
+    }
+  })
+  $projects.set(updated)
+  persist(updated)
+}
+
+export function updateTabCwd(tabKey: string, cwd: string): void {
+  const [projectId, tabId] = tabKey.split(':')
+  if (!projectId || !tabId) return
+  const updated = $projects.get().map((p) => {
+    if (p.id !== projectId) return p
+    return {
+      ...p,
+      tabs: p.tabs.map((t) => (t.id === tabId ? { ...t, lastCwd: cwd } : t)),
+    }
+  })
+  $projects.set(updated)
+  persist(updated)
 }

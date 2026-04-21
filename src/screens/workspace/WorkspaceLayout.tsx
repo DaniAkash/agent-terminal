@@ -45,6 +45,9 @@ function onKeyDown(e: KeyboardEvent) {
   } else if (e.key === 'w') {
     // Guard: no active tab means nothing to close (avoids sending empty tabKey to backend)
     if (!tabId) return
+    // Guard: pinned tabs cannot be closed by keyboard shortcut
+    const activeTab = project.tabs.find((t) => t.id === tabId)
+    if (activeTab?.pinned) return
     e.preventDefault()
     handleCloseTab(projectId, tabId)
   } else if (/^[1-9]$/.test(e.key)) {

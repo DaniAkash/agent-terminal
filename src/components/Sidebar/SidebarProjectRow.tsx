@@ -14,6 +14,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { useStore } from '@nanostores/react'
 import { ChevronRight, Folder, Pin } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import { RunningDot } from '@/components/RunningDot'
 import { SidebarTabItem } from '@/components/Sidebar/SidebarTabItem'
 import {
@@ -30,6 +31,7 @@ import {
 import {
   $expanded,
   removeProject,
+  renameProject,
   reorderTabs,
   toggleExpanded,
   toggleProjectPin,
@@ -44,6 +46,7 @@ export function SidebarProjectRow({ project }: { project: Project }) {
   const activeProjectId = useStore($activeProjectId)
   const isActive = activeProjectId === project.id
   const allTabMeta = useStore($tabMeta)
+  const [renaming, setRenaming] = useState(false)
 
   const {
     attributes,
@@ -52,7 +55,7 @@ export function SidebarProjectRow({ project }: { project: Project }) {
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: project.id, disabled: project.pinned })
+  } = useSortable({ id: project.id })
 
   const tabSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -70,8 +73,13 @@ export function SidebarProjectRow({ project }: { project: Project }) {
     if (!over || active.id === over.id) return
     const oldIdx = orderedTabs.findIndex((t) => t.id === active.id)
     const newIdx = orderedTabs.findIndex((t) => t.id === over.id)
-    if (orderedTabs[newIdx]?.pinned) return
+    if (orderedTabs[oldIdx]?.pinned !== orderedTabs[newIdx]?.pinned) return
     reorderTabs(project.id, oldIdx, newIdx)
+  }
+
+  function handleRename(newName: string) {
+    setRenaming(false)
+    if (newName) renameProject(project.id, newName)
   }
 
   return (
@@ -83,7 +91,7 @@ export function SidebarProjectRow({ project }: { project: Project }) {
         opacity: isDragging ? 0.5 : 1,
       }}
       {...attributes}
-      {...(!project.pinned ? listeners : {})}
+      {...listeners}
     >
       <ContextMenu>
         <ContextMenuTrigger className="block">
@@ -91,14 +99,17 @@ export function SidebarProjectRow({ project }: { project: Project }) {
             type="button"
             className={cn(
               'mx-1.5 flex h-[26px] w-[calc(100%-12px)] cursor-grab select-none items-center gap-1.5 rounded-md px-1.5 text-left text-[12.5px]',
-              project.pinned && 'cursor-pointer',
               isActive
                 ? 'bg-sidebar-active text-sidebar-fg-strong'
                 : 'text-sidebar-fg hover:bg-sidebar-hover',
             )}
             onClick={() => {
+              if (renaming) return
               toggleExpanded(project.id)
               navigateToProject(project.id)
+            }}
+            onDoubleClick={() => {
+              if (!renaming) setRenaming(true)
             }}
           >
             <span
@@ -122,17 +133,43 @@ export function SidebarProjectRow({ project }: { project: Project }) {
                   : 'var(--sidebar-foreground)',
               }}
             />
-            <span className="flex-1 truncate font-medium">{project.name}</span>
-            {anyRunning && !isOpen && <RunningDot />}
-            {project.pinned && <Pin size={9} className="shrink-0 opacity-50" />}
+            {renaming ? (
+              <InlineEdit
+                value={project.name}
+                onSave={handleRename}
+                onCancel={() => setRenaming(false)}
+                className="flex-1 bg-transparent text-[12.5px] outline-none"
+              />
+            ) : (
+              <span className="flex-1 truncate font-medium">
+                {project.name}
+              </span>
+            )}
+            {anyRunning && !isOpen && !renaming && <RunningDot />}
+            {project.pinned && !renaming && (
+              <span
+                title="Unpin project"
+                className="shrink-0 opacity-50 hover:opacity-100"
+                onPointerDown={(e) => {
+                  e.stopPropagation()
+                  e.preventDefault()
+                  toggleProjectPin(project.id)
+                }}
+              >
+                <Pin size={9} />
+              </span>
+            )}
           </button>
         </ContextMenuTrigger>
         <ContextMenuContent className="w-44 text-[12px]">
-          <ContextMenuItem onSelect={() => toggleProjectPin(project.id)}>
+          <ContextMenuItem onClick={() => setRenaming(true)}>
+            Rename
+          </ContextMenuItem>
+          <ContextMenuItem onClick={() => toggleProjectPin(project.id)}>
             {project.pinned ? 'Unpin project' : 'Pin project'}
           </ContextMenuItem>
           <ContextMenuItem
-            onSelect={() => removeProject(project.id)}
+            onClick={() => removeProject(project.id)}
             className="text-destructive"
           >
             Remove project
@@ -160,5 +197,51 @@ export function SidebarProjectRow({ project }: { project: Project }) {
         </DndContext>
       </div>
     </div>
+  )
+}
+
+/* ---------------------------------------------------------------------------
+ * InlineEdit — borderless input that replaces a label on double-click
+ * -------------------------------------------------------------------------*/
+
+function InlineEdit({
+  value,
+  onSave,
+  onCancel,
+  className,
+}: {
+  value: string
+  onSave: (v: string) => void
+  onCancel: () => void
+  className?: string
+}) {
+  const [draft, setDraft] = useState(value)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    inputRef.current?.focus()
+    inputRef.current?.select()
+  }, [])
+
+  return (
+    <input
+      ref={inputRef}
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onKeyDown={(e) => {
+        e.stopPropagation()
+        if (e.key === 'Enter') {
+          const trimmed = draft.trim()
+          trimmed ? onSave(trimmed) : onCancel()
+        }
+        if (e.key === 'Escape') onCancel()
+      }}
+      onBlur={() => {
+        const trimmed = draft.trim()
+        trimmed ? onSave(trimmed) : onCancel()
+      }}
+      onClick={(e) => e.stopPropagation()}
+      className={className}
+    />
   )
 }

@@ -27,6 +27,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             // Best-effort: write shell integration scripts. Never fail app startup.
             if let Err(e) = setup_shell_integration() {
@@ -53,6 +54,7 @@ pub fn run() {
             commands::resize_pty,
             commands::close_tab,
             commands::list_projects,
+            commands::save_projects,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

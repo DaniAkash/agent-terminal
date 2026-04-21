@@ -47,7 +47,7 @@ export function WorkspaceView({ project }: Props) {
               <TerminalPane
                 projectId={project.id}
                 tabId={tab.id}
-                cwd={project.path}
+                cwd={tab.lastCwd ?? project.path}
               />
             </div>
           )

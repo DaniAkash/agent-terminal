@@ -82,7 +82,26 @@ pub async fn close_tab(
 }
 
 #[tauri::command]
+pub async fn save_projects(projects: serde_json::Value) -> Result<(), String> {
+    let path = projects_config_path()?;
+    let parent = path.parent().unwrap().to_owned();
+    tokio::fs::create_dir_all(&parent).await.map_err(|e| e.to_string())?;
+    let json = serde_json::to_string_pretty(&projects).map_err(|e| e.to_string())?;
+    tokio::fs::write(&path, json).await.map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn list_projects() -> Result<serde_json::Value, String> {
-    // Milestone 3: reads from ~/.config/agent-terminal/projects.json
-    Ok(serde_json::json!([]))
+    let path = projects_config_path()?;
+    if !path.exists() {
+        return Ok(serde_json::json!([]));
+    }
+    let raw = tokio::fs::read_to_string(&path).await.map_err(|e| e.to_string())?;
+    serde_json::from_str(&raw).map_err(|e| e.to_string())
+}
+
+fn projects_config_path() -> Result<std::path::PathBuf, String> {
+    let home = dirs::home_dir().ok_or("could not determine home directory")?;
+    Ok(home.join(".config/agent-terminal/projects.json"))
 }

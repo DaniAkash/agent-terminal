@@ -24,6 +24,7 @@ import {
 } from '@/components/ui/context-menu'
 import { cn } from '@/lib/utils'
 import {
+  $activeProjectId,
   $activeTabId,
   navigateToTab,
   onTabRemoved,
@@ -34,6 +35,7 @@ import {
   reorderTabs,
   toggleTabPin,
 } from '@/modules/stores/$projects'
+import { $tabMeta } from '@/modules/stores/$tabMeta'
 import { MONO_FONT, makeTabKey } from '@/screens/workspace/workspace.helpers'
 import type { Project, Tab } from '@/screens/workspace/workspace.types'
 
@@ -51,7 +53,7 @@ function TabItem({ tab, projectId }: { tab: Tab; projectId: string }) {
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: tab.id, disabled: tab.pinned })
+  } = useSortable({ id: tab.id })
 
   // Destructure role out so Biome doesn't see a static role="button" on a div,
   // but keep the rest of the a11y attributes (aria-describedby, tabIndex, etc.)
@@ -126,10 +128,10 @@ function TabItem({ tab, projectId }: { tab: Tab; projectId: string }) {
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent className="w-40 text-[12px]">
-        <ContextMenuItem onSelect={() => toggleTabPin(projectId, tab.id)}>
+        <ContextMenuItem onClick={() => toggleTabPin(projectId, tab.id)}>
           {tab.pinned ? 'Unpin tab' : 'Pin tab'}
         </ContextMenuItem>
-        <ContextMenuItem onSelect={handleClose} className="text-destructive">
+        <ContextMenuItem onClick={handleClose} className="text-destructive">
           Close tab
         </ContextMenuItem>
       </ContextMenuContent>
@@ -157,12 +159,17 @@ export function TabBar({ project }: { project: Project }) {
     if (!over || active.id === over.id) return
     const oldIdx = orderedTabs.findIndex((t) => t.id === active.id)
     const newIdx = orderedTabs.findIndex((t) => t.id === over.id)
-    if (orderedTabs[newIdx]?.pinned) return
+    if (orderedTabs[oldIdx]?.pinned !== orderedTabs[newIdx]?.pinned) return
     reorderTabs(project.id, oldIdx, newIdx)
   }
 
   function handleAddTab() {
-    const newTab = addTab(project.id)
+    const projectId = $activeProjectId.get()
+    const tabId = $activeTabId.get()[projectId]
+    const cwd = tabId
+      ? ($tabMeta.get()[makeTabKey(projectId, tabId)]?.cwd ?? '')
+      : ''
+    const newTab = addTab(project.id, cwd || undefined)
     if (newTab) {
       navigateToTab(project.id, newTab.id)
     }

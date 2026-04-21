@@ -22,10 +22,44 @@ import {
   onTabRemoved,
 } from '@/modules/stores/$navigation'
 import { $projects, addTab, removeTab } from '@/modules/stores/$projects'
-import { SEED_PROJECTS } from '@/screens/workspace/workspace.helpers'
+import type { Project } from '@/screens/workspace/workspace.types'
+
+// Fixtures used across tests — mirrors old SEED_PROJECTS shape
+const TEST_PROJECTS: Project[] = [
+  {
+    id: 'claude-ui',
+    name: 'claude-ui',
+    path: '~/work/claude-ui',
+    pinned: false,
+    tabs: [
+      { id: 'dev', label: 'dev', cmd: 'pnpm dev', pinned: false },
+      { id: 'server', label: 'server', cmd: 'node server.mjs', pinned: false },
+      { id: 'git', label: 'git', cmd: 'git status', pinned: false },
+      { id: 'repl', label: 'repl', cmd: 'node', pinned: false },
+    ],
+  },
+  {
+    id: 'api-service',
+    name: 'api-service',
+    path: '~/work/api-service',
+    pinned: false,
+    tabs: [
+      { id: 'dev', label: 'dev', cmd: 'cargo watch -x run', pinned: false },
+      { id: 'db', label: 'db', cmd: 'psql billing_dev', pinned: false },
+      { id: 'logs', label: 'logs', cmd: 'tail -f app.log', pinned: false },
+    ],
+  },
+  {
+    id: 'dotfiles',
+    name: 'dotfiles',
+    path: '~/.dotfiles',
+    pinned: false,
+    tabs: [{ id: 'shell', label: 'shell', cmd: 'zsh', pinned: false }],
+  },
+]
 
 beforeEach(() => {
-  $projects.set(structuredClone(SEED_PROJECTS))
+  $projects.set(structuredClone(TEST_PROJECTS))
   $activeProjectId.set('')
   $activeTabId.set({})
 })
@@ -84,7 +118,7 @@ describe('navigateToProject()', () => {
 
   test('7: does not set tab id when project has no tabs', () => {
     $projects.set([
-      ...SEED_PROJECTS,
+      ...TEST_PROJECTS,
       { id: 'empty', name: 'empty', path: '~', tabs: [], pinned: false },
     ])
     navigateToProject('empty')
