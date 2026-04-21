@@ -47,6 +47,7 @@ export const XTermTerminal = React.memo(function XTermTerminal({
 
     // xterm is fully synchronous — no WASM init required.
     const term = new Terminal({
+      allowProposedApi: true, // required by @xterm/addon-webgl
       theme: {
         background: '#0d0d0d',
         foreground: '#e8e8e8',
