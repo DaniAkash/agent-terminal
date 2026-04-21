@@ -148,19 +148,29 @@ export function SidebarProjectRow({ project }: { project: Project }) {
             )}
             {anyRunning && !isOpen && !renaming && <RunningDot />}
             {project.pinned && !renaming && (
-              <Pin size={9} className="shrink-0 opacity-50" />
+              <span
+                title="Unpin project"
+                className="shrink-0 opacity-50 hover:opacity-100"
+                onPointerDown={(e) => {
+                  e.stopPropagation()
+                  e.preventDefault()
+                  toggleProjectPin(project.id)
+                }}
+              >
+                <Pin size={9} />
+              </span>
             )}
           </button>
         </ContextMenuTrigger>
         <ContextMenuContent className="w-44 text-[12px]">
-          <ContextMenuItem onSelect={() => setRenaming(true)}>
+          <ContextMenuItem onClick={() => setRenaming(true)}>
             Rename
           </ContextMenuItem>
-          <ContextMenuItem onSelect={() => toggleProjectPin(project.id)}>
+          <ContextMenuItem onClick={() => toggleProjectPin(project.id)}>
             {project.pinned ? 'Unpin project' : 'Pin project'}
           </ContextMenuItem>
           <ContextMenuItem
-            onSelect={() => removeProject(project.id)}
+            onClick={() => removeProject(project.id)}
             className="text-destructive"
           >
             Remove project

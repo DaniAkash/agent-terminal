@@ -126,20 +126,30 @@ export function SidebarTabItem({
               <TabStatusIcon tabId={makeTabKey(projectId, tab.id)} />
             )}
             {tab.pinned && !renaming && (
-              <Pin size={9} className="shrink-0 opacity-50" />
+              <span
+                title="Unpin tab"
+                className="shrink-0 opacity-50 hover:opacity-100"
+                onPointerDown={(e) => {
+                  e.stopPropagation()
+                  e.preventDefault()
+                  toggleTabPin(projectId, tab.id)
+                }}
+              >
+                <Pin size={9} />
+              </span>
             )}
           </button>
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent className="w-40 text-[12px]">
-        <ContextMenuItem onSelect={() => setRenaming(true)}>
+        <ContextMenuItem onClick={() => setRenaming(true)}>
           Rename
         </ContextMenuItem>
-        <ContextMenuItem onSelect={() => toggleTabPin(projectId, tab.id)}>
+        <ContextMenuItem onClick={() => toggleTabPin(projectId, tab.id)}>
           {tab.pinned ? 'Unpin tab' : 'Pin tab'}
         </ContextMenuItem>
         {!tab.pinned && (
-          <ContextMenuItem onSelect={handleClose} className="text-destructive">
+          <ContextMenuItem onClick={handleClose} className="text-destructive">
             Close tab
           </ContextMenuItem>
         )}

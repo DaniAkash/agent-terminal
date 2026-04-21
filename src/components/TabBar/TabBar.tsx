@@ -128,10 +128,10 @@ function TabItem({ tab, projectId }: { tab: Tab; projectId: string }) {
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent className="w-40 text-[12px]">
-        <ContextMenuItem onSelect={() => toggleTabPin(projectId, tab.id)}>
+        <ContextMenuItem onClick={() => toggleTabPin(projectId, tab.id)}>
           {tab.pinned ? 'Unpin tab' : 'Pin tab'}
         </ContextMenuItem>
-        <ContextMenuItem onSelect={handleClose} className="text-destructive">
+        <ContextMenuItem onClick={handleClose} className="text-destructive">
           Close tab
         </ContextMenuItem>
       </ContextMenuContent>
