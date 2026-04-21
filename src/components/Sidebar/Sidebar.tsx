@@ -57,7 +57,7 @@ export function Sidebar() {
     if (!over || active.id === over.id) return
     const oldIndex = projects.findIndex((p) => p.id === active.id)
     const newIndex = projects.findIndex((p) => p.id === over.id)
-    if (projects[newIndex]?.pinned) return
+    if (projects[oldIndex]?.pinned !== projects[newIndex]?.pinned) return
     reorderProjects(oldIndex, newIndex)
   }
 

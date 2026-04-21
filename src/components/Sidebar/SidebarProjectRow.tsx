@@ -55,7 +55,7 @@ export function SidebarProjectRow({ project }: { project: Project }) {
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: project.id, disabled: project.pinned })
+  } = useSortable({ id: project.id })
 
   const tabSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -73,7 +73,7 @@ export function SidebarProjectRow({ project }: { project: Project }) {
     if (!over || active.id === over.id) return
     const oldIdx = orderedTabs.findIndex((t) => t.id === active.id)
     const newIdx = orderedTabs.findIndex((t) => t.id === over.id)
-    if (orderedTabs[newIdx]?.pinned) return
+    if (orderedTabs[oldIdx]?.pinned !== orderedTabs[newIdx]?.pinned) return
     reorderTabs(project.id, oldIdx, newIdx)
   }
 
@@ -91,7 +91,7 @@ export function SidebarProjectRow({ project }: { project: Project }) {
         opacity: isDragging ? 0.5 : 1,
       }}
       {...attributes}
-      {...(!project.pinned ? listeners : {})}
+      {...listeners}
     >
       <ContextMenu>
         <ContextMenuTrigger className="block">
@@ -99,7 +99,6 @@ export function SidebarProjectRow({ project }: { project: Project }) {
             type="button"
             className={cn(
               'mx-1.5 flex h-[26px] w-[calc(100%-12px)] cursor-grab select-none items-center gap-1.5 rounded-md px-1.5 text-left text-[12.5px]',
-              project.pinned && 'cursor-pointer',
               isActive
                 ? 'bg-sidebar-active text-sidebar-fg-strong'
                 : 'text-sidebar-fg hover:bg-sidebar-hover',

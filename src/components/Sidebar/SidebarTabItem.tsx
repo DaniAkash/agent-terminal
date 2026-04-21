@@ -47,7 +47,7 @@ export function SidebarTabItem({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: tab.id, disabled: tab.pinned })
+  } = useSortable({ id: tab.id })
 
   // Strip role so Biome doesn't see a static role="button" on a div
   const { role: _role, ...safeAttributes } = attributes

@@ -53,7 +53,7 @@ function TabItem({ tab, projectId }: { tab: Tab; projectId: string }) {
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: tab.id, disabled: tab.pinned })
+  } = useSortable({ id: tab.id })
 
   // Destructure role out so Biome doesn't see a static role="button" on a div,
   // but keep the rest of the a11y attributes (aria-describedby, tabIndex, etc.)
@@ -159,7 +159,7 @@ export function TabBar({ project }: { project: Project }) {
     if (!over || active.id === over.id) return
     const oldIdx = orderedTabs.findIndex((t) => t.id === active.id)
     const newIdx = orderedTabs.findIndex((t) => t.id === over.id)
-    if (orderedTabs[newIdx]?.pinned) return
+    if (orderedTabs[oldIdx]?.pinned !== orderedTabs[newIdx]?.pinned) return
     reorderTabs(project.id, oldIdx, newIdx)
   }
 
