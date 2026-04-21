@@ -1,8 +1,9 @@
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { useStore } from '@nanostores/react'
+import { openUrl } from '@tauri-apps/plugin-opener'
 import { Pin } from 'lucide-react'
-import { RunningDot } from '@/components/RunningDot'
+import { TabStatusIcon } from '@/components/TabStatusIcon'
 import {
   ContextMenu,
   ContextMenuContent,
@@ -16,6 +17,7 @@ import {
   navigateToTab,
 } from '@/modules/stores/$navigation'
 import { toggleTabPin } from '@/modules/stores/$projects'
+import { $tabMeta } from '@/modules/stores/$tabMeta'
 import { MONO_FONT } from '@/screens/workspace/workspace.helpers'
 import type { Tab } from '@/screens/workspace/workspace.types'
 
@@ -28,8 +30,11 @@ export function SidebarTabItem({
 }) {
   const activeProjectId = useStore($activeProjectId)
   const activeTabsByProject = useStore($activeTabId)
+  const allTabMeta = useStore($tabMeta)
   const isActive =
     activeProjectId === projectId && activeTabsByProject[projectId] === tab.id
+  const tabMeta = allTabMeta[tab.id]
+  const prUrl = tabMeta?.git?.pr?.url
 
   const {
     attributes,
@@ -75,7 +80,21 @@ export function SidebarTabItem({
             >
               {tab.label}
             </span>
-            {tab.running && <RunningDot />}
+            {tabMeta?.git?.pr && prUrl && (
+              <button
+                type="button"
+                className="shrink-0 rounded px-1 text-[9.5px] text-accent opacity-70 hover:opacity-100"
+                style={{ fontFamily: MONO_FONT }}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  openUrl(prUrl).catch(() => {})
+                }}
+              >
+                #{tabMeta.git.pr.number}
+              </button>
+            )}
+            <TabStatusIcon tabId={tab.id} />
             {tab.pinned && <Pin size={9} className="shrink-0 opacity-50" />}
           </button>
         </div>

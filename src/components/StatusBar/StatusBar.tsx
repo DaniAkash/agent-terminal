@@ -1,10 +1,13 @@
 import { useStore } from '@nanostores/react'
 import { $projects } from '@/modules/stores/$projects'
+import { $tabMeta } from '@/modules/stores/$tabMeta'
 
 export function StatusBar() {
   const projects = useStore($projects)
+  const allTabMeta = useStore($tabMeta)
   const sessionsRunning = projects.reduce(
-    (n, p) => n + p.tabs.filter((t) => t.running).length,
+    (n, p) =>
+      n + p.tabs.filter((t) => allTabMeta[t.id]?.status === 'running').length,
     0,
   )
 

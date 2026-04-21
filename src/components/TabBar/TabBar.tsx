@@ -14,7 +14,8 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { useStore } from '@nanostores/react'
 import { Pin, X } from 'lucide-react'
-import { RunningDot } from '@/components/RunningDot'
+import { GitBadge } from '@/components/GitBadge'
+import { TabStatusIcon } from '@/components/TabStatusIcon'
 import {
   ContextMenu,
   ContextMenuContent,
@@ -89,11 +90,7 @@ function TabItem({ tab, projectId }: { tab: Tab; projectId: string }) {
               className="flex flex-1 cursor-pointer items-center gap-1.5 overflow-hidden pr-1 pl-3"
               onClick={() => navigateToTab(projectId, tab.id)}
             >
-              {tab.running ? (
-                <RunningDot />
-              ) : (
-                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-current opacity-35" />
-              )}
+              <TabStatusIcon tabId={tab.id} />
               <span className="truncate" style={{ fontFamily: MONO_FONT }}>
                 {tab.label}
               </span>
@@ -144,6 +141,8 @@ function TabItem({ tab, projectId }: { tab: Tab; projectId: string }) {
  * TabBar — horizontal DnD tab strip
  * -------------------------------------------------------------------------*/
 export function TabBar({ project }: { project: Project }) {
+  const activeTabsByProject = useStore($activeTabId)
+  const activeTabId = activeTabsByProject[project.id] ?? ''
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
   )
@@ -216,9 +215,10 @@ export function TabBar({ project }: { project: Project }) {
 
       <div
         data-tauri-drag-region
-        className="flex h-7 items-center pr-1"
+        className="flex h-7 items-center gap-2 pr-1"
         style={{ fontFamily: MONO_FONT, fontSize: 10.5 }}
       >
+        {activeTabId && <GitBadge tabId={activeTabId} />}
         <span className="pointer-events-none text-tab-fg opacity-50">
           {project.path}
         </span>

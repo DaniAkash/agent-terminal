@@ -1,6 +1,7 @@
 mod context;
 mod engine;
 pub mod mods;
+pub mod osc_parser;
 
 #[allow(unused_imports)]
 pub use context::{CwdRegistry, ModContext, ModEvent};

@@ -34,6 +34,7 @@ import {
   toggleExpanded,
   toggleProjectPin,
 } from '@/modules/stores/$projects'
+import { $tabMeta } from '@/modules/stores/$tabMeta'
 import type { Project } from '@/screens/workspace/workspace.types'
 
 export function SidebarProjectRow({ project }: { project: Project }) {
@@ -41,6 +42,7 @@ export function SidebarProjectRow({ project }: { project: Project }) {
   const isOpen = !!expanded[project.id]
   const activeProjectId = useStore($activeProjectId)
   const isActive = activeProjectId === project.id
+  const allTabMeta = useStore($tabMeta)
 
   const {
     attributes,
@@ -58,7 +60,9 @@ export function SidebarProjectRow({ project }: { project: Project }) {
     ...project.tabs.filter((t) => t.pinned),
     ...project.tabs.filter((t) => !t.pinned),
   ]
-  const anyRunning = project.tabs.some((t) => t.running)
+  const anyRunning = project.tabs.some(
+    (t) => allTabMeta[t.id]?.status === 'running',
+  )
 
   function handleTabDragEnd(event: DragEndEvent) {
     const { active, over } = event
