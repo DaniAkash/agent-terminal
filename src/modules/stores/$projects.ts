@@ -11,6 +11,10 @@ import type { Project, Tab } from '@/screens/workspace/workspace.types'
 export const $projects = atom<Project[]>([])
 export const $expanded = atom<Record<string, boolean>>({})
 
+function persist(projects: Project[]): void {
+  IPC.saveProjects(projects).catch(() => {})
+}
+
 function arrayMove<T>(arr: T[], from: number, to: number): T[] {
   const result = [...arr]
   const [item] = result.splice(from, 1)
@@ -32,7 +36,7 @@ export function toggleProjectPin(projectId: string): void {
     ...updated.filter((p) => !p.pinned),
   ]
   $projects.set(sorted)
-  IPC.saveProjects(sorted)
+  persist(sorted)
 }
 
 export function toggleTabPin(projectId: string, tabId: string): void {
@@ -48,13 +52,13 @@ export function toggleTabPin(projectId: string, tabId: string): void {
     return { ...p, tabs: sorted }
   })
   $projects.set(updated)
-  IPC.saveProjects(updated)
+  persist(updated)
 }
 
 export function reorderProjects(oldIndex: number, newIndex: number): void {
   const reordered = arrayMove($projects.get(), oldIndex, newIndex)
   $projects.set(reordered)
-  IPC.saveProjects(reordered)
+  persist(reordered)
 }
 
 export function reorderTabs(
@@ -71,7 +75,7 @@ export function reorderTabs(
     return { ...p, tabs: arrayMove(ordered, oldIndex, newIndex) }
   })
   $projects.set(updated)
-  IPC.saveProjects(updated)
+  persist(updated)
 }
 
 export function removeProject(projectId: string): void {
@@ -84,7 +88,7 @@ export function removeProject(projectId: string): void {
   }
   const updated = projects.filter((p) => p.id !== projectId)
   $projects.set(updated)
-  IPC.saveProjects(updated)
+  persist(updated)
 }
 
 export function removeTab(projectId: string, tabId: string): void {
@@ -97,7 +101,7 @@ export function removeTab(projectId: string, tabId: string): void {
         : { ...p, tabs: p.tabs.filter((t) => t.id !== tabId) },
     )
   $projects.set(updated)
-  IPC.saveProjects(updated)
+  persist(updated)
 }
 
 export function addTab(projectId: string, inheritCwd?: string): Tab | null {
@@ -116,7 +120,7 @@ export function addTab(projectId: string, inheritCwd?: string): Tab | null {
     p.id !== projectId ? p : { ...p, tabs: [...p.tabs, newTab] },
   )
   $projects.set(updated)
-  IPC.saveProjects(updated)
+  persist(updated)
   return newTab
 }
 
@@ -142,7 +146,7 @@ export function addProject(inheritCwd?: string): Project {
   const updated = [...projects, project]
   $projects.set(updated)
   $expanded.set({ ...$expanded.get(), [id]: true })
-  IPC.saveProjects(updated)
+  persist(updated)
   return project
 }
 
@@ -151,7 +155,7 @@ export function renameProject(projectId: string, newName: string): void {
     .get()
     .map((p) => (p.id === projectId ? { ...p, name: newName.trim() } : p))
   $projects.set(updated)
-  IPC.saveProjects(updated)
+  persist(updated)
 }
 
 export function renameTab(
@@ -169,7 +173,7 @@ export function renameTab(
     }
   })
   $projects.set(updated)
-  IPC.saveProjects(updated)
+  persist(updated)
 }
 
 export function updateTabCwd(tabKey: string, cwd: string): void {
@@ -183,5 +187,5 @@ export function updateTabCwd(tabKey: string, cwd: string): void {
     }
   })
   $projects.set(updated)
-  IPC.saveProjects(updated)
+  persist(updated)
 }
