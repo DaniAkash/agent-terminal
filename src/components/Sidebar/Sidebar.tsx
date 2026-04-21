@@ -14,12 +14,19 @@ import {
 } from '@dnd-kit/sortable'
 import { useStore } from '@nanostores/react'
 import { $projects, reorderProjects } from '@/modules/stores/$projects'
+import { $tabMeta } from '@/modules/stores/$tabMeta'
+import { makeTabKey } from '@/screens/workspace/workspace.helpers'
 import { SidebarProjectRow } from './SidebarProjectRow'
 
 export function Sidebar() {
   const projects = useStore($projects)
+  const allTabMeta = useStore($tabMeta)
   const sessionsRunning = projects.reduce(
-    (n, p) => n + p.tabs.filter((t) => t.running).length,
+    (n, p) =>
+      n +
+      p.tabs.filter(
+        (t) => allTabMeta[makeTabKey(p.id, t.id)]?.status === 'running',
+      ).length,
     0,
   )
 

@@ -111,7 +111,6 @@ export function addTab(projectId: string): Tab | null {
     id: `${projectId}-${label}`,
     label,
     cmd: '',
-    running: false,
     pinned: false,
   }
   const updated = projects.map((p) =>

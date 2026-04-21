@@ -67,6 +67,40 @@ pub fn spawn_pty(
         cmd.cwd(dir);
     }
 
+    // Inject shell integration based on the shell binary name
+    let shell_name = std::path::Path::new(&shell_path)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+
+    if shell_name == "zsh" {
+        // ZDOTDIR redirect: zsh will load ~/.config/agent-terminal/zsh/.zshrc
+        // instead of ~/.zshrc. Our script then sources the real ~/.zshrc.
+        let at_zsh_dir = dirs::home_dir()
+            .map(|h| h.join(".config").join("agent-terminal").join("zsh"))
+            .and_then(|p| p.to_str().map(|s| s.to_string()));
+
+        if let Some(zdotdir) = at_zsh_dir {
+            let home = dirs::home_dir()
+                .and_then(|h| h.to_str().map(|s| s.to_string()))
+                .unwrap_or_default();
+            cmd.env("ZDOTDIR", &zdotdir);
+            cmd.env("ZDOTDIR_ORIG", &home);
+        }
+    } else if shell_name == "bash" {
+        // --init-file replaces ~/.bashrc for non-login shells
+        let init_file = dirs::home_dir()
+            .map(|h| h.join(".config").join("agent-terminal").join("bash-integration.bash"))
+            .and_then(|p| p.to_str().map(|s| s.to_string()));
+
+        if let Some(init) = init_file {
+            cmd.arg("--init-file");
+            cmd.arg(&init);
+        }
+    }
+    // Other shells: no injection
+
     pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
 
     let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;

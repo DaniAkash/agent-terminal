@@ -2,7 +2,6 @@ export type Tab = {
   id: string
   label: string
   cmd: string
-  running: boolean
   pinned: boolean
 }
 

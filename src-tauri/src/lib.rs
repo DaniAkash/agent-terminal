@@ -1,8 +1,21 @@
 mod commands;
 mod mod_engine;
 mod pty_manager;
+mod shell_integration;
 
-use mod_engine::{ModEngine, mods::EchoMod};
+use mod_engine::{
+    CwdRegistry,
+    ModEngine,
+    mods::{
+        ClaudeCodeMod,
+        CodexMod,
+        DirTrackerMod,
+        GitMonitorMod,
+        ProcessInspectorMod,
+        ProcessTrackerMod,
+    },
+};
+use shell_integration::setup_shell_integration;
 use tauri::Manager;
 use pty_manager::PtyMap;
 use std::collections::HashMap;
@@ -15,8 +28,20 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
+            // Best-effort: write shell integration scripts. Never fail app startup.
+            if let Err(e) = setup_shell_integration() {
+                eprintln!("[agent-terminal] shell integration setup failed: {e}");
+            }
+
+            let cwd_registry = CwdRegistry::default();
+
             let mod_engine = ModEngine::builder()
-                .with_mod(EchoMod)
+                .with_mod(DirTrackerMod::new(cwd_registry.clone()))
+                .with_mod(ProcessTrackerMod::new())
+                .with_mod(ClaudeCodeMod::new(cwd_registry.clone()))
+                .with_mod(CodexMod::new(cwd_registry.clone()))
+                .with_mod(ProcessInspectorMod::new(cwd_registry.clone()))
+                .with_mod(GitMonitorMod::new(cwd_registry.clone()))
                 .build(app.handle().clone());
             app.manage(mod_engine);
             Ok(())

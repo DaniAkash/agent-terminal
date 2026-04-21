@@ -1,7 +1,7 @@
 use serde::Serialize;
 use std::collections::HashMap;
-use std::sync::Arc;
-use tokio::sync::{RwLock, mpsc};
+use std::sync::{Arc, RwLock};
+use tokio::sync::mpsc;
 
 /// A structured event emitted by a MOD and forwarded to the frontend via `mod:event`.
 #[derive(Serialize, Clone)]
@@ -30,6 +30,35 @@ impl<'a> ModContext<'a> {
     pub fn emit(&self, mod_id: &'static str, event: &str, data: serde_json::Value) {
         let _ = self.event_tx.try_send(ModEvent {
             tab_id: self.tab_id.to_string(),
+            mod_id,
+            event: event.to_string(),
+            data,
+        });
+    }
+
+    /// Returns a cloneable emitter that can be moved into async tasks.
+    /// The task can call `emitter.emit(...)` directly without going through
+    /// the pending-queue pattern, so results reach the frontend immediately
+    /// without waiting for the next PTY output chunk.
+    pub fn async_emitter(&self) -> AsyncEmitter {
+        AsyncEmitter {
+            tab_id: self.tab_id.to_string(),
+            event_tx: self.event_tx.clone(),
+        }
+    }
+}
+
+/// A `Clone + Send` emitter for use inside `tokio::spawn` tasks.
+#[derive(Clone)]
+pub struct AsyncEmitter {
+    pub tab_id: String,
+    event_tx: mpsc::Sender<ModEvent>,
+}
+
+impl AsyncEmitter {
+    pub fn emit(&self, mod_id: &'static str, event: &str, data: serde_json::Value) {
+        let _ = self.event_tx.try_send(ModEvent {
+            tab_id: self.tab_id.clone(),
             mod_id,
             event: event.to_string(),
             data,

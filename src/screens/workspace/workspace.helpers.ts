@@ -7,28 +7,10 @@ export const SEED_PROJECTS: Project[] = [
     path: '~/work/claude-ui',
     pinned: false,
     tabs: [
-      {
-        id: 'dev',
-        label: 'dev',
-        cmd: 'pnpm dev',
-        running: true,
-        pinned: false,
-      },
-      {
-        id: 'server',
-        label: 'server',
-        cmd: 'node server.mjs',
-        running: true,
-        pinned: false,
-      },
-      {
-        id: 'git',
-        label: 'git',
-        cmd: 'git status',
-        running: false,
-        pinned: false,
-      },
-      { id: 'repl', label: 'repl', cmd: 'node', running: true, pinned: false },
+      { id: 'dev', label: 'dev', cmd: 'pnpm dev', pinned: false },
+      { id: 'server', label: 'server', cmd: 'node server.mjs', pinned: false },
+      { id: 'git', label: 'git', cmd: 'git status', pinned: false },
+      { id: 'repl', label: 'repl', cmd: 'node', pinned: false },
     ],
   },
   {
@@ -37,27 +19,9 @@ export const SEED_PROJECTS: Project[] = [
     path: '~/work/api-service',
     pinned: false,
     tabs: [
-      {
-        id: 'dev',
-        label: 'dev',
-        cmd: 'cargo watch -x run',
-        running: true,
-        pinned: false,
-      },
-      {
-        id: 'db',
-        label: 'db',
-        cmd: 'psql billing_dev',
-        running: true,
-        pinned: false,
-      },
-      {
-        id: 'logs',
-        label: 'logs',
-        cmd: 'tail -f app.log',
-        running: true,
-        pinned: false,
-      },
+      { id: 'dev', label: 'dev', cmd: 'cargo watch -x run', pinned: false },
+      { id: 'db', label: 'db', cmd: 'psql billing_dev', pinned: false },
+      { id: 'logs', label: 'logs', cmd: 'tail -f app.log', pinned: false },
     ],
   },
   {
@@ -65,15 +29,7 @@ export const SEED_PROJECTS: Project[] = [
     name: 'dotfiles',
     path: '~/.dotfiles',
     pinned: false,
-    tabs: [
-      {
-        id: 'shell',
-        label: 'shell',
-        cmd: 'zsh',
-        running: false,
-        pinned: false,
-      },
-    ],
+    tabs: [{ id: 'shell', label: 'shell', cmd: 'zsh', pinned: false }],
   },
 ]
 
