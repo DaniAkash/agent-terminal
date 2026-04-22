@@ -71,7 +71,7 @@ function Dot() {
  * Formats a memory value from kilobytes to a human-readable string.
  *   < 1 MB  → "NKB"
  *   < 1 GB  → "NMB"
- *   >= 1 GB → "N.NGb"   (rare for a terminal process but handled)
+ *   >= 1 GB → "N.NGB"   (rare for a terminal process but handled)
  */
 function formatMemory(kb: number): string {
   if (kb < 1024) return `${kb}KB`
