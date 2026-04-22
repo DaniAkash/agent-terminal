@@ -4,7 +4,7 @@ pub mod mods;
 pub mod osc_parser;
 
 #[allow(unused_imports)]
-pub use context::{AsyncEmitter, CwdRegistry, ModContext, ModEvent};
+pub use context::{AsyncEmitter, CwdRegistry, CwdUpdate, ModContext, ModEvent};
 pub use engine::{ModEngine, ModEngineHandle};
 
 /// The trait every MOD implements.

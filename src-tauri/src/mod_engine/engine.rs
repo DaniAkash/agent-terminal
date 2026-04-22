@@ -1,4 +1,6 @@
-use super::context::{ModContext, ModEvent};
+use std::collections::HashMap;
+
+use super::context::{CwdUpdate, ModContext, ModEvent};
 use super::Mod;
 use tauri::{AppHandle, Emitter, async_runtime};
 use tokio::sync::mpsc;
@@ -97,6 +99,9 @@ impl ModEngine {
         let (lifecycle_tx, mut lifecycle_rx) = mpsc::unbounded_channel::<ModMessage>();
         // Outbound event buffer to the frontend.
         let (event_tx, mut event_rx) = mpsc::channel::<ModEvent>(256);
+        // CWD update channel: DirTrackerMod calls ctx.set_cwd() which sends here.
+        // The engine drains this after each dispatch round and calls on_cwd_changed.
+        let (cwd_tx, mut cwd_rx) = mpsc::channel::<CwdUpdate>(64);
 
         // Task 1: dispatch PTY messages to every MOD in registration order.
         // `biased` select gives lifecycle messages priority over data messages so
@@ -105,6 +110,10 @@ impl ModEngine {
         let event_tx_dispatch = event_tx.clone();
         async_runtime::spawn(async move {
             let mut mods = mods;
+            // Internal CWD table: tab_id → current cwd. Never exposed to mods directly;
+            // they receive it via on_cwd_changed or ctx.current_cwd().
+            let mut cwd_table: HashMap<String, String> = HashMap::new();
+
             loop {
                 let msg = tokio::select! {
                     biased;
@@ -117,27 +126,46 @@ impl ModEngine {
                         None => break,
                     },
                 };
+
                 match msg {
                     ModMessage::Open { tab_id } => {
-                        let ctx = ModContext::new(&tab_id, &event_tx_dispatch);
+                        let current_cwd = cwd_table.get(&tab_id).cloned();
+                        let ctx = ModContext::new(&tab_id, &event_tx_dispatch, &cwd_tx, current_cwd);
                         for m in &mut mods { m.on_open(&ctx); }
                     }
                     ModMessage::Close { tab_id } => {
-                        let ctx = ModContext::new(&tab_id, &event_tx_dispatch);
+                        let current_cwd = cwd_table.get(&tab_id).cloned();
+                        let ctx = ModContext::new(&tab_id, &event_tx_dispatch, &cwd_tx, current_cwd);
                         for m in &mut mods { m.on_close(&ctx); }
+                        cwd_table.remove(&tab_id);
                     }
                     ModMessage::Output { tab_id, data } => {
-                        let ctx = ModContext::new(&tab_id, &event_tx_dispatch);
+                        let current_cwd = cwd_table.get(&tab_id).cloned();
+                        let ctx = ModContext::new(&tab_id, &event_tx_dispatch, &cwd_tx, current_cwd);
                         for m in &mut mods { m.on_output(&data, &ctx); }
                     }
                     ModMessage::Input { tab_id, data } => {
-                        let ctx = ModContext::new(&tab_id, &event_tx_dispatch);
+                        let current_cwd = cwd_table.get(&tab_id).cloned();
+                        let ctx = ModContext::new(&tab_id, &event_tx_dispatch, &cwd_tx, current_cwd);
                         for m in &mut mods { m.on_input(&data, &ctx); }
                     }
                     ModMessage::Resize { tab_id, cols, rows } => {
-                        let ctx = ModContext::new(&tab_id, &event_tx_dispatch);
+                        let current_cwd = cwd_table.get(&tab_id).cloned();
+                        let ctx = ModContext::new(&tab_id, &event_tx_dispatch, &cwd_tx, current_cwd);
                         for m in &mut mods { m.on_resize(cols, rows, &ctx); }
                     }
+                }
+
+                // Drain CWD updates produced during this dispatch round.
+                // Update the internal table and call on_cwd_changed on all mods.
+                let mut cwd_updates: Vec<(String, String)> = Vec::new();
+                while let Ok(upd) = cwd_rx.try_recv() {
+                    cwd_table.insert(upd.tab_id.clone(), upd.cwd.clone());
+                    cwd_updates.push((upd.tab_id, upd.cwd));
+                }
+                for (tab_id, cwd) in &cwd_updates {
+                    let ctx = ModContext::new(tab_id, &event_tx_dispatch, &cwd_tx, Some(cwd.clone()));
+                    for m in &mut mods { m.on_cwd_changed(cwd, &ctx); }
                 }
             }
         });

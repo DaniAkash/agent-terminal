@@ -14,15 +14,30 @@ pub struct ModEvent {
     pub data: serde_json::Value,
 }
 
+/// Sent by `DirTrackerMod` via `ctx.set_cwd()` to notify the engine of a CWD change.
+/// The engine drains these after each `on_output` round and dispatches `on_cwd_changed`.
+pub struct CwdUpdate {
+    pub tab_id: String,
+    pub cwd: String,
+}
+
 /// Context passed to every MOD callback. Provides tab identity and event emission.
 pub struct ModContext<'a> {
     pub tab_id: &'a str,
     event_tx: &'a mpsc::Sender<ModEvent>,
+    cwd_tx: &'a mpsc::Sender<CwdUpdate>,
+    /// The engine's current CWD for this tab, as of the start of this dispatch cycle.
+    pub current_cwd: Option<String>,
 }
 
 impl<'a> ModContext<'a> {
-    pub fn new(tab_id: &'a str, event_tx: &'a mpsc::Sender<ModEvent>) -> Self {
-        Self { tab_id, event_tx }
+    pub fn new(
+        tab_id: &'a str,
+        event_tx: &'a mpsc::Sender<ModEvent>,
+        cwd_tx: &'a mpsc::Sender<CwdUpdate>,
+        current_cwd: Option<String>,
+    ) -> Self {
+        Self { tab_id, event_tx, cwd_tx, current_cwd }
     }
 
     /// Emit a typed event to the frontend. Non-blocking — silently drops if the
@@ -34,6 +49,21 @@ impl<'a> ModContext<'a> {
             event: event.to_string(),
             data,
         });
+    }
+
+    /// Signal the engine that this tab's CWD has changed. The engine will call
+    /// `on_cwd_changed` on all mods after the current `on_output` round completes.
+    pub fn set_cwd(&self, cwd: &str) {
+        let _ = self.cwd_tx.try_send(CwdUpdate {
+            tab_id: self.tab_id.to_string(),
+            cwd: cwd.to_string(),
+        });
+    }
+
+    /// Returns the engine's current CWD for this tab (set by the most recent
+    /// `on_cwd_changed` dispatch). `None` until the first OSC 7 fires.
+    pub fn current_cwd(&self) -> Option<&str> {
+        self.current_cwd.as_deref()
     }
 
     /// Returns a cloneable emitter that can be moved into async tasks.
@@ -68,8 +98,11 @@ impl AsyncEmitter {
 
 /// Shared registry of the current working directory per tab.
 ///
-/// `DirTrackerMod` (PR 8) writes on each OSC 7 sequence. Other MODs
+/// `DirTrackerMod` writes on each OSC 7 sequence. Other MODs
 /// (`GitMonitorMod`, `ClaudeCodeMod`, `CodexMod`) read this to know where to
 /// look for session files and git context without re-parsing OSC themselves.
+///
+/// **Deprecated** — being migrated to the `on_cwd_changed` push model.
+/// Will be removed once all consumers use `on_cwd_changed`.
 #[allow(dead_code)]
 pub type CwdRegistry = Arc<RwLock<HashMap<String, String>>>;
