@@ -34,4 +34,9 @@ pub trait Mod: Send + 'static {
 
     /// Tab closed — drop any per-tab state here.
     fn on_close(&mut self, _ctx: &ModContext) {}
+
+    /// Called by the engine when `DirTrackerMod` detects a CWD change for this tab.
+    /// Mods that react to directory changes implement this instead of reading
+    /// `CwdRegistry` inside `on_output`. Default is a no-op.
+    fn on_cwd_changed(&mut self, _cwd: &str, _ctx: &ModContext) {}
 }
