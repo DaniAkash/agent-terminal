@@ -14,6 +14,8 @@ Most terminals treat every tab equally. Agent Terminal gives each project its ow
 
 It is built on [Tauri](https://tauri.app) (Rust backend, WebView frontend) and uses [xterm.js](https://xtermjs.org) for terminal rendering. There are no config files to edit and no tmux dependency — just open it and use it.
 
+![Agent Terminal screenshot](./docs/assets/screenshot.png)
+
 ---
 
 ## Features
@@ -66,12 +68,6 @@ The intelligence layer is built on a Rust-native MOD system. Each MOD subscribes
 
 ### No tmux dependency
 Sessions use raw PTYs managed directly by Rust. No tmux, no daemon, no invisible infrastructure. The tradeoff: long-running processes need to be restarted when you reopen the app. In exchange, the app is simpler, faster to start, and has zero external dependencies.
-
----
-
-## Screenshots
-
-> Screenshots and a demo video are coming. Check back soon or follow [@dani_akash_](https://x.com/dani_akash_) for updates.
 
 ---
 
