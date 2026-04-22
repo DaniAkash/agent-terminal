@@ -26,30 +26,7 @@ export async function startModListener(): Promise<() => void> {
   })
 }
 
-function formatEventData(event: string, data: unknown): string {
-  if (event === 'process_info') {
-    const { processes = [] } = data as { processes: Array<{
-      pid: number; name: string; command: string
-      cpuPercent: number; memoryKb: number; elapsedTime: string
-      listeningPorts: number[]
-    }> }
-    if (processes.length === 0) return '  processes: (none)'
-    return processes
-      .map((p) =>
-        `  pid=${p.pid} name=${p.name} mem=${Math.round(p.memoryKb / 1024)}MB uptime=${p.elapsedTime} ports=[${p.listeningPorts.join(',')}]\n  cmd: ${p.command}`
-      )
-      .join('\n')
-  }
-  return `  ${JSON.stringify(data)}`
-}
-
-function dispatch({ tabId, modId, event, data }: ModEventPayload): void {
-  // DEBUG — log every raw mod event as it arrives (skip high-frequency timer events)
-  const SILENT_EVENTS = new Set(['git_info', 'listening_ports', 'process_info'])
-  if (!SILENT_EVENTS.has(event)) {
-    console.log(`[mod:event] ${modId}/${event} | tab=${tabId}\n${formatEventData(event, data)}`)
-  }
-
+function dispatch({ tabId, modId: _modId, event, data }: ModEventPayload): void {
   // Guard against malformed payloads — Rust controls the emitter, but a
   // bad payload should never crash the global listener.
   if (data !== null && data !== undefined && typeof data !== 'object') return

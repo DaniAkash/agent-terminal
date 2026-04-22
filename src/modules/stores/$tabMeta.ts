@@ -45,25 +45,10 @@ export const $tabMeta = atom<Record<string, TabMeta>>({})
 export function updateTabMeta(tabId: string, patch: Partial<TabMeta>): void {
   const cur = $tabMeta.get()
   const next = { ...defaultMeta, ...cur[tabId], ...patch }
-  // DEBUG — skip update and log if nothing actually changed
   if (JSON.stringify(cur[tabId]) === JSON.stringify(next)) return
   $tabMeta.set({ ...cur, [tabId]: next })
-  console.log(`[tabMeta] ${tabId}\n${formatTabMeta(next)}`)
 }
 
-function formatTabMeta(m: TabMeta): string {
-  const lines: string[] = []
-  lines.push(`  status=${m.status} type=${m.type}${m.agentName ? ` agent=${m.agentName}` : ''}`)
-  if (m.cwd) lines.push(`  cwd=${m.cwd}`)
-  if (m.git) {
-    const g = m.git
-    const pr = g.pr ? ` pr=#${g.pr.number}` : ''
-    lines.push(`  git=${g.branch} ↑${g.aheadBy} ↓${g.behindBy}${g.isDirty ? ' dirty' : ''}${g.worktree ? ` worktree=${g.worktree}` : ''}${pr}`)
-  }
-  if (m.agentCmd) lines.push(`  cmd=${m.agentCmd}`)
-  if (m.listeningPorts?.length) lines.push(`  ports=${m.listeningPorts.join(', ')}`)
-  return lines.join('\n')
-}
 
 export function clearTabMeta(tabId: string): void {
   const cur = $tabMeta.get()
