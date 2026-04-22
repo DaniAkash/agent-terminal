@@ -17,12 +17,17 @@ export type AgentState = 'idle' | 'in-progress' | 'completed' | 'awaiting'
 /**
  * Maps live TabMeta → AgentState for rendering.
  *
- * Future hook: when TabMeta gains an `agentState` field set by AgentTurnMod,
- * add `if (meta.agentState) return meta.agentState` before the status mapping.
+ * `in-progress` and `awaiting` are intentionally not returned here yet — we
+ * have no signal that distinguishes "agent process is alive" from "agent is
+ * actively producing output". OSC 133 status only tells us the shell is
+ * running, not whether the agent turn is in flight.
+ *
+ * When AgentTurnMod is built it will write `TabMeta.agentState` directly.
+ * At that point, add `if (meta.agentState) return meta.agentState` as the
+ * first check below, and the richer states will light up automatically.
  */
 export function deriveAgentState(meta: TabMeta | undefined): AgentState {
   if (!meta || meta.type !== 'agent') return 'idle'
-  if (meta.status === 'running') return 'in-progress'
   if (meta.status === 'done' || meta.status === 'error') return 'completed'
   return 'idle'
 }
