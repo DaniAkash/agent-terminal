@@ -45,14 +45,9 @@ impl Mod for ProcessInspectorMod {
             loop {
                 interval.tick().await;
                 let cwd = cwd_rx.borrow().clone();
-                let Some(cwd) = cwd else {
-                    eprintln!("[process_inspector] tick: no CWD yet, skipping");
-                    continue;
-                };
+                let Some(cwd) = cwd else { continue };
 
-                eprintln!("[process_inspector] scanning cwd={cwd}");
                 let processes = scan_processes(&cwd).await;
-                eprintln!("[process_inspector] found {} process(es)", processes.len());
 
                 emitter.emit(
                     "process_inspector",
@@ -68,7 +63,6 @@ impl Mod for ProcessInspectorMod {
     }
 
     fn on_cwd_changed(&mut self, cwd: &str, ctx: &ModContext) {
-        eprintln!("[process_inspector] on_cwd_changed tab={} cwd={cwd}", ctx.tab_id);
         if let Some(state) = self.tabs.get(ctx.tab_id) {
             let _ = state.cwd_tx.send(Some(cwd.to_string()));
         }
@@ -139,7 +133,6 @@ struct ProcessEntry {
 async fn scan_processes(cwd: &str) -> Vec<serde_json::Value> {
     // Step 1: find agent PIDs in this cwd via lsof
     let pids = find_agent_pids_in_cwd(cwd).await;
-    eprintln!("[process_inspector] agent PIDs in cwd: {:?}", pids);
 
     if pids.is_empty() {
         return Vec::new();
@@ -206,7 +199,6 @@ async fn find_agent_pids_in_cwd(cwd: &str) -> Vec<u32> {
             current_pid = pid_str.parse().ok();
         } else if let Some(path) = line.strip_prefix('n') {
             if let Some(pid) = current_pid {
-                eprintln!("[process_inspector] lsof cwd: pid={pid} path={path}");
                 if path == cwd {
                     pids.push(pid);
                 }

@@ -45,7 +45,7 @@ function formatEventData(event: string, data: unknown): string {
 
 function dispatch({ tabId, modId, event, data }: ModEventPayload): void {
   // DEBUG — log every raw mod event as it arrives (skip high-frequency timer events)
-  const SILENT_EVENTS = new Set(['git_info', 'listening_ports'])
+  const SILENT_EVENTS = new Set(['git_info', 'listening_ports', 'process_info'])
   if (!SILENT_EVENTS.has(event)) {
     console.log(`[mod:event] ${modId}/${event} | tab=${tabId}\n${formatEventData(event, data)}`)
   }
