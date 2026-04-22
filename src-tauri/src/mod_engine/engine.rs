@@ -100,8 +100,8 @@ impl ModEngine {
         let (event_tx, mut event_rx) = mpsc::channel::<ModEvent>(256);
         // CWD update channel: DirTrackerMod calls ctx.set_cwd() which sends here.
         let (cwd_tx, mut cwd_rx) = mpsc::channel::<CwdUpdate>(64);
-        // Agent lifecycle channel: ProcessInspectorMod's timer sends here.
-        let (agent_tx, mut agent_rx) = mpsc::channel::<AgentSignal>(64);
+        // Agent lifecycle channel: unbounded so lifecycle signals are never dropped.
+        let (agent_tx, mut agent_rx) = mpsc::unbounded_channel::<AgentSignal>();
 
         let event_tx_dispatch = event_tx.clone();
         async_runtime::spawn(async move {
@@ -111,81 +111,83 @@ impl ModEngine {
             // Shell PID table: tab_id → shell process PID.
             let mut shell_pid_table: HashMap<String, u32> = HashMap::new();
 
-            loop {
-                let msg = tokio::select! {
-                    biased;
-                    msg = lifecycle_rx.recv() => match msg {
-                        Some(m) => m,
-                        None => break,
-                    },
-                    msg = msg_rx.recv() => match msg {
-                        Some(m) => m,
-                        None => break,
-                    },
-                };
-
-                match msg {
-                    ModMessage::Open { tab_id, shell_pid } => {
-                        shell_pid_table.insert(tab_id.clone(), shell_pid);
-                        let current_cwd = cwd_table.get(&tab_id).cloned();
-                        let ctx = ModContext::new(&tab_id, &event_tx_dispatch, &cwd_tx, &agent_tx, current_cwd, shell_pid);
-                        for m in &mut mods { m.on_open(&ctx); }
-                    }
-                    ModMessage::Close { tab_id } => {
-                        let current_cwd = cwd_table.get(&tab_id).cloned();
-                        let shell_pid = shell_pid_table.get(&tab_id).copied().unwrap_or(0);
-                        let ctx = ModContext::new(&tab_id, &event_tx_dispatch, &cwd_tx, &agent_tx, current_cwd, shell_pid);
-                        for m in &mut mods { m.on_close(&ctx); }
-                        cwd_table.remove(&tab_id);
-                        shell_pid_table.remove(&tab_id);
-                    }
-                    ModMessage::Output { tab_id, data } => {
-                        let current_cwd = cwd_table.get(&tab_id).cloned();
-                        let shell_pid = shell_pid_table.get(&tab_id).copied().unwrap_or(0);
-                        let ctx = ModContext::new(&tab_id, &event_tx_dispatch, &cwd_tx, &agent_tx, current_cwd, shell_pid);
-                        for m in &mut mods { m.on_output(&data, &ctx); }
-                    }
-                    ModMessage::Input { tab_id, data } => {
-                        let current_cwd = cwd_table.get(&tab_id).cloned();
-                        let shell_pid = shell_pid_table.get(&tab_id).copied().unwrap_or(0);
-                        let ctx = ModContext::new(&tab_id, &event_tx_dispatch, &cwd_tx, &agent_tx, current_cwd, shell_pid);
-                        for m in &mut mods { m.on_input(&data, &ctx); }
-                    }
-                    ModMessage::Resize { tab_id, cols, rows } => {
-                        let current_cwd = cwd_table.get(&tab_id).cloned();
-                        let shell_pid = shell_pid_table.get(&tab_id).copied().unwrap_or(0);
-                        let ctx = ModContext::new(&tab_id, &event_tx_dispatch, &cwd_tx, &agent_tx, current_cwd, shell_pid);
-                        for m in &mut mods { m.on_resize(cols, rows, &ctx); }
-                    }
-                }
-
-                // Drain CWD updates produced during this dispatch round.
-                let mut cwd_updates: Vec<(String, String)> = Vec::new();
-                while let Ok(upd) = cwd_rx.try_recv() {
-                    cwd_table.insert(upd.tab_id.clone(), upd.cwd.clone());
-                    cwd_updates.push((upd.tab_id, upd.cwd));
-                }
-                for (tab_id, cwd) in &cwd_updates {
-                    let shell_pid = shell_pid_table.get(tab_id).copied().unwrap_or(0);
-                    let ctx = ModContext::new(tab_id, &event_tx_dispatch, &cwd_tx, &agent_tx, Some(cwd.clone()), shell_pid);
-                    for m in &mut mods { m.on_cwd_changed(cwd, &ctx); }
-                }
-
-                // Drain agent lifecycle signals produced by ProcessInspectorMod's timer.
-                let mut agent_signals: Vec<AgentSignal> = Vec::new();
-                while let Ok(sig) = agent_rx.try_recv() {
-                    agent_signals.push(sig);
-                }
-                for sig in &agent_signals {
-                    let current_cwd = cwd_table.get(&sig.tab_id).cloned();
-                    let shell_pid = shell_pid_table.get(&sig.tab_id).copied().unwrap_or(0);
-                    let ctx = ModContext::new(&sig.tab_id, &event_tx_dispatch, &cwd_tx, &agent_tx, current_cwd, shell_pid);
-                    match sig.kind {
-                        AgentSignalKind::Detected => {
-                            for m in &mut mods { m.on_agent_detected(&sig.agent, &sig.cwd, &sig.cmd, &ctx); }
+            // Macro to dispatch a ModMessage and drain CWD updates.
+            macro_rules! handle_mod_msg {
+                ($msg:expr) => {{
+                    match $msg {
+                        ModMessage::Open { tab_id, shell_pid } => {
+                            shell_pid_table.insert(tab_id.clone(), shell_pid);
+                            let current_cwd = cwd_table.get(&tab_id).cloned();
+                            let ctx = ModContext::new(&tab_id, &event_tx_dispatch, &cwd_tx, &agent_tx, current_cwd, shell_pid);
+                            for m in &mut mods { m.on_open(&ctx); }
                         }
-                        AgentSignalKind::Cleared => {
-                            for m in &mut mods { m.on_agent_cleared(&sig.agent, &ctx); }
+                        ModMessage::Close { tab_id } => {
+                            let current_cwd = cwd_table.get(&tab_id).cloned();
+                            let shell_pid = shell_pid_table.get(&tab_id).copied().unwrap_or(0);
+                            let ctx = ModContext::new(&tab_id, &event_tx_dispatch, &cwd_tx, &agent_tx, current_cwd, shell_pid);
+                            for m in &mut mods { m.on_close(&ctx); }
+                            cwd_table.remove(&tab_id);
+                            shell_pid_table.remove(&tab_id);
+                        }
+                        ModMessage::Output { tab_id, data } => {
+                            let current_cwd = cwd_table.get(&tab_id).cloned();
+                            let shell_pid = shell_pid_table.get(&tab_id).copied().unwrap_or(0);
+                            let ctx = ModContext::new(&tab_id, &event_tx_dispatch, &cwd_tx, &agent_tx, current_cwd, shell_pid);
+                            for m in &mut mods { m.on_output(&data, &ctx); }
+                        }
+                        ModMessage::Input { tab_id, data } => {
+                            let current_cwd = cwd_table.get(&tab_id).cloned();
+                            let shell_pid = shell_pid_table.get(&tab_id).copied().unwrap_or(0);
+                            let ctx = ModContext::new(&tab_id, &event_tx_dispatch, &cwd_tx, &agent_tx, current_cwd, shell_pid);
+                            for m in &mut mods { m.on_input(&data, &ctx); }
+                        }
+                        ModMessage::Resize { tab_id, cols, rows } => {
+                            let current_cwd = cwd_table.get(&tab_id).cloned();
+                            let shell_pid = shell_pid_table.get(&tab_id).copied().unwrap_or(0);
+                            let ctx = ModContext::new(&tab_id, &event_tx_dispatch, &cwd_tx, &agent_tx, current_cwd, shell_pid);
+                            for m in &mut mods { m.on_resize(cols, rows, &ctx); }
+                        }
+                    }
+                    // Drain CWD updates produced during this dispatch round.
+                    let mut cwd_updates: Vec<(String, String)> = Vec::new();
+                    while let Ok(upd) = cwd_rx.try_recv() {
+                        cwd_table.insert(upd.tab_id.clone(), upd.cwd.clone());
+                        cwd_updates.push((upd.tab_id, upd.cwd));
+                    }
+                    for (tab_id, cwd) in &cwd_updates {
+                        let shell_pid = shell_pid_table.get(tab_id).copied().unwrap_or(0);
+                        let ctx = ModContext::new(tab_id, &event_tx_dispatch, &cwd_tx, &agent_tx, Some(cwd.clone()), shell_pid);
+                        for m in &mut mods { m.on_cwd_changed(cwd, &ctx); }
+                    }
+                }};
+            }
+
+            loop {
+                tokio::select! {
+                    biased;
+                    msg = lifecycle_rx.recv() => {
+                        let Some(msg) = msg else { break };
+                        handle_mod_msg!(msg);
+                    }
+                    msg = msg_rx.recv() => {
+                        let Some(msg) = msg else { break };
+                        handle_mod_msg!(msg);
+                    }
+                    // Agent lifecycle signals from ProcessInspectorMod's timer task.
+                    // Processed immediately so idle tabs (no PTY activity) still get
+                    // state transitions when an agent starts or exits.
+                    sig = agent_rx.recv() => {
+                        let Some(sig) = sig else { break };
+                        let current_cwd = cwd_table.get(&sig.tab_id).cloned();
+                        let shell_pid = shell_pid_table.get(&sig.tab_id).copied().unwrap_or(0);
+                        let ctx = ModContext::new(&sig.tab_id, &event_tx_dispatch, &cwd_tx, &agent_tx, current_cwd, shell_pid);
+                        match sig.kind {
+                            AgentSignalKind::Detected => {
+                                for m in &mut mods { m.on_agent_detected(&sig.agent, &sig.cwd, &sig.cmd, &ctx); }
+                            }
+                            AgentSignalKind::Cleared => {
+                                for m in &mut mods { m.on_agent_cleared(&sig.agent, &ctx); }
+                            }
                         }
                     }
                 }

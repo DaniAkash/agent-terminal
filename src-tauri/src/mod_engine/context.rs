@@ -44,7 +44,7 @@ pub struct ModContext<'a> {
     pub tab_id: &'a str,
     event_tx: &'a mpsc::Sender<ModEvent>,
     cwd_tx: &'a mpsc::Sender<CwdUpdate>,
-    agent_tx: &'a mpsc::Sender<AgentSignal>,
+    agent_tx: &'a mpsc::UnboundedSender<AgentSignal>,
     /// PID of the shell process for this tab's PTY. Used by ProcessInspectorMod
     /// to detect only agent processes that are children of this shell.
     pub shell_pid: u32,
@@ -55,7 +55,7 @@ impl<'a> ModContext<'a> {
         tab_id: &'a str,
         event_tx: &'a mpsc::Sender<ModEvent>,
         cwd_tx: &'a mpsc::Sender<CwdUpdate>,
-        agent_tx: &'a mpsc::Sender<AgentSignal>,
+        agent_tx: &'a mpsc::UnboundedSender<AgentSignal>,
         _current_cwd: Option<String>,
         shell_pid: u32,
     ) -> Self {
@@ -103,6 +103,7 @@ impl<'a> ModContext<'a> {
     }
 }
 
+
 /// A `Clone + Send` emitter for use inside `tokio::spawn` tasks.
 #[derive(Clone)]
 pub struct AsyncEmitter {
@@ -125,12 +126,12 @@ impl AsyncEmitter {
 #[derive(Clone)]
 pub struct AsyncAgentSignaler {
     pub tab_id: String,
-    agent_tx: mpsc::Sender<AgentSignal>,
+    agent_tx: mpsc::UnboundedSender<AgentSignal>,
 }
 
 impl AsyncAgentSignaler {
     pub fn agent_detected(&self, agent: &str, cwd: &str, cmd: &str) {
-        let _ = self.agent_tx.try_send(AgentSignal {
+        let _ = self.agent_tx.send(AgentSignal {
             tab_id: self.tab_id.clone(),
             agent: agent.to_string(),
             cwd: cwd.to_string(),
@@ -140,7 +141,7 @@ impl AsyncAgentSignaler {
     }
 
     pub fn agent_cleared(&self, agent: &str) {
-        let _ = self.agent_tx.try_send(AgentSignal {
+        let _ = self.agent_tx.send(AgentSignal {
             tab_id: self.tab_id.clone(),
             agent: agent.to_string(),
             cwd: String::new(),

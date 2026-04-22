@@ -49,7 +49,7 @@ impl Mod for ProcessInspectorMod {
             loop {
                 interval.tick().await;
 
-                let cwd = cwd_rx.borrow().clone().unwrap_or_default();
+                let cwd = cwd_rx.borrow().clone();
                 let processes = scan_processes(shell_pid).await;
 
                 emitter.emit(
@@ -58,7 +58,11 @@ impl Mod for ProcessInspectorMod {
                     serde_json::json!({ "processes": processes }),
                 );
 
-                diff_agent_pids(&processes, &mut prev_pids, &cwd, &signaler);
+                // Skip agent diffing until the CWD is known — avoids emitting
+                // agent_detected with an empty CWD string on the first scan tick.
+                if let Some(ref cwd) = cwd {
+                    diff_agent_pids(&processes, &mut prev_pids, cwd, &signaler);
+                }
             }
         });
 
