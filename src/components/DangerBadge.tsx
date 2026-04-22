@@ -9,6 +9,7 @@
 export function DangerBadge({ size = 12 }: { size?: number }) {
   return (
     <span
+      role="img"
       title="All permissions enabled"
       aria-label="All permissions enabled"
       style={{

@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
 import { useStore } from '@nanostores/react'
+import { useEffect, useRef, useState } from 'react'
 import { AgentGlyph } from '@/components/AgentGlyph'
 import { deriveAgentState } from '@/components/agent.helpers'
 import { RunningDot } from '@/components/RunningDot'

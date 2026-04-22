@@ -105,7 +105,7 @@ export function SidebarTabItem({
              * so the input gets the full width.
              */}
             {!renaming && (
-              <span className="w-4 shrink-0 flex items-center justify-center">
+              <span className="flex w-4 shrink-0 items-center justify-center">
                 {tab.pinned && (
                   <span
                     title="Unpin tab"
@@ -163,11 +163,14 @@ export function SidebarTabItem({
                 #{tabMeta.git.pr.number}
               </a>
             )}
-            {!renaming && tabMeta?.type === 'agent' && hasDangerFlag(tabMeta.agentCmd) && (
-              <DangerBadge size={11} />
-            )}
+            {!renaming &&
+              tabMeta?.type === 'agent' &&
+              hasDangerFlag(tabMeta.agentCmd) && <DangerBadge size={11} />}
             {!renaming && (
-              <TabStatusIcon tabId={makeTabKey(projectId, tab.id)} active={isActive} />
+              <TabStatusIcon
+                tabId={makeTabKey(projectId, tab.id)}
+                active={isActive}
+              />
             )}
           </button>
         </div>

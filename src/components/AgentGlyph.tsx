@@ -13,6 +13,7 @@ function ClaudeMark({ size }: { size: number }) {
       viewBox="0 0 256 257"
       preserveAspectRatio="xMidYMid"
       style={{ display: 'block' }}
+      aria-hidden="true"
     >
       <path
         fill="currentColor"
@@ -31,6 +32,7 @@ function CodexMark({ size }: { size: number }) {
       fill="currentColor"
       fillRule="evenodd"
       style={{ display: 'block' }}
+      aria-hidden="true"
     >
       <path
         clipRule="evenodd"
@@ -123,7 +125,8 @@ export function AgentGlyph({
   const brand = BRAND[agent]
 
   // Unknown agent → backwards-compatible sparkle (respects active state)
-  if (!brand) return <SparkleFallback state={state} size={size} active={active} />
+  if (!brand)
+    return <SparkleFallback state={state} size={size} active={active} />
 
   const { color, glow } = brand
   const Mark = MARKS[agent] ?? ClaudeMark
@@ -211,6 +214,7 @@ export function AgentGlyph({
             strokeWidth="3.5"
             strokeLinecap="round"
             strokeLinejoin="round"
+            aria-hidden="true"
           >
             <path d="M20 6 9 17l-5-5" />
           </svg>
@@ -240,11 +244,30 @@ export function AgentGlyph({
             stroke="var(--background)"
             strokeWidth="1.4"
             strokeLinejoin="round"
+            aria-hidden="true"
           >
             <path d="M3.2 4.5 A 1.8 1.8 0 0 1 5 2.7 h 14 A 1.8 1.8 0 0 1 20.8 4.5 v 10 A 1.8 1.8 0 0 1 19 16.3 H 10.3 l -4.6 3.8 a 0.5 0.5 0 0 1 -0.8 -0.4 v -3.4 H 5 A 1.8 1.8 0 0 1 3.2 14.5 z" />
-            <circle cx="8" cy="9.5" r="1.3" fill="var(--background)" stroke="none" />
-            <circle cx="12" cy="9.5" r="1.3" fill="var(--background)" stroke="none" />
-            <circle cx="16" cy="9.5" r="1.3" fill="var(--background)" stroke="none" />
+            <circle
+              cx="8"
+              cy="9.5"
+              r="1.3"
+              fill="var(--background)"
+              stroke="none"
+            />
+            <circle
+              cx="12"
+              cy="9.5"
+              r="1.3"
+              fill="var(--background)"
+              stroke="none"
+            />
+            <circle
+              cx="16"
+              cy="9.5"
+              r="1.3"
+              fill="var(--background)"
+              stroke="none"
+            />
           </svg>
         </span>
       )}
