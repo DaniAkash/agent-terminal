@@ -44,7 +44,7 @@ impl Mod for ProcessInspectorMod {
         let handle = tokio::spawn(async move {
             let mut prev_pids: HashMap<String, u32> = HashMap::new();
             let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(2));
-            let mut cwd_rx = cwd_rx;
+            let cwd_rx = cwd_rx;
 
             loop {
                 interval.tick().await;

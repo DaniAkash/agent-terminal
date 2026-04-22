@@ -40,7 +40,7 @@ impl Mod for GitMonitorMod {
     }
 
     fn on_open(&mut self, ctx: &ModContext) {
-        let (cwd_tx, mut cwd_rx) = watch::channel::<Option<String>>(None);
+        let (cwd_tx, cwd_rx) = watch::channel::<Option<String>>(None);
         let emitter = ctx.async_emitter();
 
         // 60-second periodic refresh: reads the latest CWD from the watch receiver.

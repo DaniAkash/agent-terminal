@@ -26,7 +26,12 @@ export async function startModListener(): Promise<() => void> {
   })
 }
 
-function dispatch({ tabId, modId: _modId, event, data }: ModEventPayload): void {
+function dispatch({
+  tabId,
+  modId: _modId,
+  event,
+  data,
+}: ModEventPayload): void {
   // Guard against malformed payloads — Rust controls the emitter, but a
   // bad payload should never crash the global listener.
   if (data !== null && data !== undefined && typeof data !== 'object') return
@@ -40,9 +45,17 @@ function dispatch({ tabId, modId: _modId, event, data }: ModEventPayload): void 
       break
     }
     case 'tab_type_changed': {
-      const { type, agent, cmd } = data as { type: TabType; agent?: string; cmd?: string }
+      const { type, agent, cmd } = data as {
+        type: TabType
+        agent?: string
+        cmd?: string
+      }
       if (type === 'shell') {
-        updateTabMeta(tabId, { type, agentName: undefined, agentCmd: undefined })
+        updateTabMeta(tabId, {
+          type,
+          agentName: undefined,
+          agentCmd: undefined,
+        })
       } else {
         updateTabMeta(tabId, { type, agentName: agent, agentCmd: cmd })
       }
@@ -59,7 +72,9 @@ function dispatch({ tabId, modId: _modId, event, data }: ModEventPayload): void 
     }
     case 'process_info': {
       // Enriched process scan — extract listening ports from all processes for now
-      const { processes } = data as { processes: Array<{ listeningPorts: number[] }> }
+      const { processes } = data as {
+        processes: Array<{ listeningPorts: number[] }>
+      }
       const ports = processes.flatMap((p) => p.listeningPorts ?? [])
       updateTabMeta(tabId, { listeningPorts: [...new Set(ports)] })
       break

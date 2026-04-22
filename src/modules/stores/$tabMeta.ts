@@ -49,7 +49,6 @@ export function updateTabMeta(tabId: string, patch: Partial<TabMeta>): void {
   $tabMeta.set({ ...cur, [tabId]: next })
 }
 
-
 export function clearTabMeta(tabId: string): void {
   const cur = $tabMeta.get()
   const next = { ...cur }

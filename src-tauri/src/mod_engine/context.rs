@@ -45,8 +45,6 @@ pub struct ModContext<'a> {
     event_tx: &'a mpsc::Sender<ModEvent>,
     cwd_tx: &'a mpsc::Sender<CwdUpdate>,
     agent_tx: &'a mpsc::Sender<AgentSignal>,
-    /// The engine's current CWD for this tab, as of the start of this dispatch cycle.
-    pub current_cwd: Option<String>,
     /// PID of the shell process for this tab's PTY. Used by ProcessInspectorMod
     /// to detect only agent processes that are children of this shell.
     pub shell_pid: u32,
@@ -58,10 +56,10 @@ impl<'a> ModContext<'a> {
         event_tx: &'a mpsc::Sender<ModEvent>,
         cwd_tx: &'a mpsc::Sender<CwdUpdate>,
         agent_tx: &'a mpsc::Sender<AgentSignal>,
-        current_cwd: Option<String>,
+        _current_cwd: Option<String>,
         shell_pid: u32,
     ) -> Self {
-        Self { tab_id, event_tx, cwd_tx, agent_tx, current_cwd, shell_pid }
+        Self { tab_id, event_tx, cwd_tx, agent_tx, shell_pid }
     }
 
     /// Emit a typed event to the frontend. Non-blocking — silently drops if the
@@ -82,12 +80,6 @@ impl<'a> ModContext<'a> {
             tab_id: self.tab_id.to_string(),
             cwd: cwd.to_string(),
         });
-    }
-
-    /// Returns the engine's current CWD for this tab (set by the most recent
-    /// `on_cwd_changed` dispatch). `None` until the first OSC 7 fires.
-    pub fn current_cwd(&self) -> Option<&str> {
-        self.current_cwd.as_deref()
     }
 
     /// Returns a cloneable emitter that can be moved into async tasks.
