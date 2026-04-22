@@ -1,9 +1,19 @@
 import { useStore } from '@nanostores/react'
-import { hasDangerFlag, parseModelFlag } from '@/components/agent.helpers'
-import { DangerBadge } from '@/components/DangerBadge'
+import type React from 'react'
+import { parseModelFlag } from '@/components/agent.helpers'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import { $activeProjectId, $activeTabId } from '@/modules/stores/$navigation'
 import { $tabMeta } from '@/modules/stores/$tabMeta'
-import { MONO_FONT, makeTabKey } from '@/screens/workspace/workspace.helpers'
+import {
+  cwdBasename,
+  MONO_FONT,
+  makeTabKey,
+} from '@/screens/workspace/workspace.helpers'
 
 /* ---------------------------------------------------------------------------
  * StatusBarRight — active session state
@@ -14,20 +24,24 @@ import { MONO_FONT, makeTabKey } from '@/screens/workspace/workspace.helpers'
  * ProcessInspectorMod, but the component stays type-agnostic so it will
  * automatically work for any future tab type that provides process data.
  *
+ * CWD and git are always appended when available, regardless of proc data.
+ *
  * Tab with live process data (currently agent tabs only):
  *
- *   name · pid · elapsed · memory · :port1 :port2 · model · 🤘
- *   │      │     │         │        │                │       └── danger flag active
- *   │      │     │         │        │                └────────── --model flag value
- *   │      │     │         │        └─────────────────────────── listening TCP ports
- *   │      │     │         └──────────────────────────────────── RSS memory (MB)
- *   │      │     └────────────────────────────────────────────── wall-clock elapsed
- *   │      └──────────────────────────────────────────────────── process PID
- *   └─────────────────────────────────────────────────────────── process name
+ *   name · pid · elapsed · memory · :port1 :port2 · model · branch · /cwd
+ *   │      │     │         │        │                │       │         │
+ *   │      │     │         │        │                │       │         └── CWD basename (tooltip = full path)
+ *   │      │     │         │        │                │       └─────────── git branch + dirty (*) + ahead (+N)
+ *   │      │     │         │        │                └─────────────────── --model flag value
+ *   │      │     │         │        └──────────────────────────────────── listening TCP ports
+ *   │      │     │         └───────────────────────────────────────────── RSS memory (MB)
+ *   │      │     └─────────────────────────────────────────────────────── wall-clock elapsed
+ *   │      └───────────────────────────────────────────────────────────── process PID
+ *   └──────────────────────────────────────────────────────────────────── process name
  *
  * Tab with no process data (shell tabs, or agent tabs before first poll):
  *
- *   status   (running / done / error — hidden when idle)
+ *   status · branch · /cwd   (status hidden when idle)
  *
  * Items are separated by a dim mid-dot (·).
  * -------------------------------------------------------------------------*/
@@ -54,6 +68,19 @@ function formatMemory(kb: number): string {
   return `${(mb / 1024).toFixed(1)}GB`
 }
 
+/** Formats git info into a compact `branch*+N-N` string. */
+function formatGitLabel(git: {
+  branch: string
+  isDirty: boolean
+  aheadBy: number
+  behindBy: number
+}): string {
+  const dirty = git.isDirty ? '*' : ''
+  const ahead = git.aheadBy > 0 ? `+${git.aheadBy}` : ''
+  const behind = git.behindBy > 0 ? `-${git.behindBy}` : ''
+  return `${git.branch}${dirty}${ahead}${behind}`
+}
+
 export function StatusBarRight() {
   const allTabMeta = useStore($tabMeta)
   const activeProjectId = useStore($activeProjectId)
@@ -66,7 +93,9 @@ export function StatusBarRight() {
 
   if (!meta) return null
 
-  const { status, agentCmd, processes, listeningPorts } = meta
+  const { status, agentCmd, processes, listeningPorts, cwd, git } = meta
+
+  const items: React.ReactNode[] = []
 
   // ── Any tab with live process data ───────────────────────────────────────
   // Gate on proc being present, not on tab type, so this works for any tab
@@ -75,9 +104,8 @@ export function StatusBarRight() {
   if (proc) {
     const model = parseModelFlag(agentCmd)
     const ports = listeningPorts ?? []
-    const isDanger = hasDangerFlag(agentCmd)
 
-    const items: React.ReactNode[] = [
+    items.push(
       <span key="name" style={{ fontFamily: MONO_FONT }}>
         {proc.name}
       </span>,
@@ -90,7 +118,7 @@ export function StatusBarRight() {
       <span key="mem" style={{ fontFamily: MONO_FONT }}>
         {formatMemory(proc.memoryKb)}
       </span>,
-    ]
+    )
 
     if (ports.length > 0) {
       items.push(
@@ -115,47 +143,71 @@ export function StatusBarRight() {
         </span>,
       )
     }
-
-    if (isDanger) {
-      items.push(<DangerBadge key="danger" size={10} />)
+  } else if (status !== 'idle') {
+    // ── Tab with no process data yet — show status text ───────────────────
+    const statusColor: Record<string, string> = {
+      running: 'var(--terminal-green)',
+      done: 'var(--terminal-green)',
+      error: 'var(--terminal-red)',
     }
+    const label: Record<string, string> = {
+      running: 'running',
+      done: 'done',
+      error: 'error',
+    }
+    if (label[status]) {
+      items.push(
+        <span
+          key="status"
+          style={{ fontFamily: MONO_FONT, color: statusColor[status] }}
+        >
+          {label[status]}
+        </span>,
+      )
+    }
+  }
 
-    return (
-      <div className="ml-auto flex min-w-0 shrink-0 items-center gap-1.5 overflow-hidden">
-        {items.map((item, i) => (
-          // biome-ignore lint/suspicious/noArrayIndexKey: static order, no reordering
-          <span key={i} className="flex items-center gap-1.5">
-            {i > 0 && <Dot />}
-            {item}
-          </span>
-        ))}
-      </div>
+  // ── Git branch — always shown when available (second from right) ─────────
+  if (git?.branch) {
+    items.push(
+      <span
+        key="git"
+        className="text-accent opacity-80"
+        style={{ fontFamily: MONO_FONT }}
+      >
+        {formatGitLabel(git)}
+      </span>,
     )
   }
 
-  // ── Tab with no process data yet ─────────────────────────────────────────
-  // Only show when there's something interesting to say (not idle).
-  if (status === 'idle') return null
-
-  const statusLabel: Record<string, string> = {
-    running: 'running',
-    done: 'done',
-    error: 'error',
+  // ── CWD — always shown when available (rightmost), full path on hover ────
+  if (cwd) {
+    items.push(
+      <TooltipProvider key="cwd">
+        <Tooltip>
+          <TooltipTrigger
+            className="cursor-default appearance-none border-0 bg-transparent p-0 text-[11px] text-inherit"
+            style={{ fontFamily: MONO_FONT }}
+          >
+            {cwdBasename(cwd)}
+          </TooltipTrigger>
+          <TooltipContent side="top">{cwd}</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>,
+    )
   }
-  const label = statusLabel[status]
-  if (!label) return null
 
-  const statusColor: Record<string, string> = {
-    running: 'var(--terminal-green)',
-    done: 'var(--terminal-green)',
-    error: 'var(--terminal-red)',
-  }
+  if (items.length === 0) return null
 
   return (
-    <div className="ml-auto flex shrink-0 items-center">
-      <span style={{ fontFamily: MONO_FONT, color: statusColor[status] }}>
-        {label}
-      </span>
+    <div className="ml-auto flex min-w-0 shrink-0 items-center gap-1.5 overflow-hidden">
+      {items.map((item, i) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: static order, no reordering
+        <span key={i} className="flex items-center gap-1.5">
+          {i > 0 && <Dot />}
+          {item}
+        </span>
+      ))}
     </div>
   )
 }
