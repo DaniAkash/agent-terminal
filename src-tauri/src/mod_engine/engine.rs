@@ -172,7 +172,7 @@ impl ModEngine {
                     let ctx = ModContext::new(&sig.tab_id, &event_tx_dispatch, &cwd_tx, &agent_tx, current_cwd);
                     match sig.kind {
                         AgentSignalKind::Detected => {
-                            for m in &mut mods { m.on_agent_detected(&sig.agent, &sig.cwd, &ctx); }
+                            for m in &mut mods { m.on_agent_detected(&sig.agent, &sig.cwd, &sig.cmd, &ctx); }
                         }
                         AgentSignalKind::Cleared => {
                             for m in &mut mods { m.on_agent_cleared(&sig.agent, &ctx); }

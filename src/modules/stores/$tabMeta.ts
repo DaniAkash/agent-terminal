@@ -12,26 +12,6 @@ export type GitInfo = {
   pr?: { number: number; title: string; state: string; url: string }
 }
 
-export type ClaudeSession = {
-  sessionId: string
-  gitBranch?: string
-  model?: string
-  permissionMode?: string
-  title?: string
-  prNumber?: number
-  prUrl?: string
-}
-
-export type CodexSession = {
-  sessionId: string
-  gitBranch?: string
-  model?: string
-  approvalPolicy?: string
-  sandboxMode?: string
-  effort?: string
-  title?: string
-}
-
 export type TabMeta = {
   /** Shell or agent process state — driven by ProcessTrackerMod (OSC 133). */
   status: TabStatus
@@ -43,12 +23,10 @@ export type TabMeta = {
   git?: GitInfo
   /** Non-zero exit code when status is "error". */
   exitCode?: number
-  /** Agent binary name: "claude-code" | "codex". */
+  /** Agent binary name: "claude-code" | "codex" — set when type is "agent". */
   agentName?: string
-  /** Active Claude Code session metadata — set by ClaudeCodeMod. */
-  claudeSession?: ClaudeSession
-  /** Active Codex session metadata — set by CodexMod. */
-  codexSession?: CodexSession
+  /** Full command used to launch the agent — set by ClaudeCodeMod / CodexMod. */
+  agentCmd?: string
   /** TCP ports the agent process tree is listening on — set by ProcessInspectorMod. */
   listeningPorts?: number[]
 }
@@ -66,10 +44,25 @@ export const $tabMeta = atom<Record<string, TabMeta>>({})
 
 export function updateTabMeta(tabId: string, patch: Partial<TabMeta>): void {
   const cur = $tabMeta.get()
-  $tabMeta.set({
-    ...cur,
-    [tabId]: { ...defaultMeta, ...cur[tabId], ...patch },
-  })
+  const next = { ...defaultMeta, ...cur[tabId], ...patch }
+  // DEBUG — skip update and log if nothing actually changed
+  if (JSON.stringify(cur[tabId]) === JSON.stringify(next)) return
+  $tabMeta.set({ ...cur, [tabId]: next })
+  console.log(`[tabMeta] ${tabId}\n${formatTabMeta(next)}`)
+}
+
+function formatTabMeta(m: TabMeta): string {
+  const lines: string[] = []
+  lines.push(`  status=${m.status} type=${m.type}${m.agentName ? ` agent=${m.agentName}` : ''}`)
+  if (m.cwd) lines.push(`  cwd=${m.cwd}`)
+  if (m.git) {
+    const g = m.git
+    const pr = g.pr ? ` pr=#${g.pr.number}` : ''
+    lines.push(`  git=${g.branch} ↑${g.aheadBy} ↓${g.behindBy}${g.isDirty ? ' dirty' : ''}${g.worktree ? ` worktree=${g.worktree}` : ''}${pr}`)
+  }
+  if (m.agentCmd) lines.push(`  cmd=${m.agentCmd}`)
+  if (m.listeningPorts?.length) lines.push(`  ports=${m.listeningPorts.join(', ')}`)
+  return lines.join('\n')
 }
 
 export function clearTabMeta(tabId: string): void {

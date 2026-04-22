@@ -33,6 +33,9 @@ pub struct AgentSignal {
     pub agent: String,
     /// Non-empty for `Detected`; empty string for `Cleared`.
     pub cwd: String,
+    /// Full command string for `Detected` (e.g. `"claude --dangerously-skip-permissions"`).
+    /// Empty string for `Cleared`.
+    pub cmd: String,
     pub kind: AgentSignalKind,
 }
 
@@ -130,11 +133,12 @@ pub struct AsyncAgentSignaler {
 }
 
 impl AsyncAgentSignaler {
-    pub fn agent_detected(&self, agent: &str, cwd: &str) {
+    pub fn agent_detected(&self, agent: &str, cwd: &str, cmd: &str) {
         let _ = self.agent_tx.try_send(AgentSignal {
             tab_id: self.tab_id.clone(),
             agent: agent.to_string(),
             cwd: cwd.to_string(),
+            cmd: cmd.to_string(),
             kind: AgentSignalKind::Detected,
         });
     }
@@ -144,6 +148,7 @@ impl AsyncAgentSignaler {
             tab_id: self.tab_id.clone(),
             agent: agent.to_string(),
             cwd: String::new(),
+            cmd: String::new(),
             kind: AgentSignalKind::Cleared,
         });
     }

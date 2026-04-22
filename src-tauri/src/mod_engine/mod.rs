@@ -42,8 +42,10 @@ pub trait Mod: Send + 'static {
 
     /// Called by the engine when `ProcessInspectorMod` detects a new agent process
     /// (or a PID change for the same agent name) in this tab's CWD.
-    /// `agent` is the binary name: `"claude"` or `"codex"`. Default is a no-op.
-    fn on_agent_detected(&mut self, _agent: &str, _cwd: &str, _ctx: &ModContext) {}
+    /// `agent` is the binary name: `"claude"` or `"codex"`.
+    /// `cmd` is the full command string used to launch the process (e.g. `"claude --dangerously-skip-permissions"`).
+    /// Default is a no-op.
+    fn on_agent_detected(&mut self, _agent: &str, _cwd: &str, _cmd: &str, _ctx: &ModContext) {}
 
     /// Called by the engine when `ProcessInspectorMod` no longer sees an agent
     /// process that was previously detected in this tab's CWD. Default is a no-op.
