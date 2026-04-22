@@ -8,9 +8,13 @@ import { MONO_FONT, makeTabKey } from '@/screens/workspace/workspace.helpers'
 /* ---------------------------------------------------------------------------
  * StatusBarRight — active session state
  *
- * Shows runtime metadata for the currently focused tab.
+ * Shows runtime metadata for the currently focused tab. The rich view fires
+ * for ANY tab type that has live process data — the gate is `proc != null`,
+ * not `type === 'agent'`. Today only agent tabs populate `processes` via
+ * ProcessInspectorMod, but the component stays type-agnostic so it will
+ * automatically work for any future tab type that provides process data.
  *
- * Agent tabs with live process data:
+ * Tab with live process data (currently agent tabs only):
  *
  *   name · pid · elapsed · memory · :port1 :port2 · model · 🤘
  *   │      │     │         │        │                │       └── danger flag active
@@ -18,10 +22,10 @@ import { MONO_FONT, makeTabKey } from '@/screens/workspace/workspace.helpers'
  *   │      │     │         │        └─────────────────────────── listening TCP ports
  *   │      │     │         └──────────────────────────────────── RSS memory (MB)
  *   │      │     └────────────────────────────────────────────── wall-clock elapsed
- *   │      └──────────────────────────────────────────────────── agent process PID
- *   └─────────────────────────────────────────────────────────── agent process name
+ *   │      └──────────────────────────────────────────────────── process PID
+ *   └─────────────────────────────────────────────────────────── process name
  *
- * Shell tabs / agent tabs with no process data yet:
+ * Tab with no process data (shell tabs, or agent tabs before first poll):
  *
  *   status   (running / done / error — hidden when idle)
  *
@@ -62,11 +66,13 @@ export function StatusBarRight() {
 
   if (!meta) return null
 
-  const { type, status, agentCmd, processes, listeningPorts } = meta
+  const { status, agentCmd, processes, listeningPorts } = meta
 
-  // ── Agent tab with live process data ─────────────────────────────────────
+  // ── Any tab with live process data ───────────────────────────────────────
+  // Gate on proc being present, not on tab type, so this works for any tab
+  // type that populates `processes` in the future.
   const proc = processes?.[0]
-  if (type === 'agent' && proc) {
+  if (proc) {
     const model = parseModelFlag(agentCmd)
     const ports = listeningPorts ?? []
     const isDanger = hasDangerFlag(agentCmd)
@@ -127,7 +133,7 @@ export function StatusBarRight() {
     )
   }
 
-  // ── Shell tab or agent with no process data yet ───────────────────────────
+  // ── Tab with no process data yet ─────────────────────────────────────────
   // Only show when there's something interesting to say (not idle).
   if (status === 'idle') return null
 
