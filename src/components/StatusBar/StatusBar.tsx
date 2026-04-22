@@ -1,33 +1,35 @@
-import { useStore } from '@nanostores/react'
-import { $projects } from '@/modules/stores/$projects'
-import { $tabMeta } from '@/modules/stores/$tabMeta'
-import { makeTabKey } from '@/screens/workspace/workspace.helpers'
+import { StatusBarLeft } from '@/components/StatusBar/StatusBarLeft'
+import { StatusBarRight } from '@/components/StatusBar/StatusBarRight'
 
+/**
+ * Status bar — V1 Extended: full-length split (general · session).
+ *
+ * ┌──────────────────────────────────────────────────────────────────────────┐
+ * │  /cwd  branch*  ● N  claude N  codex N  🤘  ····  name · pid · mem · :port │
+ * │  └────── StatusBarLeft (workspace) ───────┘  └── StatusBarRight (session) ┘│
+ * └──────────────────────────────────────────────────────────────────────────┘
+ *
+ * Left  — workspace state: active tab CWD, git branch, global running counts,
+ *          per-agent counts, danger indicator.
+ * Right — active session: live process metadata for the focused tab (name,
+ *          pid, elapsed, memory, ports, model, danger).
+ *
+ * Each side renders null when it has nothing to show, so the bar degrades
+ * gracefully on fresh tabs with no data yet.
+ */
 export function StatusBar() {
-  const projects = useStore($projects)
-  const allTabMeta = useStore($tabMeta)
-  const sessionsRunning = projects.reduce(
-    (n, p) =>
-      n +
-      p.tabs.filter(
-        (t) => allTabMeta[makeTabKey(p.id, t.id)]?.status === 'running',
-      ).length,
-    0,
-  )
-
   return (
     <div
-      className="flex h-6 shrink-0 items-center border-t px-3 text-[11px]"
+      className="flex h-6 shrink-0 items-center gap-2 overflow-hidden border-t px-3 text-[11px]"
       style={{
         background: 'var(--status-bar-background)',
         borderColor: 'var(--status-bar-border)',
         color: 'var(--status-bar-foreground)',
+        fontFamily: 'var(--font-ui)',
       }}
     >
-      <span className="mr-auto">
-        {sessionsRunning > 0 ? `● ${sessionsRunning} running` : '○ idle'}
-      </span>
-      <span className="opacity-60">UTF-8 · zsh</span>
+      <StatusBarLeft />
+      <StatusBarRight />
     </div>
   )
 }
