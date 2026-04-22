@@ -42,7 +42,7 @@ type Props = {
  *   Renders AgentGlyph with the agent's brand mark.
  *   idle   → dim mark (full opacity when the tab/sidebar item is active)
  *   done   → green check badge (bottom-right corner of the mark)
- *   error  → green check badge (OSC 133 maps both done/error → completed)
+ *   error  → green check badge (same as done — see TECH DEBT note in agent.helpers.ts)
  *
  *   `in-progress` (pulsing ring) and `awaiting` (amber chat-bubble badge)
  *   are defined in AgentState but not yet returned by deriveAgentState —

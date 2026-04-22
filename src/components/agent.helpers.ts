@@ -5,12 +5,13 @@ import type { TabMeta } from '@/modules/stores/$tabMeta'
  *
  * - idle        : process exists, no active turn (dim mark)
  * - in-progress : agent is producing output (pulsing ring)
- * - completed   : last turn finished, waiting for next prompt (green check badge)
+ * - completed   : session ended — green check badge (bottom-right)
  * - awaiting    : agent is waiting for user confirmation (amber chat-bubble badge)
  *
- * `completed` and `awaiting` are future states — `deriveAgentState` never
- * returns them yet. When the AgentTurnMod is built it will write
- * `TabMeta.agentState` directly; update this helper to prefer that field.
+ * Currently `deriveAgentState` returns `idle` and `completed` only.
+ * `in-progress` and `awaiting` are unlocked when AgentTurnMod writes
+ * `TabMeta.agentState` directly; add `if (meta.agentState) return meta.agentState`
+ * as the first check in `deriveAgentState` at that point.
  */
 export type AgentState = 'idle' | 'in-progress' | 'completed' | 'awaiting'
 
@@ -25,6 +26,12 @@ export type AgentState = 'idle' | 'in-progress' | 'completed' | 'awaiting'
  * When AgentTurnMod is built it will write `TabMeta.agentState` directly.
  * At that point, add `if (meta.agentState) return meta.agentState` as the
  * first check below, and the richer states will light up automatically.
+ *
+ * TECH DEBT: Both `done` and `error` map to `completed` (green check badge).
+ * Error exits should ideally show a distinct red badge, but we have no
+ * reliable way to distinguish a clean agent exit from an error exit at the
+ * OSC 133 level today. Treat any session end as successful for now and
+ * revisit when AgentTurnMod provides richer exit metadata.
  */
 export function deriveAgentState(meta: TabMeta | undefined): AgentState {
   if (!meta || meta.type !== 'agent') return 'idle'

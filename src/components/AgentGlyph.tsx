@@ -1,3 +1,4 @@
+import type React from 'react'
 import type { AgentState } from '@/components/agent.helpers'
 
 /* ---------------------------------------------------------------------------
@@ -48,6 +49,16 @@ const BRAND: Record<string, { color: string; glow: string }> = {
   codex: { color: '#e6e8eb', glow: 'rgba(230,232,235,0.45)' },
 }
 
+/**
+ * Maps agent name → its Mark component.
+ * Must stay in sync with BRAND — every key in BRAND needs an entry here.
+ * Adding a new agent: add to BRAND above AND add to MARKS here.
+ */
+const MARKS: Record<string, React.ComponentType<{ size: number }>> = {
+  'claude-code': ClaudeMark,
+  codex: CodexMark,
+}
+
 /* ---------------------------------------------------------------------------
  * Fallback for unknown agents — backwards-compatible violet sparkle
  * -------------------------------------------------------------------------*/
@@ -55,11 +66,15 @@ const BRAND: Record<string, { color: string; glow: string }> = {
 function SparkleFallback({
   state,
   size,
+  active = false,
 }: {
   state: AgentState
   size: number
+  active?: boolean
 }) {
-  const active = state === 'in-progress'
+  // Full opacity when the tab is selected (active) or the agent is running,
+  // matching the same brightness logic used for branded marks.
+  const dim = state === 'idle' && !active
   return (
     <span
       style={{
@@ -72,7 +87,7 @@ function SparkleFallback({
         color: '#c4b5fd',
         fontSize: Math.max(8, size * 0.7),
         lineHeight: 1,
-        opacity: active ? 0.9 : 0.5,
+        opacity: dim ? 0.5 : 0.9,
       }}
       aria-hidden="true"
     >
@@ -107,11 +122,11 @@ export function AgentGlyph({
 }) {
   const brand = BRAND[agent]
 
-  // Unknown agent → backwards-compatible sparkle
-  if (!brand) return <SparkleFallback state={state} size={size} />
+  // Unknown agent → backwards-compatible sparkle (respects active state)
+  if (!brand) return <SparkleFallback state={state} size={size} active={active} />
 
   const { color, glow } = brand
-  const Mark = agent === 'codex' ? CodexMark : ClaudeMark
+  const Mark = MARKS[agent] ?? ClaudeMark
 
   const markOpacity = state === 'idle' && !active ? 0.45 : 1
   const markFilter =
