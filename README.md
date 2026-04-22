@@ -67,9 +67,6 @@ The intelligence layer is built on a Rust-native MOD system. Each MOD subscribes
 ### No tmux dependency
 Sessions use raw PTYs managed directly by Rust. No tmux, no daemon, no invisible infrastructure. The tradeoff: long-running processes need to be restarted when you reopen the app. In exchange, the app is simpler, faster to start, and has zero external dependencies.
 
-### Universal binary
-Ships as a universal macOS binary — a single app that runs natively on both Apple Silicon and Intel Macs.
-
 ---
 
 ## Screenshots
@@ -82,7 +79,7 @@ Ships as a universal macOS binary — a single app that runs natively on both Ap
 
 ### Prerequisites
 
-- macOS 13 or later (Apple Silicon or Intel)
+- macOS 13 or later
 - [Rust](https://rustup.rs) stable toolchain
 - [Bun](https://bun.sh) — `curl -fsSL https://bun.sh/install | bash`
 - Xcode Command Line Tools — `xcode-select --install`
@@ -140,6 +137,7 @@ Agent Terminal is early stage and under heavy active development.
 - [ ] Theming support (light / dark / custom color schemes)
 - [ ] Gemini CLI, Cursor, Open Code agent support
 - [ ] Agent turn detection (know when an agent is actively working vs idle)
+- [ ] Universal binary (Apple Silicon + Intel in one download)
 - [ ] macOS App Store distribution
 - [ ] Windows support
 
