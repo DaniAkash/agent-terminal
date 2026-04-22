@@ -5,6 +5,8 @@ import { openUrl } from '@tauri-apps/plugin-opener'
 import { Pin } from 'lucide-react'
 import type React from 'react'
 import { useEffect, useRef, useState } from 'react'
+import { hasDangerFlag } from '@/components/agent.helpers'
+import { DangerBadge } from '@/components/DangerBadge'
 import { TabStatusIcon } from '@/components/TabStatusIcon'
 import {
   ContextMenu,
@@ -21,7 +23,11 @@ import {
 } from '@/modules/stores/$navigation'
 import { removeTab, renameTab, toggleTabPin } from '@/modules/stores/$projects'
 import { $tabMeta } from '@/modules/stores/$tabMeta'
-import { MONO_FONT, makeTabKey } from '@/screens/workspace/workspace.helpers'
+import {
+  MONO_FONT,
+  makeTabKey,
+  resolveTabLabel,
+} from '@/screens/workspace/workspace.helpers'
 import type { Tab } from '@/screens/workspace/workspace.types'
 
 export function SidebarTabItem({
@@ -100,12 +106,17 @@ export function SidebarTabItem({
                 style={{ fontFamily: MONO_FONT, fontSize: 11.5 }}
               />
             ) : (
-              <span
-                className={cn('flex-1 truncate', isActive && 'font-medium')}
-                style={{ fontFamily: MONO_FONT, fontSize: 11.5 }}
-              >
-                {tab.label}
-              </span>
+              <>
+                <span
+                  className={cn('flex-1 truncate', isActive && 'font-medium')}
+                  style={{ fontFamily: MONO_FONT, fontSize: 11.5 }}
+                >
+                  {resolveTabLabel(tab, tabMeta?.cwd)}
+                </span>
+                {tabMeta?.type === 'agent' && hasDangerFlag(tabMeta.agentCmd) && (
+                  <DangerBadge size={11} />
+                )}
+              </>
             )}
             {!renaming && tabMeta?.git?.pr && prUrl && (
               <a

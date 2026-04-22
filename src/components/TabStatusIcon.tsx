@@ -1,4 +1,6 @@
 import { useStore } from '@nanostores/react'
+import { AgentGlyph } from '@/components/AgentGlyph'
+import { deriveAgentState } from '@/components/agent.helpers'
 import { RunningDot } from '@/components/RunningDot'
 import { $tabMeta } from '@/modules/stores/$tabMeta'
 
@@ -7,15 +9,19 @@ type Props = {
 }
 
 /**
- * Replaces the static running indicator in tab pills.
+ * Status indicator for tab pills and sidebar rows.
  * Reads from `$tabMeta` (driven by ProcessTrackerMod + ClaudeCodeMod/CodexMod).
  *
- * - agent type + running → violet sparkle (✦) — AI agent is active
- * - agent type + idle   → dim violet sparkle — session detected, agent idle
- * - running → animated RunningDot
- * - done → green dot
- * - error → red dot
- * - idle → dim static dot
+ * Shell / task:
+ *   running → animated RunningDot (pulsing green)
+ *   done    → static green dot
+ *   error   → static red dot
+ *   idle    → dim static dot
+ *
+ * Agent:
+ *   Renders AgentGlyph with the agent's brand mark and a state badge.
+ *   State is derived from OSC 133 status today; AgentTurnMod will enrich
+ *   this with completed / awaiting states in the future.
  */
 export function TabStatusIcon({ tabId }: Props) {
   const allMeta = useStore($tabMeta)
@@ -23,23 +29,17 @@ export function TabStatusIcon({ tabId }: Props) {
   const status = meta?.status ?? 'idle'
   const type = meta?.type ?? 'shell'
 
-  // Agent tab — show sparkle instead of dot
   if (type === 'agent') {
-    const isRunning = status === 'running'
     return (
-      <span
-        className={`shrink-0 text-violet-400 ${isRunning ? 'opacity-90' : 'opacity-50'}`}
-        style={{ fontSize: 10, lineHeight: 1 }}
-        aria-hidden="true"
-      >
-        ✦
-      </span>
+      <AgentGlyph
+        agent={meta?.agentName ?? ''}
+        state={deriveAgentState(meta)}
+        size={14}
+      />
     )
   }
 
-  if (status === 'running') {
-    return <RunningDot />
-  }
+  if (status === 'running') return <RunningDot />
 
   if (status === 'done') {
     return (
@@ -53,7 +53,6 @@ export function TabStatusIcon({ tabId }: Props) {
     )
   }
 
-  // idle
   return (
     <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-current opacity-35" />
   )
