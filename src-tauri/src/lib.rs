@@ -4,7 +4,6 @@ mod pty_manager;
 mod shell_integration;
 
 use mod_engine::{
-    CwdRegistry,
     ModEngine,
     mods::{
         ClaudeCodeMod,
@@ -34,15 +33,13 @@ pub fn run() {
                 eprintln!("[agent-terminal] shell integration setup failed: {e}");
             }
 
-            let cwd_registry = CwdRegistry::default();
-
             let mod_engine = ModEngine::builder()
-                .with_mod(DirTrackerMod::new(cwd_registry.clone()))
+                .with_mod(DirTrackerMod::new())
                 .with_mod(ProcessTrackerMod::new())
-                .with_mod(ClaudeCodeMod::new(cwd_registry.clone()))
-                .with_mod(CodexMod::new(cwd_registry.clone()))
-                .with_mod(ProcessInspectorMod::new(cwd_registry.clone()))
-                .with_mod(GitMonitorMod::new(cwd_registry.clone()))
+                .with_mod(ClaudeCodeMod::new())
+                .with_mod(CodexMod::new())
+                .with_mod(ProcessInspectorMod::new())
+                .with_mod(GitMonitorMod::new())
                 .build(app.handle().clone());
             app.manage(mod_engine);
             Ok(())

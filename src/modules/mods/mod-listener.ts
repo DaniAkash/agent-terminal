@@ -1,7 +1,5 @@
 import { listen } from '@tauri-apps/api/event'
 import {
-  type ClaudeSession,
-  type CodexSession,
   clearTabMeta,
   type GitInfo,
   type TabStatus,
@@ -28,7 +26,12 @@ export async function startModListener(): Promise<() => void> {
   })
 }
 
-function dispatch({ tabId, event, data }: ModEventPayload): void {
+function dispatch({
+  tabId,
+  modId: _modId,
+  event,
+  data,
+}: ModEventPayload): void {
   // Guard against malformed payloads — Rust controls the emitter, but a
   // bad payload should never crash the global listener.
   if (data !== null && data !== undefined && typeof data !== 'object') return
@@ -42,8 +45,20 @@ function dispatch({ tabId, event, data }: ModEventPayload): void {
       break
     }
     case 'tab_type_changed': {
-      const { type, agent } = data as { type: TabType; agent?: string }
-      updateTabMeta(tabId, { type, agentName: agent })
+      const { type, agent, cmd } = data as {
+        type: TabType
+        agent?: string
+        cmd?: string
+      }
+      if (type === 'shell') {
+        updateTabMeta(tabId, {
+          type,
+          agentName: undefined,
+          agentCmd: undefined,
+        })
+      } else {
+        updateTabMeta(tabId, { type, agentName: agent, agentCmd: cmd })
+      }
       break
     }
     case 'cwd_changed': {
@@ -55,28 +70,13 @@ function dispatch({ tabId, event, data }: ModEventPayload): void {
       updateTabMeta(tabId, { git: (data as GitInfo) ?? undefined })
       break
     }
-    case 'claude_session': {
-      updateTabMeta(tabId, { claudeSession: data as ClaudeSession })
-      break
-    }
-    case 'claude_session_cleared': {
-      updateTabMeta(tabId, {
-        claudeSession: undefined,
-        agentName: undefined,
-        type: 'shell',
-      })
-      break
-    }
-    case 'codex_session': {
-      updateTabMeta(tabId, { codexSession: data as CodexSession })
-      break
-    }
-    case 'codex_session_cleared': {
-      updateTabMeta(tabId, {
-        codexSession: undefined,
-        agentName: undefined,
-        type: 'shell',
-      })
+    case 'process_info': {
+      // Enriched process scan — extract listening ports from all processes for now
+      const { processes } = data as {
+        processes: Array<{ listeningPorts: number[] }>
+      }
+      const ports = processes.flatMap((p) => p.listeningPorts ?? [])
+      updateTabMeta(tabId, { listeningPorts: [...new Set(ports)] })
       break
     }
     case 'listening_ports': {

@@ -1,31 +1,29 @@
 use std::collections::HashMap;
 
-use crate::mod_engine::{AsyncEmitter, CwdRegistry, Mod, ModContext};
+use crate::mod_engine::{AsyncEmitter, Mod, ModContext};
+use tokio::sync::watch;
 
 struct GitTabState {
     last_queried_cwd: Option<String>,
-    /// Periodic refresh handle (60s interval).
+    /// Watch sender: updated on each on_cwd_changed; the 60s timer reads the receiver.
+    cwd_tx: watch::Sender<Option<String>>,
     timer: Option<tokio::task::JoinHandle<()>>,
 }
 
 /// Monitors git context for the tab's current working directory.
 ///
 /// Triggers:
-/// 1. CWD change (detected via CwdRegistry comparison in on_output)
+/// 1. CWD change (received via `on_cwd_changed` push from the engine)
 /// 2. 60-second periodic refresh timer
 ///
 /// Emits `git_info` events with branch, ahead/behind, dirty, worktree, and PR.
 pub struct GitMonitorMod {
-    cwd_registry: CwdRegistry,
     tabs: HashMap<String, GitTabState>,
 }
 
 impl GitMonitorMod {
-    pub fn new(cwd_registry: CwdRegistry) -> Self {
-        Self {
-            cwd_registry,
-            tabs: HashMap::new(),
-        }
+    pub fn new() -> Self {
+        Self { tabs: HashMap::new() }
     }
 
     fn spawn_git_query(&self, cwd: String, emitter: AsyncEmitter) {
@@ -42,20 +40,16 @@ impl Mod for GitMonitorMod {
     }
 
     fn on_open(&mut self, ctx: &ModContext) {
-        let tab_id = ctx.tab_id.to_string();
-        let cwd_registry = self.cwd_registry.clone();
+        let (cwd_tx, cwd_rx) = watch::channel::<Option<String>>(None);
         let emitter = ctx.async_emitter();
 
-        // 60-second periodic refresh
+        // 60-second periodic refresh: reads the latest CWD from the watch receiver.
         let timer = tokio::spawn(async move {
             let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(60));
             interval.tick().await; // skip immediate tick
             loop {
                 interval.tick().await;
-                let cwd = {
-                    let reg = cwd_registry.read().unwrap();
-                    reg.get(&tab_id).cloned()
-                };
+                let cwd = cwd_rx.borrow().clone();
                 if let Some(cwd) = cwd {
                     let data = query_git_info(&cwd).await;
                     emitter.emit("git_monitor", "git_info", data);
@@ -67,27 +61,28 @@ impl Mod for GitMonitorMod {
             ctx.tab_id.to_string(),
             GitTabState {
                 last_queried_cwd: None,
+                cwd_tx,
                 timer: Some(timer),
             },
         );
     }
 
-    fn on_output(&mut self, _data: &[u8], ctx: &ModContext) {
+    fn on_cwd_changed(&mut self, cwd: &str, ctx: &ModContext) {
         let Some(state) = self.tabs.get_mut(ctx.tab_id) else {
             return;
         };
 
-        let current_cwd = {
-            let reg = self.cwd_registry.read().unwrap();
-            reg.get(ctx.tab_id).cloned()
-        };
-
-        if let Some(ref cwd) = current_cwd {
-            if state.last_queried_cwd.as_deref() != Some(cwd.as_str()) {
-                state.last_queried_cwd = Some(cwd.clone());
-                self.spawn_git_query(cwd.clone(), ctx.async_emitter());
-            }
+        // Debounce: skip if same CWD as last query.
+        if state.last_queried_cwd.as_deref() == Some(cwd) {
+            return;
         }
+        state.last_queried_cwd = Some(cwd.to_string());
+
+        // Update the watch sender so the 60s timer picks up the new CWD.
+        let _ = state.cwd_tx.send(Some(cwd.to_string()));
+
+        // Fire an immediate git query for the new directory.
+        self.spawn_git_query(cwd.to_string(), ctx.async_emitter());
     }
 
     fn on_close(&mut self, ctx: &ModContext) {

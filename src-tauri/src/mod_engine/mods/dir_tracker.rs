@@ -1,24 +1,23 @@
 use std::collections::HashMap;
 
-use crate::mod_engine::{CwdRegistry, Mod, ModContext};
+use crate::mod_engine::{Mod, ModContext};
 use crate::mod_engine::osc_parser::OscParser;
 
-/// Watches OSC 7 sequences in PTY output and updates the shared `CwdRegistry`.
+/// Watches OSC 7 sequences in PTY output and signals the engine of CWD changes.
 ///
 /// OSC 7 format: `\x1b]7;file://hostname/path\x07`
 ///
+/// This is the single authoritative OSC 7 parser. Other mods receive CWD updates
+/// via `on_cwd_changed` — they never parse OSC 7 themselves.
+///
 /// Emits a `cwd_changed` event to the frontend whenever the directory changes.
 pub struct DirTrackerMod {
-    cwd_registry: CwdRegistry,
     parsers: HashMap<String, OscParser>,
 }
 
 impl DirTrackerMod {
-    pub fn new(cwd_registry: CwdRegistry) -> Self {
-        Self {
-            cwd_registry,
-            parsers: HashMap::new(),
-        }
+    pub fn new() -> Self {
+        Self { parsers: HashMap::new() }
     }
 }
 
@@ -45,11 +44,9 @@ impl Mod for DirTrackerMod {
                 continue;
             };
 
-            // Write to registry
-            {
-                let mut reg = self.cwd_registry.write().unwrap();
-                reg.insert(ctx.tab_id.to_string(), path.clone());
-            }
+            // Signal the engine — it will call on_cwd_changed on all mods after
+            // this on_output round completes.
+            ctx.set_cwd(&path);
 
             ctx.emit(
                 self.id(),
@@ -61,10 +58,6 @@ impl Mod for DirTrackerMod {
 
     fn on_close(&mut self, ctx: &ModContext) {
         self.parsers.remove(ctx.tab_id);
-        {
-            let mut reg = self.cwd_registry.write().unwrap();
-            reg.remove(ctx.tab_id);
-        }
         // Signal the frontend to GC tabMeta for this tab.
         ctx.emit(self.id(), "closed", serde_json::json!({}));
     }
