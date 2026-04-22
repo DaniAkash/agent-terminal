@@ -134,7 +134,7 @@ export function SidebarTabItem({
               </a>
             )}
             {!renaming && (
-              <TabStatusIcon tabId={makeTabKey(projectId, tab.id)} />
+              <TabStatusIcon tabId={makeTabKey(projectId, tab.id)} active={isActive} />
             )}
             {tab.pinned && !renaming && (
               <span

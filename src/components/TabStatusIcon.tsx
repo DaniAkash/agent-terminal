@@ -6,6 +6,7 @@ import { $tabMeta } from '@/modules/stores/$tabMeta'
 
 type Props = {
   tabId: string
+  active?: boolean
 }
 
 /**
@@ -23,7 +24,7 @@ type Props = {
  *   State is derived from OSC 133 status today; AgentTurnMod will enrich
  *   this with completed / awaiting states in the future.
  */
-export function TabStatusIcon({ tabId }: Props) {
+export function TabStatusIcon({ tabId, active = false }: Props) {
   const allMeta = useStore($tabMeta)
   const meta = allMeta[tabId]
   const status = meta?.status ?? 'idle'
@@ -35,6 +36,7 @@ export function TabStatusIcon({ tabId }: Props) {
         agent={meta?.agentName ?? ''}
         state={deriveAgentState(meta)}
         size={14}
+        active={active}
       />
     )
   }

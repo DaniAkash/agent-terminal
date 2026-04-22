@@ -100,7 +100,7 @@ function TabItem({ tab, projectId }: { tab: Tab; projectId: string }) {
               className="flex flex-1 cursor-pointer items-center gap-1.5 overflow-hidden pr-1 pl-3"
               onClick={() => navigateToTab(projectId, tab.id)}
             >
-              <TabStatusIcon tabId={makeTabKey(projectId, tab.id)} />
+              <TabStatusIcon tabId={makeTabKey(projectId, tab.id)} active={isActive} />
               <span className="truncate" style={{ fontFamily: MONO_FONT }}>
                 {resolveTabLabel(tab, tabMeta?.cwd)}
               </span>

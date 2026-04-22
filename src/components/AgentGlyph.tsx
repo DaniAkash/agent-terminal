@@ -98,10 +98,12 @@ export function AgentGlyph({
   agent,
   state,
   size = 16,
+  active = false,
 }: {
   agent: string
   state: AgentState
   size?: number
+  active?: boolean
 }) {
   const brand = BRAND[agent]
 
@@ -111,7 +113,7 @@ export function AgentGlyph({
   const { color, glow } = brand
   const Mark = agent === 'codex' ? CodexMark : ClaudeMark
 
-  const markOpacity = state === 'idle' ? 0.45 : 1
+  const markOpacity = state === 'idle' && !active ? 0.45 : 1
   const markFilter =
     state === 'idle'
       ? 'saturate(0.6)'
