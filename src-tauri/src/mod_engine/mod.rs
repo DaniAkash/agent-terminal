@@ -4,7 +4,7 @@ pub mod mods;
 pub mod osc_parser;
 
 #[allow(unused_imports)]
-pub use context::{AsyncEmitter, CwdRegistry, CwdUpdate, ModContext, ModEvent};
+pub use context::{AgentSignal, AgentSignalKind, AsyncAgentSignaler, AsyncEmitter, CwdRegistry, CwdUpdate, ModContext, ModEvent};
 pub use engine::{ModEngine, ModEngineHandle};
 
 /// The trait every MOD implements.
@@ -39,4 +39,13 @@ pub trait Mod: Send + 'static {
     /// Mods that react to directory changes implement this instead of reading
     /// `CwdRegistry` inside `on_output`. Default is a no-op.
     fn on_cwd_changed(&mut self, _cwd: &str, _ctx: &ModContext) {}
+
+    /// Called by the engine when `ProcessInspectorMod` detects a new agent process
+    /// (or a PID change for the same agent name) in this tab's CWD.
+    /// `agent` is the binary name: `"claude"` or `"codex"`. Default is a no-op.
+    fn on_agent_detected(&mut self, _agent: &str, _cwd: &str, _ctx: &ModContext) {}
+
+    /// Called by the engine when `ProcessInspectorMod` no longer sees an agent
+    /// process that was previously detected in this tab's CWD. Default is a no-op.
+    fn on_agent_cleared(&mut self, _agent: &str, _ctx: &ModContext) {}
 }

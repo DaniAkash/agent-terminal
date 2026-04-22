@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use super::context::{CwdUpdate, ModContext, ModEvent};
+use super::context::{AgentSignal, AgentSignalKind, CwdUpdate, ModContext, ModEvent};
 use super::Mod;
 use tauri::{AppHandle, Emitter, async_runtime};
 use tokio::sync::mpsc;
@@ -93,25 +93,20 @@ impl ModEngine {
 
     fn start(mods: Vec<Box<dyn Mod>>, app: AppHandle) -> Self {
         // Bounded channel for data messages (Output/Input/Resize).
-        // try_send drops when full so the PTY thread is never blocked.
         let (msg_tx, mut msg_rx) = mpsc::channel::<ModMessage>(512);
         // Unbounded channel for lifecycle messages (Open/Close) — never dropped.
         let (lifecycle_tx, mut lifecycle_rx) = mpsc::unbounded_channel::<ModMessage>();
         // Outbound event buffer to the frontend.
         let (event_tx, mut event_rx) = mpsc::channel::<ModEvent>(256);
         // CWD update channel: DirTrackerMod calls ctx.set_cwd() which sends here.
-        // The engine drains this after each dispatch round and calls on_cwd_changed.
         let (cwd_tx, mut cwd_rx) = mpsc::channel::<CwdUpdate>(64);
+        // Agent lifecycle channel: ProcessInspectorMod's timer sends here.
+        let (agent_tx, mut agent_rx) = mpsc::channel::<AgentSignal>(64);
 
-        // Task 1: dispatch PTY messages to every MOD in registration order.
-        // `biased` select gives lifecycle messages priority over data messages so
-        // Open/Close are always processed before any buffered Output/Input/Resize
-        // for the same tab.
         let event_tx_dispatch = event_tx.clone();
         async_runtime::spawn(async move {
             let mut mods = mods;
-            // Internal CWD table: tab_id → current cwd. Never exposed to mods directly;
-            // they receive it via on_cwd_changed or ctx.current_cwd().
+            // Internal CWD table: tab_id → current cwd.
             let mut cwd_table: HashMap<String, String> = HashMap::new();
 
             loop {
@@ -130,42 +125,59 @@ impl ModEngine {
                 match msg {
                     ModMessage::Open { tab_id } => {
                         let current_cwd = cwd_table.get(&tab_id).cloned();
-                        let ctx = ModContext::new(&tab_id, &event_tx_dispatch, &cwd_tx, current_cwd);
+                        let ctx = ModContext::new(&tab_id, &event_tx_dispatch, &cwd_tx, &agent_tx, current_cwd);
                         for m in &mut mods { m.on_open(&ctx); }
                     }
                     ModMessage::Close { tab_id } => {
                         let current_cwd = cwd_table.get(&tab_id).cloned();
-                        let ctx = ModContext::new(&tab_id, &event_tx_dispatch, &cwd_tx, current_cwd);
+                        let ctx = ModContext::new(&tab_id, &event_tx_dispatch, &cwd_tx, &agent_tx, current_cwd);
                         for m in &mut mods { m.on_close(&ctx); }
                         cwd_table.remove(&tab_id);
                     }
                     ModMessage::Output { tab_id, data } => {
                         let current_cwd = cwd_table.get(&tab_id).cloned();
-                        let ctx = ModContext::new(&tab_id, &event_tx_dispatch, &cwd_tx, current_cwd);
+                        let ctx = ModContext::new(&tab_id, &event_tx_dispatch, &cwd_tx, &agent_tx, current_cwd);
                         for m in &mut mods { m.on_output(&data, &ctx); }
                     }
                     ModMessage::Input { tab_id, data } => {
                         let current_cwd = cwd_table.get(&tab_id).cloned();
-                        let ctx = ModContext::new(&tab_id, &event_tx_dispatch, &cwd_tx, current_cwd);
+                        let ctx = ModContext::new(&tab_id, &event_tx_dispatch, &cwd_tx, &agent_tx, current_cwd);
                         for m in &mut mods { m.on_input(&data, &ctx); }
                     }
                     ModMessage::Resize { tab_id, cols, rows } => {
                         let current_cwd = cwd_table.get(&tab_id).cloned();
-                        let ctx = ModContext::new(&tab_id, &event_tx_dispatch, &cwd_tx, current_cwd);
+                        let ctx = ModContext::new(&tab_id, &event_tx_dispatch, &cwd_tx, &agent_tx, current_cwd);
                         for m in &mut mods { m.on_resize(cols, rows, &ctx); }
                     }
                 }
 
                 // Drain CWD updates produced during this dispatch round.
-                // Update the internal table and call on_cwd_changed on all mods.
                 let mut cwd_updates: Vec<(String, String)> = Vec::new();
                 while let Ok(upd) = cwd_rx.try_recv() {
                     cwd_table.insert(upd.tab_id.clone(), upd.cwd.clone());
                     cwd_updates.push((upd.tab_id, upd.cwd));
                 }
                 for (tab_id, cwd) in &cwd_updates {
-                    let ctx = ModContext::new(tab_id, &event_tx_dispatch, &cwd_tx, Some(cwd.clone()));
+                    let ctx = ModContext::new(tab_id, &event_tx_dispatch, &cwd_tx, &agent_tx, Some(cwd.clone()));
                     for m in &mut mods { m.on_cwd_changed(cwd, &ctx); }
+                }
+
+                // Drain agent lifecycle signals produced by ProcessInspectorMod's timer.
+                let mut agent_signals: Vec<AgentSignal> = Vec::new();
+                while let Ok(sig) = agent_rx.try_recv() {
+                    agent_signals.push(sig);
+                }
+                for sig in &agent_signals {
+                    let current_cwd = cwd_table.get(&sig.tab_id).cloned();
+                    let ctx = ModContext::new(&sig.tab_id, &event_tx_dispatch, &cwd_tx, &agent_tx, current_cwd);
+                    match sig.kind {
+                        AgentSignalKind::Detected => {
+                            for m in &mut mods { m.on_agent_detected(&sig.agent, &sig.cwd, &ctx); }
+                        }
+                        AgentSignalKind::Cleared => {
+                            for m in &mut mods { m.on_agent_cleared(&sig.agent, &ctx); }
+                        }
+                    }
                 }
             }
         });

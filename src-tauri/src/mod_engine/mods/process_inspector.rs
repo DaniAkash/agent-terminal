@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::mod_engine::{AsyncEmitter, Mod, ModContext};
+use crate::mod_engine::{AsyncAgentSignaler, AsyncEmitter, Mod, ModContext};
 use tokio::sync::watch;
 
 struct InspectorTabState {
@@ -11,6 +11,10 @@ struct InspectorTabState {
 
 /// Periodically scans for agent processes (claude, codex, node) in the tab's cwd
 /// and emits `process_info` events with per-process metadata and listening ports.
+///
+/// Also tracks agent PIDs across scans and signals the engine via `AsyncAgentSignaler`
+/// when a claude/codex process appears or disappears, so `ClaudeCodeMod`/`CodexMod`
+/// can react via `on_agent_detected`/`on_agent_cleared`.
 ///
 /// Scan interval: every 2 seconds while the tab is open.
 pub struct ProcessInspectorMod {
@@ -31,20 +35,29 @@ impl Mod for ProcessInspectorMod {
     fn on_open(&mut self, ctx: &ModContext) {
         let (cwd_tx, mut cwd_rx) = watch::channel::<Option<String>>(None);
         let emitter = ctx.async_emitter();
+        let signaler = ctx.async_agent_signaler();
 
         let handle = tokio::spawn(async move {
+            // PID tracking: agent name → last seen PID. Used to diff consecutive scans.
+            let mut prev_pids: HashMap<String, u32> = HashMap::new();
             let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(2));
+
             loop {
                 interval.tick().await;
                 let cwd = cwd_rx.borrow().clone();
                 let Some(cwd) = cwd else { continue };
 
                 let processes = scan_processes(&cwd).await;
+
+                // Emit process_info to frontend.
                 emitter.emit(
                     "process_inspector",
                     "process_info",
                     serde_json::json!({ "processes": processes }),
                 );
+
+                // Diff agent PIDs to fire lifecycle signals.
+                diff_agent_pids(&processes, &mut prev_pids, &cwd, &signaler);
             }
         });
 
@@ -62,6 +75,51 @@ impl Mod for ProcessInspectorMod {
             state.handle.abort();
         }
     }
+}
+
+/// Compare current agent PIDs against the previous scan's PIDs.
+/// Fires `agent_detected` for new/changed-PID agents and `agent_cleared` for gone agents.
+fn diff_agent_pids(
+    processes: &[serde_json::Value],
+    prev_pids: &mut HashMap<String, u32>,
+    cwd: &str,
+    signaler: &AsyncAgentSignaler,
+) {
+    // Collect current agent PIDs (only claude and codex trigger lifecycle signals).
+    let mut current_pids: HashMap<String, u32> = HashMap::new();
+    for proc in processes {
+        let name = proc.get("name").and_then(|n| n.as_str()).unwrap_or("");
+        if name == "claude" || name == "codex" {
+            if let Some(pid) = proc.get("pid").and_then(|p| p.as_u64()) {
+                current_pids.insert(name.to_string(), pid as u32);
+            }
+        }
+    }
+
+    // Cleared: agents in prev but not in current, or with a different (restarted) PID.
+    for (agent, prev_pid) in prev_pids.iter() {
+        match current_pids.get(agent) {
+            None => signaler.agent_cleared(agent),
+            Some(curr_pid) if curr_pid != prev_pid => {
+                signaler.agent_cleared(agent);
+                // The detected signal fires in the loop below.
+            }
+            _ => {}
+        }
+    }
+
+    // Detected: new agents, or agents with a changed PID (restarted).
+    for (agent, curr_pid) in &current_pids {
+        match prev_pids.get(agent) {
+            None => signaler.agent_detected(agent, cwd),
+            Some(prev_pid) if prev_pid != curr_pid => {
+                signaler.agent_detected(agent, cwd);
+            }
+            _ => {}
+        }
+    }
+
+    *prev_pids = current_pids;
 }
 
 /// A single process entry in the `process_info` event.
@@ -154,9 +212,7 @@ async fn find_agent_processes(cwd: &str) -> Vec<(u32, String, f32, u64, String)>
         }
 
         let name = process_name(command).to_lowercase();
-        let is_agent = name == "claude"
-            || name == "codex"
-            || name == "node";
+        let is_agent = name == "claude" || name == "codex" || name == "node";
 
         if !is_agent {
             continue;

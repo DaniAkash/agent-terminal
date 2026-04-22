@@ -21,11 +21,29 @@ pub struct CwdUpdate {
     pub cwd: String,
 }
 
+pub enum AgentSignalKind {
+    Detected,
+    Cleared,
+}
+
+/// Sent by `ProcessInspectorMod`'s timer task to signal an agent appearing or
+/// disappearing. The engine drains these and routes to `on_agent_detected` /
+/// `on_agent_cleared` on all mods.
+pub struct AgentSignal {
+    pub tab_id: String,
+    /// Binary name: `"claude"` or `"codex"`.
+    pub agent: String,
+    /// Non-empty for `Detected`; empty string for `Cleared`.
+    pub cwd: String,
+    pub kind: AgentSignalKind,
+}
+
 /// Context passed to every MOD callback. Provides tab identity and event emission.
 pub struct ModContext<'a> {
     pub tab_id: &'a str,
     event_tx: &'a mpsc::Sender<ModEvent>,
     cwd_tx: &'a mpsc::Sender<CwdUpdate>,
+    agent_tx: &'a mpsc::Sender<AgentSignal>,
     /// The engine's current CWD for this tab, as of the start of this dispatch cycle.
     pub current_cwd: Option<String>,
 }
@@ -35,9 +53,10 @@ impl<'a> ModContext<'a> {
         tab_id: &'a str,
         event_tx: &'a mpsc::Sender<ModEvent>,
         cwd_tx: &'a mpsc::Sender<CwdUpdate>,
+        agent_tx: &'a mpsc::Sender<AgentSignal>,
         current_cwd: Option<String>,
     ) -> Self {
-        Self { tab_id, event_tx, cwd_tx, current_cwd }
+        Self { tab_id, event_tx, cwd_tx, agent_tx, current_cwd }
     }
 
     /// Emit a typed event to the frontend. Non-blocking — silently drops if the
@@ -76,6 +95,15 @@ impl<'a> ModContext<'a> {
             event_tx: self.event_tx.clone(),
         }
     }
+
+    /// Returns a cloneable signaler that async tasks (e.g. ProcessInspectorMod's
+    /// timer) can use to notify the engine of agent lifecycle events.
+    pub fn async_agent_signaler(&self) -> AsyncAgentSignaler {
+        AsyncAgentSignaler {
+            tab_id: self.tab_id.to_string(),
+            agent_tx: self.agent_tx.clone(),
+        }
+    }
 }
 
 /// A `Clone + Send` emitter for use inside `tokio::spawn` tasks.
@@ -96,13 +124,36 @@ impl AsyncEmitter {
     }
 }
 
+/// A `Clone + Send` agent lifecycle signaler for use inside `tokio::spawn` tasks.
+#[derive(Clone)]
+pub struct AsyncAgentSignaler {
+    pub tab_id: String,
+    agent_tx: mpsc::Sender<AgentSignal>,
+}
+
+impl AsyncAgentSignaler {
+    pub fn agent_detected(&self, agent: &str, cwd: &str) {
+        let _ = self.agent_tx.try_send(AgentSignal {
+            tab_id: self.tab_id.clone(),
+            agent: agent.to_string(),
+            cwd: cwd.to_string(),
+            kind: AgentSignalKind::Detected,
+        });
+    }
+
+    pub fn agent_cleared(&self, agent: &str) {
+        let _ = self.agent_tx.try_send(AgentSignal {
+            tab_id: self.tab_id.clone(),
+            agent: agent.to_string(),
+            cwd: String::new(),
+            kind: AgentSignalKind::Cleared,
+        });
+    }
+}
+
 /// Shared registry of the current working directory per tab.
 ///
-/// `DirTrackerMod` writes on each OSC 7 sequence. Other MODs
-/// (`GitMonitorMod`, `ClaudeCodeMod`, `CodexMod`) read this to know where to
-/// look for session files and git context without re-parsing OSC themselves.
-///
 /// **Deprecated** — being migrated to the `on_cwd_changed` push model.
-/// Will be removed once all consumers use `on_cwd_changed`.
+/// Will be removed once all consumers use `on_cwd_changed` (commit 7).
 #[allow(dead_code)]
 pub type CwdRegistry = Arc<RwLock<HashMap<String, String>>>;
