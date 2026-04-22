@@ -2,6 +2,7 @@ import { listen } from '@tauri-apps/api/event'
 import {
   clearTabMeta,
   type GitInfo,
+  type ProcessInfo,
   type TabStatus,
   type TabType,
   updateTabMeta,
@@ -71,12 +72,12 @@ function dispatch({
       break
     }
     case 'process_info': {
-      // Enriched process scan — extract listening ports from all processes for now
-      const { processes } = data as {
-        processes: Array<{ listeningPorts: number[] }>
-      }
+      const { processes } = data as { processes: ProcessInfo[] }
       const ports = processes.flatMap((p) => p.listeningPorts ?? [])
-      updateTabMeta(tabId, { listeningPorts: [...new Set(ports)] })
+      updateTabMeta(tabId, {
+        processes,
+        listeningPorts: [...new Set(ports)],
+      })
       break
     }
     case 'listening_ports': {
