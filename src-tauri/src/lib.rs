@@ -42,7 +42,7 @@ pub fn run() {
                 .with_mod(ClaudeCodeMod::new(cwd_registry.clone()))
                 .with_mod(CodexMod::new(cwd_registry.clone()))
                 .with_mod(ProcessInspectorMod::new(cwd_registry.clone()))
-                .with_mod(GitMonitorMod::new(cwd_registry.clone()))
+                .with_mod(GitMonitorMod::new())
                 .build(app.handle().clone());
             app.manage(mod_engine);
             Ok(())
