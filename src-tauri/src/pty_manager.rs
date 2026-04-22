@@ -101,14 +101,15 @@ pub fn spawn_pty(
     }
     // Other shells: no injection
 
-    pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
+    let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
+    let shell_pid = child.process_id().unwrap_or(0);
 
     let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
     let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
 
     // Notify MODs before the read thread starts so on_open is always processed
     // before any on_output messages in the engine's ordered channel.
-    mod_handle.on_tab_open(&tab_id);
+    mod_handle.on_tab_open(&tab_id, shell_pid);
 
     let tab_id_thread = tab_id.clone();
     std::thread::spawn(move || {

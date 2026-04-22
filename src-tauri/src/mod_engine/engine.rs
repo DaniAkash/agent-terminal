@@ -6,7 +6,7 @@ use tauri::{AppHandle, Emitter, async_runtime};
 use tokio::sync::mpsc;
 
 pub(super) enum ModMessage {
-    Open { tab_id: String },
+    Open { tab_id: String, shell_pid: u32 },
     Close { tab_id: String },
     Output { tab_id: String, data: Vec<u8> },
     Input { tab_id: String, data: Vec<u8> },
@@ -34,8 +34,8 @@ pub struct ModEngineHandle {
 }
 
 impl ModEngineHandle {
-    pub fn on_tab_open(&self, tab_id: &str) {
-        let _ = self.lifecycle_tx.send(ModMessage::Open { tab_id: tab_id.to_string() });
+    pub fn on_tab_open(&self, tab_id: &str, shell_pid: u32) {
+        let _ = self.lifecycle_tx.send(ModMessage::Open { tab_id: tab_id.to_string(), shell_pid });
     }
 
     pub fn on_tab_close(&self, tab_id: &str) {
@@ -108,6 +108,8 @@ impl ModEngine {
             let mut mods = mods;
             // Internal CWD table: tab_id → current cwd.
             let mut cwd_table: HashMap<String, String> = HashMap::new();
+            // Shell PID table: tab_id → shell process PID.
+            let mut shell_pid_table: HashMap<String, u32> = HashMap::new();
 
             loop {
                 let msg = tokio::select! {
@@ -123,30 +125,36 @@ impl ModEngine {
                 };
 
                 match msg {
-                    ModMessage::Open { tab_id } => {
+                    ModMessage::Open { tab_id, shell_pid } => {
+                        shell_pid_table.insert(tab_id.clone(), shell_pid);
                         let current_cwd = cwd_table.get(&tab_id).cloned();
-                        let ctx = ModContext::new(&tab_id, &event_tx_dispatch, &cwd_tx, &agent_tx, current_cwd);
+                        let ctx = ModContext::new(&tab_id, &event_tx_dispatch, &cwd_tx, &agent_tx, current_cwd, shell_pid);
                         for m in &mut mods { m.on_open(&ctx); }
                     }
                     ModMessage::Close { tab_id } => {
                         let current_cwd = cwd_table.get(&tab_id).cloned();
-                        let ctx = ModContext::new(&tab_id, &event_tx_dispatch, &cwd_tx, &agent_tx, current_cwd);
+                        let shell_pid = shell_pid_table.get(&tab_id).copied().unwrap_or(0);
+                        let ctx = ModContext::new(&tab_id, &event_tx_dispatch, &cwd_tx, &agent_tx, current_cwd, shell_pid);
                         for m in &mut mods { m.on_close(&ctx); }
                         cwd_table.remove(&tab_id);
+                        shell_pid_table.remove(&tab_id);
                     }
                     ModMessage::Output { tab_id, data } => {
                         let current_cwd = cwd_table.get(&tab_id).cloned();
-                        let ctx = ModContext::new(&tab_id, &event_tx_dispatch, &cwd_tx, &agent_tx, current_cwd);
+                        let shell_pid = shell_pid_table.get(&tab_id).copied().unwrap_or(0);
+                        let ctx = ModContext::new(&tab_id, &event_tx_dispatch, &cwd_tx, &agent_tx, current_cwd, shell_pid);
                         for m in &mut mods { m.on_output(&data, &ctx); }
                     }
                     ModMessage::Input { tab_id, data } => {
                         let current_cwd = cwd_table.get(&tab_id).cloned();
-                        let ctx = ModContext::new(&tab_id, &event_tx_dispatch, &cwd_tx, &agent_tx, current_cwd);
+                        let shell_pid = shell_pid_table.get(&tab_id).copied().unwrap_or(0);
+                        let ctx = ModContext::new(&tab_id, &event_tx_dispatch, &cwd_tx, &agent_tx, current_cwd, shell_pid);
                         for m in &mut mods { m.on_input(&data, &ctx); }
                     }
                     ModMessage::Resize { tab_id, cols, rows } => {
                         let current_cwd = cwd_table.get(&tab_id).cloned();
-                        let ctx = ModContext::new(&tab_id, &event_tx_dispatch, &cwd_tx, &agent_tx, current_cwd);
+                        let shell_pid = shell_pid_table.get(&tab_id).copied().unwrap_or(0);
+                        let ctx = ModContext::new(&tab_id, &event_tx_dispatch, &cwd_tx, &agent_tx, current_cwd, shell_pid);
                         for m in &mut mods { m.on_resize(cols, rows, &ctx); }
                     }
                 }
@@ -158,7 +166,8 @@ impl ModEngine {
                     cwd_updates.push((upd.tab_id, upd.cwd));
                 }
                 for (tab_id, cwd) in &cwd_updates {
-                    let ctx = ModContext::new(tab_id, &event_tx_dispatch, &cwd_tx, &agent_tx, Some(cwd.clone()));
+                    let shell_pid = shell_pid_table.get(tab_id).copied().unwrap_or(0);
+                    let ctx = ModContext::new(tab_id, &event_tx_dispatch, &cwd_tx, &agent_tx, Some(cwd.clone()), shell_pid);
                     for m in &mut mods { m.on_cwd_changed(cwd, &ctx); }
                 }
 
@@ -169,7 +178,8 @@ impl ModEngine {
                 }
                 for sig in &agent_signals {
                     let current_cwd = cwd_table.get(&sig.tab_id).cloned();
-                    let ctx = ModContext::new(&sig.tab_id, &event_tx_dispatch, &cwd_tx, &agent_tx, current_cwd);
+                    let shell_pid = shell_pid_table.get(&sig.tab_id).copied().unwrap_or(0);
+                    let ctx = ModContext::new(&sig.tab_id, &event_tx_dispatch, &cwd_tx, &agent_tx, current_cwd, shell_pid);
                     match sig.kind {
                         AgentSignalKind::Detected => {
                             for m in &mut mods { m.on_agent_detected(&sig.agent, &sig.cwd, &sig.cmd, &ctx); }

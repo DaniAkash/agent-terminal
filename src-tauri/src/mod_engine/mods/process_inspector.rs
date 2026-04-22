@@ -8,13 +8,16 @@ struct InspectorTabState {
     handle: tokio::task::JoinHandle<()>,
 }
 
-/// Periodically scans for agent processes (claude, codex, node) in the tab's cwd
-/// and emits `process_info` events with per-process metadata and listening ports.
+/// Periodically scans for agent processes (claude, codex) that are direct children
+/// of the tab's shell process and emits `process_info` events.
 ///
-/// CWD matching uses `lsof -d cwd` because macOS restricts proc_pidinfo CWD reads
-/// (sysinfo's `process.cwd()` always returns None without special entitlements).
-/// Metrics (CPU, memory) are read via sysinfo for the matched PIDs.
-/// Listening ports are detected via `lsof -iTCP -sTCP:LISTEN`.
+/// Uses `ps -o ppid=` to detect processes by parent PID — this correctly scopes
+/// detection to only the agent launched FROM this terminal tab, not any claude/codex
+/// process that happens to share the same CWD from another session.
+///
+/// Uses `ps -o args=` for command line args (sysinfo can't read cmd on macOS).
+/// Uses `sysinfo` for CPU/memory metrics (fast, no subprocess).
+/// Uses `lsof -iTCP` for listening port detection.
 ///
 /// Scan interval: every 2 seconds while the tab is open.
 pub struct ProcessInspectorMod {
@@ -33,6 +36,7 @@ impl Mod for ProcessInspectorMod {
     }
 
     fn on_open(&mut self, ctx: &ModContext) {
+        let shell_pid = ctx.shell_pid;
         let (cwd_tx, cwd_rx) = watch::channel::<Option<String>>(None);
         let emitter = ctx.async_emitter();
         let signaler = ctx.async_agent_signaler();
@@ -44,10 +48,9 @@ impl Mod for ProcessInspectorMod {
 
             loop {
                 interval.tick().await;
-                let cwd = cwd_rx.borrow().clone();
-                let Some(cwd) = cwd else { continue };
 
-                let processes = scan_processes(&cwd).await;
+                let cwd = cwd_rx.borrow().clone().unwrap_or_default();
+                let processes = scan_processes(shell_pid).await;
 
                 emitter.emit(
                     "process_inspector",
@@ -116,34 +119,30 @@ struct ProcessEntry {
     pid: u32,
     command: String,
     name: String,
-    /// Interval-sampled CPU % via sysinfo — accurate for live display.
     cpu_percent: f32,
-    /// Resident memory in KB.
     memory_kb: u64,
     elapsed_time: String,
     listening_ports: Vec<u16>,
 }
 
-/// Scan for agent processes in `cwd` and return enriched entries.
-///
-/// Step 1: `lsof -d cwd` to find agent PIDs whose CWD matches (macOS restricts
-///         proc_pidinfo CWD reads, so sysinfo's process.cwd() always returns None).
-/// Step 2: sysinfo to read CPU/memory/elapsed for those specific PIDs.
-/// Step 3: lsof TCP to find listening ports per PID.
-async fn scan_processes(cwd: &str) -> Vec<serde_json::Value> {
-    // Step 1: find agent PIDs in this cwd via lsof
-    let pids = find_agent_pids_in_cwd(cwd).await;
+/// Scan for agent processes that are direct children of `shell_pid`.
+async fn scan_processes(shell_pid: u32) -> Vec<serde_json::Value> {
+    if shell_pid == 0 {
+        return Vec::new();
+    }
 
+    // Step 1: find claude/codex PIDs that are direct children of shell_pid
+    let pids = find_agent_children_of_shell(shell_pid).await;
     if pids.is_empty() {
         return Vec::new();
     }
 
-    // Step 2a: get cmd args via ps (sysinfo can't read cmd on macOS)
+    // Step 2: get full cmd args via ps (sysinfo can't read cmd on macOS)
     let args_map = get_process_args(&pids).await;
 
-    // Step 2b: get metrics for matched PIDs via sysinfo (not Send — spawn_blocking)
-    let pids_for_metrics = pids.clone();
-    let raw = tokio::task::spawn_blocking(move || get_process_metrics(&pids_for_metrics))
+    // Step 3: get CPU/memory/elapsed via sysinfo (not Send — spawn_blocking)
+    let pids_clone = pids.clone();
+    let raw = tokio::task::spawn_blocking(move || get_process_metrics(&pids_clone))
         .await
         .unwrap_or_default();
 
@@ -151,7 +150,7 @@ async fn scan_processes(cwd: &str) -> Vec<serde_json::Value> {
         return Vec::new();
     }
 
-    // Step 3: listening ports via lsof TCP
+    // Step 4: listening ports via lsof TCP
     let metric_pids: Vec<u32> = raw.iter().map(|p| p.0).collect();
     let ports_map = find_listening_ports_per_pid(&metric_pids).await;
 
@@ -167,17 +166,15 @@ async fn scan_processes(cwd: &str) -> Vec<serde_json::Value> {
         .collect()
 }
 
-/// Use `lsof -d cwd` to find PIDs of agent processes (claude, codex, node) whose
-/// working directory matches `cwd`. Returns matched PIDs.
+/// Find PIDs of agent processes (claude, codex) whose parent is `shell_pid`.
 ///
-/// macOS does not allow reading other processes' CWDs via proc_pidinfo without
-/// special entitlements, so sysinfo's process.cwd() always returns None.
-/// lsof uses a different kernel interface that works for same-user processes.
-async fn find_agent_pids_in_cwd(cwd: &str) -> Vec<u32> {
+/// Uses `ps -ax -o pid=,ppid=,comm=` which is fast (no file I/O, no lsof).
+/// This correctly scopes detection to agents launched from this terminal tab only.
+async fn find_agent_children_of_shell(shell_pid: u32) -> Vec<u32> {
     let output = tokio::time::timeout(
-        tokio::time::Duration::from_secs(3),
-        tokio::process::Command::new("lsof")
-            .args(["-a", "-c", "claude", "-c", "codex", "-d", "cwd", "-Fpn"])
+        tokio::time::Duration::from_secs(2),
+        tokio::process::Command::new("ps")
+            .args(["-ax", "-o", "pid=,ppid=,comm="])
             .output(),
     )
     .await
@@ -187,29 +184,31 @@ async fn find_agent_pids_in_cwd(cwd: &str) -> Vec<u32> {
     let Some(output) = output else { return Vec::new() };
     let text = String::from_utf8_lossy(&output.stdout);
 
-    // lsof -Fpn output per process (with -d cwd, one entry per process):
-    //   p<pid>
-    //   fcwd
-    //   n<path>
     let mut pids = Vec::new();
-    let mut current_pid: Option<u32> = None;
-
     for line in text.lines() {
-        if let Some(pid_str) = line.strip_prefix('p') {
-            current_pid = pid_str.parse().ok();
-        } else if let Some(path) = line.strip_prefix('n') {
-            if let Some(pid) = current_pid {
-                if path == cwd {
-                    pids.push(pid);
-                }
-            }
+        let mut parts = line.split_whitespace();
+        let pid: u32 = match parts.next().and_then(|s| s.parse().ok()) {
+            Some(p) => p,
+            None => continue,
+        };
+        let ppid: u32 = match parts.next().and_then(|s| s.parse().ok()) {
+            Some(p) => p,
+            None => continue,
+        };
+        let comm = match parts.next() {
+            Some(c) => c.to_lowercase(),
+            None => continue,
+        };
+        let comm = comm.trim_end_matches('\0');
+
+        if ppid == shell_pid && (comm == "claude" || comm == "codex") {
+            pids.push(pid);
         }
     }
-
     pids
 }
 
-/// Get cmd args for specific PIDs via `ps -o args=`.
+/// Get full command + args for specific PIDs via `ps -o args=`.
 /// sysinfo's `process.cmd()` always returns empty on macOS without entitlements.
 async fn get_process_args(pids: &[u32]) -> HashMap<u32, String> {
     if pids.is_empty() {
@@ -233,7 +232,6 @@ async fn get_process_args(pids: &[u32]) -> HashMap<u32, String> {
     for line in text.lines() {
         let line = line.trim();
         if line.is_empty() { continue; }
-        // format: "12345 claude --some-flag"
         if let Some(space) = line.find(char::is_whitespace) {
             if let Ok(pid) = line[..space].trim().parse::<u32>() {
                 let cmd = line[space..].trim().to_string();
@@ -245,7 +243,6 @@ async fn get_process_args(pids: &[u32]) -> HashMap<u32, String> {
 }
 
 /// Read name, CPU, memory, and elapsed time for specific PIDs via sysinfo.
-/// Returns (pid, name, cpu_percent, memory_kb, elapsed_time).
 fn get_process_metrics(pids: &[u32]) -> Vec<(u32, String, f32, u64, String)> {
     use sysinfo::{Pid, ProcessesToUpdate, System};
 
