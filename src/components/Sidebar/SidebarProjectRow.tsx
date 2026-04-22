@@ -15,6 +15,8 @@ import { CSS } from '@dnd-kit/utilities'
 import { useStore } from '@nanostores/react'
 import { ChevronRight, Folder, Pin } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
+import { hasDangerFlag } from '@/components/agent.helpers'
+import { DangerBadge } from '@/components/DangerBadge'
 import { RunningDot } from '@/components/RunningDot'
 import { SidebarTabItem } from '@/components/Sidebar/SidebarTabItem'
 import {
@@ -67,6 +69,10 @@ export function SidebarProjectRow({ project }: { project: Project }) {
   const anyRunning = project.tabs.some(
     (t) => allTabMeta[makeTabKey(project.id, t.id)]?.status === 'running',
   )
+  const anyDanger = project.tabs.some((t) => {
+    const meta = allTabMeta[makeTabKey(project.id, t.id)]
+    return meta?.type === 'agent' && hasDangerFlag(meta.agentCmd)
+  })
 
   function handleTabDragEnd(event: DragEndEvent) {
     const { active, over } = event
@@ -146,6 +152,7 @@ export function SidebarProjectRow({ project }: { project: Project }) {
               </span>
             )}
             {anyRunning && !isOpen && !renaming && <RunningDot />}
+            {anyDanger && !isOpen && !renaming && <DangerBadge size={11} />}
             {project.pinned && !renaming && (
               <span
                 title="Unpin project"

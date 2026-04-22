@@ -14,6 +14,8 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { useStore } from '@nanostores/react'
 import { Pin, X } from 'lucide-react'
+import { hasDangerFlag } from '@/components/agent.helpers'
+import { DangerBadge } from '@/components/DangerBadge'
 import { GitBadge } from '@/components/GitBadge'
 import { TabStatusIcon } from '@/components/TabStatusIcon'
 import {
@@ -36,7 +38,11 @@ import {
   toggleTabPin,
 } from '@/modules/stores/$projects'
 import { $tabMeta } from '@/modules/stores/$tabMeta'
-import { MONO_FONT, makeTabKey } from '@/screens/workspace/workspace.helpers'
+import {
+  MONO_FONT,
+  makeTabKey,
+  resolveTabLabel,
+} from '@/screens/workspace/workspace.helpers'
 import type { Project, Tab } from '@/screens/workspace/workspace.types'
 
 /* ---------------------------------------------------------------------------
@@ -45,6 +51,8 @@ import type { Project, Tab } from '@/screens/workspace/workspace.types'
 function TabItem({ tab, projectId }: { tab: Tab; projectId: string }) {
   const activeTabsByProject = useStore($activeTabId)
   const isActive = activeTabsByProject[projectId] === tab.id
+  const allTabMeta = useStore($tabMeta)
+  const tabMeta = allTabMeta[makeTabKey(projectId, tab.id)]
 
   const {
     attributes,
@@ -92,10 +100,16 @@ function TabItem({ tab, projectId }: { tab: Tab; projectId: string }) {
               className="flex flex-1 cursor-pointer items-center gap-1.5 overflow-hidden pr-1 pl-3"
               onClick={() => navigateToTab(projectId, tab.id)}
             >
-              <TabStatusIcon tabId={makeTabKey(projectId, tab.id)} />
+              <TabStatusIcon
+                tabId={makeTabKey(projectId, tab.id)}
+                active={isActive}
+              />
               <span className="truncate" style={{ fontFamily: MONO_FONT }}>
-                {tab.label}
+                {resolveTabLabel(tab, tabMeta?.cwd)}
               </span>
+              {tabMeta?.type === 'agent' && hasDangerFlag(tabMeta.agentCmd) && (
+                <DangerBadge size={11} />
+              )}
             </button>
 
             {/* Pin / close action — sibling of nav button, not nested */}

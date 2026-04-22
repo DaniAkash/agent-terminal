@@ -21,6 +21,17 @@
     opacity: 0;
   }
 }
+@keyframes agent-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.12);
+    opacity: 0.82;
+  }
+}
 
 /* ─── Tailwind v4 theme mapping ─────────────────────────────── */
 @theme inline {
@@ -125,6 +136,7 @@
   --status-bar-background: #fafafa;
   --status-bar-border: rgba(0, 0, 0, 0.06);
   --status-bar-foreground: rgba(0, 0, 0, 0.45);
+  --status-bar-foreground-strong: rgba(0, 0, 0, 0.82);
 
   /* Accent (fixed) */
   --accent: oklch(0.55 0.18 225);
@@ -215,6 +227,7 @@
     --status-bar-background: #141517;
     --status-bar-border: rgba(255, 255, 255, 0.06);
     --status-bar-foreground: rgba(255, 255, 255, 0.45);
+    --status-bar-foreground-strong: rgba(255, 255, 255, 0.82);
 
     /* Accent (fixed) */
     --accent: oklch(0.68 0.15 225);
