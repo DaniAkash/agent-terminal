@@ -45,11 +45,13 @@ impl Mod for DirTrackerMod {
                 continue;
             };
 
-            // Write to registry
+            // Write to registry (legacy — still consumed by ClaudeCodeMod/CodexMod)
             {
                 let mut reg = self.cwd_registry.write().unwrap();
                 reg.insert(ctx.tab_id.to_string(), path.clone());
             }
+            // Signal engine via new push model so on_cwd_changed fires on all mods
+            ctx.set_cwd(&path);
 
             ctx.emit(
                 self.id(),
