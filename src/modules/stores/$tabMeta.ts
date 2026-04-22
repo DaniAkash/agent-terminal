@@ -12,6 +12,26 @@ export type GitInfo = {
   pr?: { number: number; title: string; state: string; url: string }
 }
 
+/**
+ * A single process entry as emitted by ProcessInspectorMod.
+ * Mirrors the Rust `ProcessEntry` struct serialised over IPC.
+ *
+ * Note: `cpuPercent` is a sysinfo lifetime average — not a real-time sample.
+ * Do not display it in the UI; it is intentionally omitted here.
+ */
+export type ProcessInfo = {
+  pid: number
+  name: string
+  /** Full command string including args (from `ps -o args=`). */
+  command: string
+  /** Resident memory in kilobytes (from sysinfo). */
+  memoryKb: number
+  /** Elapsed wall-clock time formatted as `mm:ss` or `h:mm:ss` or `d-hh:mm`. */
+  elapsedTime: string
+  /** TCP ports this process is listening on (from lsof). */
+  listeningPorts: number[]
+}
+
 export type TabMeta = {
   /** Shell or agent process state — driven by ProcessTrackerMod (OSC 133). */
   status: TabStatus
@@ -27,7 +47,16 @@ export type TabMeta = {
   agentName?: string
   /** Full command used to launch the agent — set by ClaudeCodeMod / CodexMod. */
   agentCmd?: string
-  /** TCP ports the agent process tree is listening on — set by ProcessInspectorMod. */
+  /**
+   * Live process list for this tab — set by ProcessInspectorMod every 2s.
+   * Only agent processes (claude, codex) that are direct children of the
+   * tab's shell PID are included. Empty for shell-only tabs.
+   */
+  processes?: ProcessInfo[]
+  /**
+   * Convenience: TCP ports across all tracked processes.
+   * Derived from `processes` in the mod-listener; kept for backwards compat.
+   */
   listeningPorts?: number[]
 }
 

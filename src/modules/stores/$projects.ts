@@ -168,7 +168,9 @@ export function renameTab(
     return {
       ...p,
       tabs: p.tabs.map((t) =>
-        t.id === tabId ? { ...t, label: newLabel.trim() } : t,
+        t.id === tabId
+          ? { ...t, label: newLabel.trim(), userRenamed: true }
+          : t,
       ),
     }
   })
