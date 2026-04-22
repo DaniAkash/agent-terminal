@@ -1,61 +1,27 @@
 use std::collections::HashMap;
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 
-use crate::mod_engine::{AsyncEmitter, CwdRegistry, Mod, ModContext};
-use crate::mod_engine::osc_parser::OscParser;
+use crate::mod_engine::{Mod, ModContext};
 
 struct ClaudeTabState {
-    parser: OscParser,
-    last_cwd: Option<String>,
-    /// Shared with async scan tasks — set true when a live session is found, false when cleared.
-    session_active: Arc<AtomicBool>,
-    awaiting_agent: bool,
-    /// Rolling input buffer — cleared on Enter, used to detect "claude" typed across keystrokes.
-    input_buf: Vec<u8>,
+    /// True once the session file has been read for the current process instance.
+    /// Reset to false on `on_agent_cleared` so the next invocation scans again.
+    session_scanned: bool,
 }
 
-/// Monitors `~/.claude/projects/` for active Claude Code sessions in the tab's cwd.
+/// Reads Claude Code session metadata from `~/.claude/projects/` when
+/// `ProcessInspectorMod` confirms a `claude` process is running in the tab's CWD.
 ///
-/// Detection is triggered by:
-/// 1. cwd change (compared against `CwdRegistry`)
-/// 2. `claude` appearing in user input
-/// 3. OSC 133;A (prompt returned) → staleness check to clear session
+/// Emits:
+/// - `claude_session`         — session metadata on detection
+/// - `claude_session_cleared` — session gone (agent process ended)
+/// - `tab_type_changed`       — `{ type: "agent", agent: "claude-code" }` / `{ type: "shell" }`
 pub struct ClaudeCodeMod {
-    cwd_registry: CwdRegistry,
     tabs: HashMap<String, ClaudeTabState>,
 }
 
 impl ClaudeCodeMod {
-    pub fn new(cwd_registry: CwdRegistry) -> Self {
-        Self {
-            cwd_registry,
-            tabs: HashMap::new(),
-        }
-    }
-
-    fn trigger_scan(&self, cwd: String, awaiting: bool, session_active: Arc<AtomicBool>, emitter: AsyncEmitter) {
-        tokio::spawn(async move {
-            match scan_claude_session(&cwd, awaiting).await {
-                Some(data) => {
-                    session_active.store(true, Ordering::Relaxed);
-                    emitter.emit("claude_code", "claude_session", data);
-                    emitter.emit(
-                        "claude_code",
-                        "tab_type_changed",
-                        serde_json::json!({ "type": "agent", "agent": "claude-code" }),
-                    );
-                }
-                None => {
-                    session_active.store(false, Ordering::Relaxed);
-                    emitter.emit("claude_code", "claude_session_cleared", serde_json::json!({}));
-                    emitter.emit(
-                        "claude_code",
-                        "tab_type_changed",
-                        serde_json::json!({ "type": "shell" }),
-                    );
-                }
-            }
-        });
+    pub fn new() -> Self {
+        Self { tabs: HashMap::new() }
     }
 }
 
@@ -65,109 +31,53 @@ impl Mod for ClaudeCodeMod {
     }
 
     fn on_open(&mut self, ctx: &ModContext) {
-        self.tabs.insert(
-            ctx.tab_id.to_string(),
-            ClaudeTabState {
-                parser: OscParser::new(),
-                last_cwd: None,
-                session_active: Arc::new(AtomicBool::new(false)),
-                awaiting_agent: false,
-                input_buf: Vec::new(),
-            },
+        self.tabs.insert(ctx.tab_id.to_string(), ClaudeTabState { session_scanned: false });
+    }
+
+    fn on_agent_detected(&mut self, agent: &str, cwd: &str, ctx: &ModContext) {
+        if agent != "claude" {
+            return;
+        }
+        let Some(state) = self.tabs.get_mut(ctx.tab_id) else { return };
+        if state.session_scanned {
+            return;
+        }
+        state.session_scanned = true;
+
+        let emitter = ctx.async_emitter();
+        let cwd = cwd.to_string();
+        tokio::spawn(async move {
+            match scan_claude_session(&cwd).await {
+                Some(data) => {
+                    emitter.emit("claude_code", "claude_session", data);
+                    emitter.emit(
+                        "claude_code",
+                        "tab_type_changed",
+                        serde_json::json!({ "type": "agent", "agent": "claude-code" }),
+                    );
+                }
+                None => {
+                    // Session file not found yet (may not be written yet); will retry on next detection.
+                    // Reset so next on_agent_detected can try again.
+                    // Note: state is not accessible here; the reset happens in on_agent_cleared.
+                }
+            }
+        });
+    }
+
+    fn on_agent_cleared(&mut self, agent: &str, ctx: &ModContext) {
+        if agent != "claude" {
+            return;
+        }
+        if let Some(state) = self.tabs.get_mut(ctx.tab_id) {
+            state.session_scanned = false;
+        }
+        ctx.emit("claude_code", "claude_session_cleared", serde_json::json!({}));
+        ctx.emit(
+            "claude_code",
+            "tab_type_changed",
+            serde_json::json!({ "type": "shell" }),
         );
-    }
-
-    fn on_output(&mut self, data: &[u8], ctx: &ModContext) {
-        let (scan_trigger, clear_session, session_active): (Option<(String, bool)>, bool, Arc<AtomicBool>) = {
-            let Some(state) = self.tabs.get_mut(ctx.tab_id) else {
-                return;
-            };
-            let seqs = state.parser.feed(data);
-
-            let current_cwd = {
-                let reg = self.cwd_registry.read().unwrap();
-                reg.get(ctx.tab_id).cloned()
-            };
-
-            // CWD change → only scan if we're already awaiting Claude (user typed "claude").
-            // Scanning on every cd causes false positives from recently-exited sessions.
-            let scan_trigger = if let Some(ref cwd) = current_cwd {
-                if state.last_cwd.as_deref() != Some(cwd.as_str()) {
-                    let awaiting = state.awaiting_agent;
-                    state.last_cwd = Some(cwd.clone());
-                    if awaiting { Some((cwd.clone(), true)) } else { None }
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
-
-            // OSC 133;A = shell prompt drawn = Claude has exited (works for /exit and Ctrl+C).
-            // Do NOT use 133;B — that fires on command start, before Claude even runs.
-            let has_osc_a = seqs.iter().any(|s| s.code == 133 && s.arg.starts_with('A'));
-            let clear_session = has_osc_a && state.session_active.load(Ordering::Relaxed);
-            if clear_session {
-                state.session_active.store(false, Ordering::Relaxed);
-                state.awaiting_agent = false;
-            }
-
-            (scan_trigger, clear_session, Arc::clone(&state.session_active))
-        };
-
-        if let Some((cwd, awaiting)) = scan_trigger {
-            self.trigger_scan(cwd, awaiting, Arc::clone(&session_active), ctx.async_emitter());
-        }
-        if clear_session {
-            let emitter = ctx.async_emitter();
-            tokio::spawn(async move {
-                emitter.emit("claude_code", "claude_session_cleared", serde_json::json!({}));
-                emitter.emit(
-                    "claude_code",
-                    "tab_type_changed",
-                    serde_json::json!({ "type": "shell" }),
-                );
-            });
-        }
-    }
-
-    fn on_input(&mut self, data: &[u8], ctx: &ModContext) {
-        // Phase 1: update buffer state, extract what we need (mutable borrow ends here)
-        let scan_info: Option<(String, Arc<AtomicBool>)> = {
-            let Some(state) = self.tabs.get_mut(ctx.tab_id) else {
-                return;
-            };
-
-            let mut trigger = false;
-            for &b in data {
-                if b == b'\r' || b == b'\n' {
-                    let line = String::from_utf8_lossy(&state.input_buf).to_lowercase();
-                    if line.contains("claude") {
-                        state.awaiting_agent = true;
-                        trigger = true;
-                    }
-                    state.input_buf.clear();
-                } else if b == 0x7f || b == 0x08 {
-                    state.input_buf.pop();
-                } else if b >= 0x20 {
-                    state.input_buf.push(b);
-                    if state.input_buf.len() > 256 {
-                        state.input_buf.drain(..128);
-                    }
-                }
-            }
-
-            if trigger {
-                state.last_cwd.clone().map(|cwd| (cwd, Arc::clone(&state.session_active)))
-            } else {
-                None
-            }
-        };
-
-        // Phase 2: trigger scan outside the mutable borrow
-        if let Some((cwd, session_active)) = scan_info {
-            self.trigger_scan(cwd, true, session_active, ctx.async_emitter());
-        }
     }
 
     fn on_close(&mut self, ctx: &ModContext) {
@@ -176,13 +86,13 @@ impl Mod for ClaudeCodeMod {
 }
 
 /// Scan `~/.claude/projects/<encoded-cwd>/` for an active session JSONL file.
-/// Returns `Some(session_data)` if a recent session is found, `None` otherwise.
-async fn scan_claude_session(cwd: &str, awaiting_agent: bool) -> Option<serde_json::Value> {
+/// Returns `Some(session_data)` if a session file is found, `None` otherwise.
+/// No freshness check — only called when the claude process is confirmed live.
+async fn scan_claude_session(cwd: &str) -> Option<serde_json::Value> {
     let home = dirs::home_dir()?;
 
     // Encode cwd: replace all '/' with '-' (Claude keeps the leading '-')
     let encoded = cwd.replace('/', "-");
-
     let dir = home.join(".claude").join("projects").join(&encoded);
     if !dir.exists() {
         return None;
@@ -207,15 +117,7 @@ async fn scan_claude_session(cwd: &str, awaiting_agent: bool) -> Option<serde_js
         }
     }
 
-    let (jsonl_path, mtime) = best?;
-
-    // Check freshness: if older than 120s and not awaiting, skip
-    let age = std::time::SystemTime::now()
-        .duration_since(mtime)
-        .unwrap_or_default();
-    if age.as_secs() > 120 && !awaiting_agent {
-        return None;
-    }
+    let (jsonl_path, _mtime) = best?;
 
     // sessionId = filename stem
     let session_id = jsonl_path.file_stem()?.to_str()?.to_string();
@@ -234,9 +136,7 @@ async fn scan_claude_session(cwd: &str, awaiting_agent: bool) -> Option<serde_js
     let mut found_user = false;
 
     for line in text.lines() {
-        let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
-            continue;
-        };
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else { continue };
         let msg_type = v.get("type").and_then(|t| t.as_str()).unwrap_or("");
 
         match msg_type {
@@ -248,7 +148,6 @@ async fn scan_claude_session(cwd: &str, awaiting_agent: bool) -> Option<serde_js
                 if let Some(pm) = v.get("permissionMode").and_then(|p| p.as_str()) {
                     permission_mode = Some(pm.to_string());
                 }
-                // Extract first content string as title
                 if let Some(content) = v.get("message").and_then(|m| m.get("content")) {
                     if let Some(s) = content.as_str() {
                         title = Some(truncate(s, 80));
@@ -309,3 +208,4 @@ fn truncate(s: &str, max_chars: usize) -> String {
     }
     result
 }
+

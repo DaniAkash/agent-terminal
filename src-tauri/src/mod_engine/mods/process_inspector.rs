@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::mod_engine::{AsyncAgentSignaler, AsyncEmitter, Mod, ModContext};
+use crate::mod_engine::{AsyncAgentSignaler, Mod, ModContext};
 use tokio::sync::watch;
 
 struct InspectorTabState {

@@ -1,6 +1,4 @@
 use serde::Serialize;
-use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
 use tokio::sync::mpsc;
 
 /// A structured event emitted by a MOD and forwarded to the frontend via `mod:event`.
@@ -151,9 +149,3 @@ impl AsyncAgentSignaler {
     }
 }
 
-/// Shared registry of the current working directory per tab.
-///
-/// **Deprecated** — being migrated to the `on_cwd_changed` push model.
-/// Will be removed once all consumers use `on_cwd_changed` (commit 7).
-#[allow(dead_code)]
-pub type CwdRegistry = Arc<RwLock<HashMap<String, String>>>;

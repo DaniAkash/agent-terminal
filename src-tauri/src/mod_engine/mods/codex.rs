@@ -1,52 +1,27 @@
 use std::collections::HashMap;
 
-use crate::mod_engine::{AsyncEmitter, CwdRegistry, Mod, ModContext};
-use crate::mod_engine::osc_parser::OscParser;
+use crate::mod_engine::{Mod, ModContext};
 
 struct CodexTabState {
-    parser: OscParser,
-    last_cwd: Option<String>,
-    active_session_id: Option<String>,
-    awaiting_agent: bool,
+    /// True once the session file has been read for the current process instance.
+    /// Reset to false on `on_agent_cleared` so the next invocation scans again.
+    session_scanned: bool,
 }
 
-/// Monitors `~/.codex/state_5.sqlite` for active Codex sessions in the tab's cwd.
+/// Reads Codex session metadata from `~/.codex/state_5.sqlite` (or JSONL fallback)
+/// when `ProcessInspectorMod` confirms a `codex` process is running in the tab's CWD.
 ///
-/// Falls back to scanning `~/.codex/sessions/*.jsonl` when SQLite is unavailable.
+/// Emits:
+/// - `codex_session`         — session metadata on detection
+/// - `codex_session_cleared` — session gone (agent process ended)
+/// - `tab_type_changed`      — `{ type: "agent", agent: "codex" }` / `{ type: "shell" }`
 pub struct CodexMod {
-    cwd_registry: CwdRegistry,
     tabs: HashMap<String, CodexTabState>,
 }
 
 impl CodexMod {
-    pub fn new(cwd_registry: CwdRegistry) -> Self {
-        Self {
-            cwd_registry,
-            tabs: HashMap::new(),
-        }
-    }
-
-    fn trigger_scan(&self, cwd: String, awaiting: bool, emitter: AsyncEmitter) {
-        tokio::spawn(async move {
-            match scan_codex_session(&cwd, awaiting).await {
-                Some(data) => {
-                    emitter.emit("codex", "codex_session", data);
-                    emitter.emit(
-                        "codex",
-                        "tab_type_changed",
-                        serde_json::json!({ "type": "agent", "agent": "codex" }),
-                    );
-                }
-                None => {
-                    emitter.emit("codex", "codex_session_cleared", serde_json::json!({}));
-                    emitter.emit(
-                        "codex",
-                        "tab_type_changed",
-                        serde_json::json!({ "type": "shell" }),
-                    );
-                }
-            }
-        });
+    pub fn new() -> Self {
+        Self { tabs: HashMap::new() }
     }
 }
 
@@ -56,74 +31,51 @@ impl Mod for CodexMod {
     }
 
     fn on_open(&mut self, ctx: &ModContext) {
-        self.tabs.insert(
-            ctx.tab_id.to_string(),
-            CodexTabState {
-                parser: OscParser::new(),
-                last_cwd: None,
-                active_session_id: None,
-                awaiting_agent: false,
-            },
-        );
+        self.tabs.insert(ctx.tab_id.to_string(), CodexTabState { session_scanned: false });
     }
 
-    fn on_output(&mut self, data: &[u8], ctx: &ModContext) {
-        let (scan_trigger, staleness_scan_cwd): (Option<(String, bool)>, Option<String>) = {
-            let Some(state) = self.tabs.get_mut(ctx.tab_id) else {
-                return;
-            };
-            let seqs = state.parser.feed(data);
-
-            let current_cwd = {
-                let reg = self.cwd_registry.read().unwrap();
-                reg.get(ctx.tab_id).cloned()
-            };
-
-            let scan_trigger = if let Some(ref cwd) = current_cwd {
-                if state.last_cwd.as_deref() != Some(cwd.as_str()) {
-                    let awaiting = state.awaiting_agent;
-                    state.last_cwd = Some(cwd.clone());
-                    Some((cwd.clone(), awaiting))
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
-
-            let has_osc_a = seqs.iter().any(|s| s.code == 133 && s.arg.starts_with('A'));
-            let staleness_scan_cwd = if has_osc_a && state.active_session_id.is_some() {
-                current_cwd
-            } else {
-                None
-            };
-
-            (scan_trigger, staleness_scan_cwd)
-        };
-
-        if let Some((cwd, awaiting)) = scan_trigger {
-            self.trigger_scan(cwd, awaiting, ctx.async_emitter());
+    fn on_agent_detected(&mut self, agent: &str, cwd: &str, ctx: &ModContext) {
+        if agent != "codex" {
+            return;
         }
-        if let Some(cwd) = staleness_scan_cwd {
-            self.trigger_scan(cwd, false, ctx.async_emitter());
+        let Some(state) = self.tabs.get_mut(ctx.tab_id) else { return };
+        if state.session_scanned {
+            return;
         }
-    }
+        state.session_scanned = true;
 
-    fn on_input(&mut self, data: &[u8], ctx: &ModContext) {
-        if data.windows(5).any(|w| w == b"codex") {
-            let cwd_opt = {
-                let state = self.tabs.get_mut(ctx.tab_id);
-                if let Some(state) = state {
-                    state.awaiting_agent = true;
-                    state.last_cwd.clone()
-                } else {
-                    None
+        let emitter = ctx.async_emitter();
+        let cwd = cwd.to_string();
+        tokio::spawn(async move {
+            match scan_codex_session(&cwd).await {
+                Some(data) => {
+                    emitter.emit("codex", "codex_session", data);
+                    emitter.emit(
+                        "codex",
+                        "tab_type_changed",
+                        serde_json::json!({ "type": "agent", "agent": "codex" }),
+                    );
                 }
-            };
-            if let Some(cwd) = cwd_opt {
-                self.trigger_scan(cwd, true, ctx.async_emitter());
+                None => {
+                    // Session not found yet; on_agent_cleared will reset session_scanned.
+                }
             }
+        });
+    }
+
+    fn on_agent_cleared(&mut self, agent: &str, ctx: &ModContext) {
+        if agent != "codex" {
+            return;
         }
+        if let Some(state) = self.tabs.get_mut(ctx.tab_id) {
+            state.session_scanned = false;
+        }
+        ctx.emit("codex", "codex_session_cleared", serde_json::json!({}));
+        ctx.emit(
+            "codex",
+            "tab_type_changed",
+            serde_json::json!({ "type": "shell" }),
+        );
     }
 
     fn on_close(&mut self, ctx: &ModContext) {
@@ -131,23 +83,19 @@ impl Mod for CodexMod {
     }
 }
 
-async fn scan_codex_session(cwd: &str, awaiting_agent: bool) -> Option<serde_json::Value> {
+async fn scan_codex_session(cwd: &str) -> Option<serde_json::Value> {
     let home = dirs::home_dir()?;
 
     // Try SQLite first
-    if let Some(result) = scan_via_sqlite(&home, cwd, awaiting_agent).await {
+    if let Some(result) = scan_via_sqlite(&home, cwd).await {
         return Some(result);
     }
 
     // Fallback: scan ~/.codex/sessions/*.jsonl
-    scan_via_jsonl(&home, cwd, awaiting_agent).await
+    scan_via_jsonl(&home, cwd).await
 }
 
-async fn scan_via_sqlite(
-    home: &std::path::Path,
-    cwd: &str,
-    awaiting_agent: bool,
-) -> Option<serde_json::Value> {
+async fn scan_via_sqlite(home: &std::path::Path, cwd: &str) -> Option<serde_json::Value> {
     let db_path = home.join(".codex").join("state_5.sqlite");
     if !db_path.exists() {
         return None;
@@ -167,9 +115,8 @@ async fn scan_via_sqlite(
     let cwd_owned = cwd.to_string();
     let tmp_clone = tmp.clone();
 
-    // Run blocking SQLite query on a thread pool thread
     let result = tokio::task::spawn_blocking(move || {
-        query_codex_sqlite(&tmp_clone, &cwd_owned, awaiting_agent)
+        query_codex_sqlite(&tmp_clone, &cwd_owned)
     })
     .await
     .ok()??;
@@ -189,11 +136,7 @@ type ThreadRow = (
     i64,
 );
 
-fn query_codex_sqlite(
-    db_path: &std::path::Path,
-    cwd: &str,
-    awaiting_agent: bool,
-) -> Option<serde_json::Value> {
+fn query_codex_sqlite(db_path: &std::path::Path, cwd: &str) -> Option<serde_json::Value> {
     let conn = rusqlite::Connection::open(db_path).ok()?;
 
     let row: Option<ThreadRow> = conn
@@ -216,20 +159,9 @@ fn query_codex_sqlite(
         )
         .ok();
 
-    let (id, title, git_branch, model, approval_mode, sandbox_policy_json, reasoning_effort, updated_at_ms) =
+    let (id, title, git_branch, model, approval_mode, sandbox_policy_json, reasoning_effort, _updated_at_ms) =
         row?;
 
-    // Check freshness
-    let now_ms = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as i64;
-    let age_secs = (now_ms - updated_at_ms).max(0) / 1000;
-    if age_secs > 120 && !awaiting_agent {
-        return None;
-    }
-
-    // Parse sandbox_policy JSON to extract the type field
     let sandbox_mode = sandbox_policy_json.as_deref().and_then(|json| {
         serde_json::from_str::<serde_json::Value>(json)
             .ok()
@@ -247,17 +179,12 @@ fn query_codex_sqlite(
     }))
 }
 
-async fn scan_via_jsonl(
-    home: &std::path::Path,
-    cwd: &str,
-    awaiting_agent: bool,
-) -> Option<serde_json::Value> {
+async fn scan_via_jsonl(home: &std::path::Path, cwd: &str) -> Option<serde_json::Value> {
     let sessions_dir = home.join(".codex").join("sessions");
     if !sessions_dir.exists() {
         return None;
     }
 
-    // Find most recently modified .jsonl matching cwd
     let entries = std::fs::read_dir(&sessions_dir).ok()?;
     let mut best: Option<(std::path::PathBuf, std::time::SystemTime)> = None;
 
@@ -266,10 +193,7 @@ async fn scan_via_jsonl(
         if path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
             continue;
         }
-        // Quick scan: peek at first line for cwd match
-        let Ok(content) = std::fs::read_to_string(&path) else {
-            continue;
-        };
+        let Ok(content) = std::fs::read_to_string(&path) else { continue };
         let first_line = content.lines().next().unwrap_or("");
         if let Ok(v) = serde_json::from_str::<serde_json::Value>(first_line) {
             if v.get("cwd").and_then(|c| c.as_str()) != Some(cwd) {
@@ -288,15 +212,7 @@ async fn scan_via_jsonl(
         }
     }
 
-    let (jsonl_path, mtime) = best?;
-
-    let age = std::time::SystemTime::now()
-        .duration_since(mtime)
-        .unwrap_or_default();
-    if age.as_secs() > 120 && !awaiting_agent {
-        return None;
-    }
-
+    let (jsonl_path, _mtime) = best?;
     let session_id = jsonl_path.file_stem()?.to_str()?.to_string();
 
     Some(serde_json::json!({
