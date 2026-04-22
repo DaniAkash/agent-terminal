@@ -84,7 +84,7 @@ export function SidebarTabItem({
           <button
             type="button"
             className={cn(
-              'relative mx-1.5 flex h-[26px] w-[calc(100%-12px)] items-center gap-2 rounded-md pr-2 pl-[34px] text-left',
+              'relative mx-1.5 flex h-[26px] w-[calc(100%-12px)] items-center gap-2 rounded-md pr-2 pl-[20px] text-left',
               isActive
                 ? 'bg-sidebar-active text-sidebar-fg-strong'
                 : 'text-sidebar-fg hover:bg-sidebar-hover',
@@ -97,6 +97,32 @@ export function SidebarTabItem({
             {isActive && (
               <span className="absolute top-1.5 bottom-1.5 left-3.5 w-0.5 rounded-sm bg-accent" />
             )}
+
+            {/*
+             * Left pin slot — fixed width so label text stays aligned across
+             * all rows regardless of pinned state. Only shows the icon when
+             * pinned; stays invisible otherwise. Hidden during inline rename
+             * so the input gets the full width.
+             */}
+            {!renaming && (
+              <span className="w-4 shrink-0 flex items-center justify-center">
+                {tab.pinned && (
+                  <span
+                    title="Unpin tab"
+                    className="opacity-50 hover:opacity-100"
+                    onPointerDown={(e) => {
+                      e.stopPropagation()
+                      e.preventDefault()
+                      toggleTabPin(projectId, tab.id)
+                    }}
+                  >
+                    <Pin size={9} />
+                  </span>
+                )}
+              </span>
+            )}
+
+            {/* Label / rename input */}
             {renaming ? (
               <InlineEdit
                 value={tab.label}
@@ -106,18 +132,22 @@ export function SidebarTabItem({
                 style={{ fontFamily: MONO_FONT, fontSize: 11.5 }}
               />
             ) : (
-              <>
-                <span
-                  className={cn('flex-1 truncate', isActive && 'font-medium')}
-                  style={{ fontFamily: MONO_FONT, fontSize: 11.5 }}
-                >
-                  {resolveTabLabel(tab, tabMeta?.cwd)}
-                </span>
-                {tabMeta?.type === 'agent' && hasDangerFlag(tabMeta.agentCmd) && (
-                  <DangerBadge size={11} />
-                )}
-              </>
+              <span
+                className={cn('flex-1 truncate', isActive && 'font-medium')}
+                style={{ fontFamily: MONO_FONT, fontSize: 11.5 }}
+              >
+                {resolveTabLabel(tab, tabMeta?.cwd)}
+              </span>
             )}
+
+            {/*
+             * Right-side indicators, left to right:
+             *   PR link → DangerBadge → StatusIcon
+             *
+             * DangerBadge sits immediately left of the status icon so it reads
+             * as "this agent is running hot" rather than a separate entity.
+             * PR link comes before danger so it groups with the label content.
+             */}
             {!renaming && tabMeta?.git?.pr && prUrl && (
               <a
                 href={prUrl}
@@ -133,21 +163,11 @@ export function SidebarTabItem({
                 #{tabMeta.git.pr.number}
               </a>
             )}
+            {!renaming && tabMeta?.type === 'agent' && hasDangerFlag(tabMeta.agentCmd) && (
+              <DangerBadge size={11} />
+            )}
             {!renaming && (
               <TabStatusIcon tabId={makeTabKey(projectId, tab.id)} active={isActive} />
-            )}
-            {tab.pinned && !renaming && (
-              <span
-                title="Unpin tab"
-                className="shrink-0 opacity-50 hover:opacity-100"
-                onPointerDown={(e) => {
-                  e.stopPropagation()
-                  e.preventDefault()
-                  toggleTabPin(projectId, tab.id)
-                }}
-              >
-                <Pin size={9} />
-              </span>
             )}
           </button>
         </div>
