@@ -87,6 +87,12 @@ impl Mod for GitMonitorMod {
     ///
     /// A 2-second debounce prevents a storm of parallel queries when commands
     /// complete in rapid succession.
+    ///
+    /// The CWD is read inside a short async delay (50 ms) rather than
+    /// immediately. When the user runs `cd` the shell emits OSC 133;D *before*
+    /// OSC 7, so reading the watch value synchronously would capture the old
+    /// directory. The delay lets the engine process OSC 7 and call
+    /// `on_cwd_changed`, which updates `cwd_tx`, before the git query starts.
     fn on_output(&mut self, data: &[u8], ctx: &ModContext) {
         let Some(state) = self.tabs.get_mut(ctx.tab_id) else {
             return;
@@ -94,8 +100,10 @@ impl Mod for GitMonitorMod {
 
         let mut command_done = false;
         for seq in state.osc_parser.feed(data) {
-            // OSC 133;D = command done. Arg is "D" (exit 0) or "D;N" (exit N).
-            if seq.code == 133 && seq.arg.starts_with('D') {
+            // OSC 133;D = command done. Shell integration emits "D;<exit>"
+            // (e.g. "D;0" on success). Accept bare "D" as well for
+            // compatibility with any producer that omits the exit code.
+            if seq.code == 133 && (seq.arg == "D" || seq.arg.starts_with("D;")) {
                 command_done = true;
                 break;
             }
@@ -114,13 +122,31 @@ impl Mod for GitMonitorMod {
         }
 
         // No CWD known yet — shell integration may not have fired OSC 7 yet.
-        let cwd = match state.cwd_tx.borrow().clone() {
-            Some(c) => c,
-            None => return,
-        };
+        if state.cwd_tx.borrow().is_none() {
+            return;
+        }
 
         state.last_query_at = Some(now);
-        self.spawn_git_query(cwd, ctx.async_emitter());
+
+        // Subscribe before the spawn so the receiver sees updates made during
+        // the 50 ms sleep (i.e. OSC 7 processed by DirTrackerMod in this same
+        // output chunk updating the watch via on_cwd_changed).
+        let mut cwd_rx = state.cwd_tx.subscribe();
+        let emitter = ctx.async_emitter();
+        tokio::spawn(async move {
+            // Yield briefly so the engine can process any OSC 7 that arrived
+            // in the same PTY chunk as the OSC 133;D. After this sleep the
+            // watch receiver holds the correct current directory.
+            tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+            // Wait for a Some value — cwd_rx starts as None only on fresh tabs
+            // where the early-exit above already guards us, so this completes
+            // immediately in practice.
+            let cwd = cwd_rx.borrow_and_update().clone();
+            if let Some(cwd) = cwd {
+                let data = query_git_info(&cwd).await;
+                emitter.emit("git_monitor", "git_info", data);
+            }
+        });
     }
 
     fn on_cwd_changed(&mut self, cwd: &str, ctx: &ModContext) {
