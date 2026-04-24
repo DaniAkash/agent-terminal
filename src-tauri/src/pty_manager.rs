@@ -196,7 +196,27 @@ pub fn try_reattach(
     // Child is still running (or indeterminate). Swap in the new channel.
     // The reader thread — whether blocking on read() or actively discarding —
     // will forward output via this channel on its next iteration.
-    *handle.channel.lock().unwrap() = Some(on_data);
+    {
+        let mut ch = handle.channel.lock().unwrap();
+        *ch = Some(on_data);
+
+        // Write the reconnect banner directly through the data channel before
+        // returning. This is intentionally synchronous — the Channel.onmessage
+        // handler on the JS side is registered before invoke() is called, so
+        // this send is guaranteed to arrive without any listener timing issues.
+        //
+        // Writing via the data channel (rather than a Tauri event) avoids the
+        // async listen() race: Tauri events need listen() to resolve (a Promise)
+        // before the listener is active, but that Promise may not resolve before
+        // pty:reconnected fires. The data channel has no such gap.
+        if let Some(ch_ref) = ch.as_ref() {
+            ch_ref
+                .send(PtyDataPayload {
+                    data: "\r\n\x1b[2m[Reconnected]\x1b[0m\r\n".to_string(),
+                })
+                .ok();
+        }
+    }
 
     if handle.reader_alive.load(Ordering::Relaxed) {
         // Reader is running. Channel is updated. No thread restart needed.
