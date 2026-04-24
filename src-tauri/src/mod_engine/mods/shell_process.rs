@@ -178,18 +178,17 @@ async fn scan_processes(shell_pid: u32) -> Vec<serde_json::Value> {
         .collect()
 }
 
-/// Find PIDs of all direct children of `shell_pid` that have been running for
-/// at least 2 seconds. Transient commands (ls, grep, etc.) exit before the
-/// next poll and would cause status bar flashing — the `etimes` guard prevents
-/// that without any additional timer logic.
+/// Find PIDs of all direct children of `shell_pid`.
 ///
-/// Uses `ps -ax -o pid=,ppid=,comm=,etimes=`. `etimes` is standard POSIX and
-/// supported on both macOS and Linux.
+/// Uses `ps -ax -o pid=,ppid=,comm=` — fast (no file I/O), cross-platform
+/// (macOS and Linux). Elapsed-time filtering happens in `get_process_metrics`
+/// using sysinfo, which avoids any reliance on `ps` keyword availability
+/// (`etimes` is Linux-only; macOS `ps` does not support it).
 async fn find_children_of_shell(shell_pid: u32) -> Vec<u32> {
     let output = tokio::time::timeout(
         tokio::time::Duration::from_secs(2),
         tokio::process::Command::new("ps")
-            .args(["-ax", "-o", "pid=,ppid=,comm=,etimes="])
+            .args(["-ax", "-o", "pid=,ppid=,comm="])
             .output(),
     )
     .await
@@ -210,20 +209,10 @@ async fn find_children_of_shell(shell_pid: u32) -> Vec<u32> {
             Some(p) => p,
             None => continue,
         };
-        // comm is next — consumed but not used for filtering (any process qualifies)
-        let _comm = match parts.next() {
-            Some(c) => c,
-            None => continue,
-        };
-        let etimes: u64 = match parts.next().and_then(|s| s.parse().ok()) {
-            Some(e) => e,
-            None => continue,
-        };
+        // comm consumed but not used — any process name qualifies
+        if parts.next().is_none() { continue; }
 
-        // Include all direct children running for at least 2 seconds.
-        // The 2 s threshold matches the poll interval: a process that survives
-        // one full cycle is worth showing; one that doesn't is transient noise.
-        if ppid == shell_pid && etimes >= 2 {
+        if ppid == shell_pid {
             pids.push(pid);
         }
     }
@@ -265,6 +254,11 @@ async fn get_process_args(pids: &[u32]) -> HashMap<u32, String> {
 }
 
 /// Read name, CPU, memory, and elapsed time for specific PIDs via sysinfo.
+///
+/// Processes running for less than 2 seconds are filtered out here. This
+/// prevents transient commands (ls, grep, etc.) from flashing in the status
+/// bar. sysinfo's `start_time` is used rather than `ps etimes=` because
+/// `etimes` is a Linux-only keyword — macOS `ps` rejects it.
 fn get_process_metrics(pids: &[u32]) -> Vec<(u32, String, f32, u64, String)> {
     use sysinfo::{Pid, ProcessesToUpdate, System};
 
@@ -287,6 +281,13 @@ fn get_process_metrics(pids: &[u32]) -> Vec<(u32, String, f32, u64, String)> {
             let cpu_percent = process.cpu_usage();
             let memory_kb = process.memory() / 1024;
             let elapsed_secs = now_secs.saturating_sub(process.start_time());
+
+            // Skip processes that started less than 2 seconds ago — they are
+            // likely transient commands that will exit before the next poll.
+            if elapsed_secs < 2 {
+                return None;
+            }
+
             let elapsed_time = format_elapsed(elapsed_secs);
 
             Some((pid, name, cpu_percent, memory_kb, elapsed_time))
