@@ -155,13 +155,17 @@ function TabItem({ tab, projectId }: { tab: Tab; projectId: string }) {
 /* ---------------------------------------------------------------------------
  * TabBar — horizontal DnD tab strip
  *
- * Layout: [scrollable tabs area | sticky add-tab button]
+ * Layout: [scroll-container (content-sized, capped)] [add-tab button] [spacer]
  *
- * The tab list lives in an overflow-x-auto container so it scrolls when tabs
- * overflow. The add-tab "+" button is kept outside that container so it always
- * sticks to the right edge. A gradient shadow on the right of the scroll
- * container gives a visual cue that more tabs exist off-screen. The scrollbar
- * itself is hidden to keep the UI clean.
+ * The scroll container has no flex-grow — it is sized to its content (tabs).
+ * max-w: calc(100% - button-width) ensures it never pushes the "+" button
+ * off-screen when tabs overflow.
+ *
+ * Result:
+ *   Few tabs  → container is small → "+" sits right after the last tab
+ *   Many tabs → container hits the cap → tabs scroll, "+" stays at the right
+ *
+ * The scrollbar is hidden; a right-edge gradient shadow signals overflow.
  * -------------------------------------------------------------------------*/
 export function TabBar({ project }: { project: Project }) {
   const sensors = useSensors(
@@ -200,8 +204,12 @@ export function TabBar({ project }: { project: Project }) {
       className="flex h-[38px] shrink-0 items-end border-[var(--tab-border)] border-b bg-tab-bar px-2"
       style={{ gap: 2 }}
     >
-      {/* Scrollable tabs — hides scrollbar, shows right-edge shadow */}
-      <div className="relative min-w-0 flex-1 overflow-hidden">
+      {/* Tab strip — content-sized, capped so the add-button is never hidden.
+          `shrink-0` keeps it at content width; max-w caps it when tabs overflow. */}
+      <div
+        className="relative shrink-0 overflow-hidden"
+        style={{ maxWidth: 'calc(100% - 1.5rem)' }}
+      >
         <div
           className="flex items-end overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           style={{ gap: 2 }}
@@ -231,7 +239,8 @@ export function TabBar({ project }: { project: Project }) {
         />
       </div>
 
-      {/* Add-tab button — always visible, sticks to the right */}
+      {/* Add-tab button — flows right after the last tab when few tabs,
+          sits at the right edge when the strip hits its max-width cap. */}
       <button
         type="button"
         data-tauri-drag-region={undefined}
@@ -254,7 +263,7 @@ export function TabBar({ project }: { project: Project }) {
         </svg>
       </button>
 
-      {/* Drag region fills the remaining header space */}
+      {/* Remaining space is drag region — filled by the outer data-tauri-drag-region */}
       <div className="flex-1" data-tauri-drag-region />
     </div>
   )
