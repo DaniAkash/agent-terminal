@@ -1,8 +1,8 @@
 use crate::mod_engine::ModEngine;
-use crate::pty_manager::{spawn_pty, PtyDataPayload, PtyMap};
+use crate::pty_manager::{spawn_pty, try_reattach, PtyDataPayload, PtyMap, ReattachResult};
 use portable_pty::PtySize;
 use std::io::Write;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, State};
 use tauri::ipc::Channel;
 
 #[tauri::command]
@@ -15,12 +15,37 @@ pub async fn open_tab(
     shell: Option<String>,
     on_data: Channel<PtyDataPayload>,
 ) -> Result<bool, String> {
-    // Returns true if a new pty was spawned, false if one was already running.
-    // The frontend uses this to decide whether to wait for the initial prompt
-    // or send \r to re-display the prompt on a freshly-mounted terminal.
-    if pty_map.lock().unwrap().contains_key(&tab_id) {
-        return Ok(false);
+    // Returns true  → new PTY spawned; frontend waits for the initial prompt.
+    // Returns false → existing PTY (live or just reattached); frontend sends \r
+    //                 to make the shell redraw its prompt.
+    //
+    // Three cases handled before falling through to spawn_pty:
+    //
+    // 1. ChannelUpdated — reader thread is alive and blocking on read(). The
+    //    shared Channel ref has been swapped to the new WebView connection.
+    //    Output resumes on the next byte from the PTY. Returns false.
+    //
+    // 2. Reattached — reader thread had already exited before the reconnect
+    //    arrived (rare race: PTY EOF beat the reconnect). A new reader thread
+    //    is spawned on the same master fd. Returns false.
+    //
+    // 3. Expired / NotFound — child exited or no entry. Fall through to a fresh
+    //    spawn_pty. Returns true.
+    match try_reattach(app.clone(), &pty_map, mod_engine.handle(), &tab_id, on_data.clone()) {
+        Ok(ReattachResult::ChannelUpdated) | Ok(ReattachResult::Reattached) => {
+            // The [Reconnected] banner is written directly to the data channel
+            // inside try_reattach — no listener timing gap. This event is emitted
+            // for any future consumers that want to react to reconnects without
+            // rendering text (e.g. status bar state, telemetry).
+            app.emit("pty:reconnected", serde_json::json!({ "tabId": &tab_id })).ok();
+            return Ok(false);
+        }
+        Ok(ReattachResult::Expired) | Ok(ReattachResult::NotFound) => {
+            // Fall through to fresh spawn below.
+        }
+        Err(e) => return Err(e),
     }
+
     spawn_pty(app, &pty_map, mod_engine.handle(), tab_id, cwd, shell, on_data)?;
     Ok(true)
 }
