@@ -8,31 +8,38 @@ struct InspectorTabState {
     handle: tokio::task::JoinHandle<()>,
 }
 
-/// Periodically scans for agent processes (claude, codex) that are direct children
-/// of the tab's shell process and emits `process_info` events.
+/// Periodically scans for ALL direct children of the tab's shell process and
+/// emits `process_info` events, enabling the status bar to show live metrics
+/// (name, PID, memory, elapsed time, listening ports) for any running process —
+/// not only claude/codex agent sessions.
 ///
-/// Uses `ps -o ppid=` to detect processes by parent PID — this correctly scopes
-/// detection to only the agent launched FROM this terminal tab, not any claude/codex
-/// process that happens to share the same CWD from another session.
+/// Uses `ps -o ppid=` to detect processes by parent PID — correctly scoped to
+/// only processes launched FROM this terminal tab.
+///
+/// Uses `ps -o etimes=` to filter out transient commands (< 2 s). Processes
+/// that exit before the next poll never reach the frontend.
 ///
 /// Uses `ps -o args=` for command line args (sysinfo can't read cmd on macOS).
 /// Uses `sysinfo` for CPU/memory metrics (fast, no subprocess).
 /// Uses `lsof -iTCP` for listening port detection.
 ///
+/// Agent detection (claude/codex) is retained via `diff_agent_pids` so
+/// `ClaudeCodeMod` and `CodexMod` continue to work unchanged.
+///
 /// Scan interval: every 2 seconds while the tab is open.
-pub struct ProcessInspectorMod {
+pub struct ShellProcessMod {
     tabs: HashMap<String, InspectorTabState>,
 }
 
-impl ProcessInspectorMod {
+impl ShellProcessMod {
     pub fn new() -> Self {
         Self { tabs: HashMap::new() }
     }
 }
 
-impl Mod for ProcessInspectorMod {
+impl Mod for ShellProcessMod {
     fn id(&self) -> &'static str {
-        "process_inspector"
+        "shell_process"
     }
 
     fn on_open(&mut self, ctx: &ModContext) {
@@ -53,7 +60,7 @@ impl Mod for ProcessInspectorMod {
                 let processes = scan_processes(shell_pid).await;
 
                 emitter.emit(
-                    "process_inspector",
+                    "shell_process",
                     "process_info",
                     serde_json::json!({ "processes": processes }),
                 );
@@ -129,14 +136,15 @@ struct ProcessEntry {
     listening_ports: Vec<u16>,
 }
 
-/// Scan for agent processes that are direct children of `shell_pid`.
+/// Scan for all direct children of `shell_pid` that have been running for at
+/// least 2 seconds (transient commands like `ls` or `grep` are excluded).
 async fn scan_processes(shell_pid: u32) -> Vec<serde_json::Value> {
     if shell_pid == 0 {
         return Vec::new();
     }
 
-    // Step 1: find claude/codex PIDs that are direct children of shell_pid
-    let pids = find_agent_children_of_shell(shell_pid).await;
+    // Step 1: find all long-lived direct children of shell_pid
+    let pids = find_children_of_shell(shell_pid).await;
     if pids.is_empty() {
         return Vec::new();
     }
@@ -170,15 +178,18 @@ async fn scan_processes(shell_pid: u32) -> Vec<serde_json::Value> {
         .collect()
 }
 
-/// Find PIDs of agent processes (claude, codex) whose parent is `shell_pid`.
+/// Find PIDs of all direct children of `shell_pid` that have been running for
+/// at least 2 seconds. Transient commands (ls, grep, etc.) exit before the
+/// next poll and would cause status bar flashing — the `etimes` guard prevents
+/// that without any additional timer logic.
 ///
-/// Uses `ps -ax -o pid=,ppid=,comm=` which is fast (no file I/O, no lsof).
-/// This correctly scopes detection to agents launched from this terminal tab only.
-async fn find_agent_children_of_shell(shell_pid: u32) -> Vec<u32> {
+/// Uses `ps -ax -o pid=,ppid=,comm=,etimes=`. `etimes` is standard POSIX and
+/// supported on both macOS and Linux.
+async fn find_children_of_shell(shell_pid: u32) -> Vec<u32> {
     let output = tokio::time::timeout(
         tokio::time::Duration::from_secs(2),
         tokio::process::Command::new("ps")
-            .args(["-ax", "-o", "pid=,ppid=,comm="])
+            .args(["-ax", "-o", "pid=,ppid=,comm=,etimes="])
             .output(),
     )
     .await
@@ -199,13 +210,20 @@ async fn find_agent_children_of_shell(shell_pid: u32) -> Vec<u32> {
             Some(p) => p,
             None => continue,
         };
-        let comm = match parts.next() {
-            Some(c) => c.to_lowercase(),
+        // comm is next — consumed but not used for filtering (any process qualifies)
+        let _comm = match parts.next() {
+            Some(c) => c,
             None => continue,
         };
-        let comm = comm.trim_end_matches('\0');
+        let etimes: u64 = match parts.next().and_then(|s| s.parse().ok()) {
+            Some(e) => e,
+            None => continue,
+        };
 
-        if ppid == shell_pid && (comm == "claude" || comm == "codex") {
+        // Include all direct children running for at least 2 seconds.
+        // The 2 s threshold matches the poll interval: a process that survives
+        // one full cycle is worth showing; one that doesn't is transient noise.
+        if ppid == shell_pid && etimes >= 2 {
             pids.push(pid);
         }
     }
