@@ -16,8 +16,12 @@ struct InspectorTabState {
 /// Uses `ps -o ppid=` to detect processes by parent PID — correctly scoped to
 /// only processes launched FROM this terminal tab.
 ///
-/// Uses `ps -o etimes=` to filter out transient commands (< 2 s). Processes
-/// that exit before the next poll never reach the frontend.
+/// Memory and CPU are aggregated across the process subtree (direct child +
+/// its children) so launchers like `npx`, `bun run`, and `cargo run` report
+/// accurate totals rather than just the wrapper process's footprint.
+///
+/// Port scanning also covers grandchildren so the actual listening server is
+/// detected even when the launcher forks before binding.
 ///
 /// Uses `ps -o args=` for command line args (sysinfo can't read cmd on macOS).
 /// Uses `sysinfo` for CPU/memory metrics (fast, no subprocess).
@@ -137,13 +141,13 @@ struct ProcessEntry {
 }
 
 /// Scan for all direct children of `shell_pid` that have been running for at
-/// least 2 seconds (transient commands like `ls` or `grep` are excluded).
+/// least 2 seconds, collecting aggregated metrics across the process subtree.
 async fn scan_processes(shell_pid: u32) -> Vec<serde_json::Value> {
     if shell_pid == 0 {
         return Vec::new();
     }
 
-    // Step 1: find all long-lived direct children of shell_pid
+    // Step 1: find all direct children of shell_pid
     let pids = find_children_of_shell(shell_pid).await;
     if pids.is_empty() {
         return Vec::new();
@@ -152,23 +156,38 @@ async fn scan_processes(shell_pid: u32) -> Vec<serde_json::Value> {
     // Step 2: get full cmd args via ps (sysinfo can't read cmd on macOS)
     let args_map = get_process_args(&pids).await;
 
-    // Step 3: get CPU/memory/elapsed via sysinfo (not Send — spawn_blocking)
+    // Step 3: build the subtree attribution map (pid → root direct-child pid).
+    // This single ps scan is shared by both metric aggregation and port scanning
+    // so the system is only queried once per poll cycle for grandchildren.
+    //
+    // Many launchers (npx, bun run, cargo run) fork the real work as a child:
+    //   shell → launcher (direct child) → server (grandchild)
+    // Without grandchild attribution, memory shows only the launcher's footprint
+    // and port scanning misses the server's bound port entirely.
+    let grandchildren = find_grandchildren(&pids).await;
+    let mut attribution: HashMap<u32, u32> = pids.iter().map(|&p| (p, p)).collect();
+    for (grandchild, parent) in &grandchildren {
+        attribution.insert(*grandchild, *parent);
+    }
+
+    // Step 4: get CPU/memory/elapsed via sysinfo (not Send — spawn_blocking).
+    // Memory and CPU are summed across direct child + grandchildren so the
+    // status bar reflects the full process tree footprint, not just the wrapper.
     let pids_clone = pids.clone();
-    let raw = tokio::task::spawn_blocking(move || get_process_metrics(&pids_clone))
-        .await
-        .unwrap_or_default();
+    let attribution_clone = attribution.clone();
+    let raw = tokio::task::spawn_blocking(move || {
+        get_process_metrics(&pids_clone, &attribution_clone)
+    })
+    .await
+    .unwrap_or_default();
 
     if raw.is_empty() {
         return Vec::new();
     }
 
-    // Step 4: listening ports via lsof TCP.
-    // The scan includes grandchildren of the direct shell children so that
-    // process launchers (e.g. `npx http-server`, `bun run dev`) report ports
-    // even when the actual listening server is a forked child. Grandchild ports
-    // are attributed back to the direct-child PID for status bar display.
+    // Step 5: listening ports via lsof TCP, using the pre-built attribution map.
     let metric_pids: Vec<u32> = raw.iter().map(|p| p.0).collect();
-    let ports_map = find_listening_ports_per_pid(&metric_pids).await;
+    let ports_map = find_listening_ports_per_pid(&metric_pids, &attribution).await;
 
     raw.into_iter()
         .map(|(pid, name, cpu_percent, memory_kb, elapsed_time)| {
@@ -223,6 +242,48 @@ async fn find_children_of_shell(shell_pid: u32) -> Vec<u32> {
     pids
 }
 
+/// Return (grandchild_pid, direct_child_pid) pairs for one level below `pids`.
+///
+/// One level of expansion covers the common launcher pattern:
+///   shell → launcher → server
+/// Deeper nesting (great-grandchildren) is not tracked — add another pass here
+/// if needed.
+async fn find_grandchildren(pids: &[u32]) -> Vec<(u32, u32)> {
+    if pids.is_empty() {
+        return Vec::new();
+    }
+    let output = tokio::time::timeout(
+        tokio::time::Duration::from_secs(2),
+        tokio::process::Command::new("ps")
+            .args(["-ax", "-o", "pid=,ppid="])
+            .output(),
+    )
+    .await
+    .ok()
+    .and_then(|r| r.ok());
+
+    let Some(output) = output else { return Vec::new() };
+    let text = String::from_utf8_lossy(&output.stdout);
+    let parent_set: std::collections::HashSet<u32> = pids.iter().cloned().collect();
+
+    let mut pairs = Vec::new();
+    for line in text.lines() {
+        let mut parts = line.split_whitespace();
+        let child: u32 = match parts.next().and_then(|s| s.parse().ok()) {
+            Some(p) => p,
+            None => continue,
+        };
+        let ppid: u32 = match parts.next().and_then(|s| s.parse().ok()) {
+            Some(p) => p,
+            None => continue,
+        };
+        if parent_set.contains(&ppid) {
+            pairs.push((child, ppid));
+        }
+    }
+    pairs
+}
+
 /// Get full command + args for specific PIDs via `ps -o args=`.
 /// sysinfo's `process.cmd()` always returns empty on macOS without entitlements.
 async fn get_process_args(pids: &[u32]) -> HashMap<u32, String> {
@@ -257,16 +318,28 @@ async fn get_process_args(pids: &[u32]) -> HashMap<u32, String> {
     result
 }
 
-/// Read name, CPU, memory, and elapsed time for specific PIDs via sysinfo.
+/// Read metrics for `direct_pids`, aggregating memory and CPU across the full
+/// subtree described by `attribution` (pid → root direct-child pid).
 ///
-/// Processes running for less than 2 seconds are filtered out here. This
-/// prevents transient commands (ls, grep, etc.) from flashing in the status
-/// bar. sysinfo's `start_time` is used rather than `ps etimes=` because
-/// `etimes` is a Linux-only keyword — macOS `ps` rejects it.
-fn get_process_metrics(pids: &[u32]) -> Vec<(u32, String, f32, u64, String)> {
+/// - **name / elapsed**: taken from the direct child only (the process the user
+///   invoked). The launcher's identity is what matters for display.
+/// - **memory_kb**: sum of the direct child + all grandchildren. Reflects the
+///   true memory footprint of the process tree.
+/// - **cpu_percent**: sum across the subtree. May exceed 100% on multi-core
+///   systems when the server is CPU-bound, which is accurate and expected.
+///
+/// Processes where the direct child has been running for less than 2 seconds
+/// are excluded to prevent transient commands from flashing in the status bar.
+/// (`etimes` is Linux-only; sysinfo start_time is used instead.)
+fn get_process_metrics(
+    direct_pids: &[u32],
+    attribution: &HashMap<u32, u32>,
+) -> Vec<(u32, String, f32, u64, String)> {
     use sysinfo::{Pid, ProcessesToUpdate, System};
 
-    let sysinfo_pids: Vec<Pid> = pids.iter().map(|&p| Pid::from(p as usize)).collect();
+    // Refresh sysinfo for every PID in the subtree at once.
+    let all_pids: Vec<u32> = attribution.keys().cloned().collect();
+    let sysinfo_pids: Vec<Pid> = all_pids.iter().map(|&p| Pid::from(p as usize)).collect();
     let mut sys = System::new();
     sys.refresh_processes(ProcessesToUpdate::Some(&sysinfo_pids), true);
 
@@ -275,26 +348,44 @@ fn get_process_metrics(pids: &[u32]) -> Vec<(u32, String, f32, u64, String)> {
         .unwrap_or_default()
         .as_secs();
 
-    pids.iter()
+    // Collect raw per-pid data from sysinfo.
+    // (pid, name, cpu_percent, memory_kb, elapsed_secs)
+    let raw: HashMap<u32, (String, f32, u64, u64)> = all_pids
+        .iter()
         .filter_map(|&pid| {
-            let process = sys.process(Pid::from(pid as usize))?;
-
-            let name = process.name().to_string_lossy().to_lowercase();
+            let p = sys.process(Pid::from(pid as usize))?;
+            let name = p.name().to_string_lossy().to_lowercase();
             let name = name.trim_end_matches('\0').to_string();
+            Some((pid, (name, p.cpu_usage(), p.memory() / 1024, now_secs.saturating_sub(p.start_time()))))
+        })
+        .collect();
 
-            let cpu_percent = process.cpu_usage();
-            let memory_kb = process.memory() / 1024;
-            let elapsed_secs = now_secs.saturating_sub(process.start_time());
+    // For each direct child, aggregate subtree memory + CPU.
+    direct_pids
+        .iter()
+        .filter_map(|&root_pid| {
+            let (name, _, _, elapsed_secs) = raw.get(&root_pid)?;
 
-            // Skip processes that started less than 2 seconds ago — they are
-            // likely transient commands that will exit before the next poll.
-            if elapsed_secs < 2 {
+            // Skip transient commands — they will likely exit before the next poll.
+            if *elapsed_secs < 2 {
                 return None;
             }
 
-            let elapsed_time = format_elapsed(elapsed_secs);
+            let mut total_memory_kb: u64 = 0;
+            let mut total_cpu: f32 = 0.0;
 
-            Some((pid, name, cpu_percent, memory_kb, elapsed_time))
+            // Sum across every pid attributed to this root (includes grandchildren).
+            for (&pid, &root) in attribution {
+                if root == root_pid {
+                    if let Some((_, cpu, mem, _)) = raw.get(&pid) {
+                        total_memory_kb += mem;
+                        total_cpu += cpu;
+                    }
+                }
+            }
+
+            let elapsed_time = format_elapsed(*elapsed_secs);
+            Some((root_pid, name.clone(), total_cpu, total_memory_kb, elapsed_time))
         })
         .collect()
 }
@@ -309,31 +400,18 @@ fn format_elapsed(secs: u64) -> String {
     }
 }
 
-/// Scan listening TCP ports for `pids` (direct shell children) and their
-/// immediate children (grandchildren of the shell).
+/// Scan listening TCP ports for `direct_pids` using the pre-built `attribution`
+/// map (pid → root direct-child pid) to include grandchildren without an extra
+/// ps call.
 ///
-/// Many process launchers (`npx`, `bun run`, `cargo run`) fork the actual
-/// server as a child and then wait. Only the grandchild binds the port, so
-/// scanning only the direct-child PID would miss it. Grandchild ports are
-/// attributed to the direct-child PID so the status bar entry stays correct.
-///
-/// One level of expansion covers the common case. Deeper nesting (great-
-/// grandchildren) is not tracked — add another pass here if needed.
-async fn find_listening_ports_per_pid(pids: &[u32]) -> HashMap<u32, Vec<u16>> {
-    if pids.is_empty() {
+/// Grandchild ports are attributed to the direct-child PID so the status bar
+/// entry stays stable and correct.
+async fn find_listening_ports_per_pid(
+    direct_pids: &[u32],
+    attribution: &HashMap<u32, u32>,
+) -> HashMap<u32, Vec<u16>> {
+    if direct_pids.is_empty() {
         return HashMap::new();
-    }
-
-    // Build a map of every PID we will ask lsof about → the direct-child PID
-    // it should be attributed to.
-    // Start with direct children mapping to themselves.
-    let mut attribution: HashMap<u32, u32> =
-        pids.iter().map(|&p| (p, p)).collect();
-
-    // Find grandchildren via ps and add them.
-    let grandchildren = find_grandchildren(pids).await;
-    for (grandchild, parent) in grandchildren {
-        attribution.insert(grandchild, parent);
     }
 
     let all_pids: Vec<u32> = attribution.keys().cloned().collect();
@@ -357,7 +435,7 @@ async fn find_listening_ports_per_pid(pids: &[u32]) -> HashMap<u32, Vec<u16>> {
 
     for line in text.lines() {
         if let Some(pid_str) = line.strip_prefix('p') {
-            // Resolve lsof's raw PID to the direct-child PID we surface in the UI.
+            // Resolve lsof's raw PID to the direct-child PID shown in the UI.
             current_attributed_pid = pid_str
                 .parse::<u32>()
                 .ok()
@@ -379,38 +457,4 @@ async fn find_listening_ports_per_pid(pids: &[u32]) -> HashMap<u32, Vec<u16>> {
     }
 
     result
-}
-
-/// Return (grandchild_pid, direct_child_pid) pairs for one level below `pids`.
-async fn find_grandchildren(pids: &[u32]) -> Vec<(u32, u32)> {
-    let output = tokio::time::timeout(
-        tokio::time::Duration::from_secs(2),
-        tokio::process::Command::new("ps")
-            .args(["-ax", "-o", "pid=,ppid="])
-            .output(),
-    )
-    .await
-    .ok()
-    .and_then(|r| r.ok());
-
-    let Some(output) = output else { return Vec::new() };
-    let text = String::from_utf8_lossy(&output.stdout);
-    let parent_set: std::collections::HashSet<u32> = pids.iter().cloned().collect();
-
-    let mut pairs = Vec::new();
-    for line in text.lines() {
-        let mut parts = line.split_whitespace();
-        let child: u32 = match parts.next().and_then(|s| s.parse().ok()) {
-            Some(p) => p,
-            None => continue,
-        };
-        let ppid: u32 = match parts.next().and_then(|s| s.parse().ok()) {
-            Some(p) => p,
-            None => continue,
-        };
-        if parent_set.contains(&ppid) {
-            pairs.push((child, ppid));
-        }
-    }
-    pairs
 }
