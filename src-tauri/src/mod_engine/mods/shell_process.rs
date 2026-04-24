@@ -162,7 +162,11 @@ async fn scan_processes(shell_pid: u32) -> Vec<serde_json::Value> {
         return Vec::new();
     }
 
-    // Step 4: listening ports via lsof TCP
+    // Step 4: listening ports via lsof TCP.
+    // The scan includes grandchildren of the direct shell children so that
+    // process launchers (e.g. `npx http-server`, `bun run dev`) report ports
+    // even when the actual listening server is a forked child. Grandchild ports
+    // are attributed back to the direct-child PID for status bar display.
     let metric_pids: Vec<u32> = raw.iter().map(|p| p.0).collect();
     let ports_map = find_listening_ports_per_pid(&metric_pids).await;
 
@@ -305,9 +309,35 @@ fn format_elapsed(secs: u64) -> String {
     }
 }
 
-/// Run `lsof -nP -a -p <pids> -iTCP -sTCP:LISTEN -Fpn` and return pid → ports.
+/// Scan listening TCP ports for `pids` (direct shell children) and their
+/// immediate children (grandchildren of the shell).
+///
+/// Many process launchers (`npx`, `bun run`, `cargo run`) fork the actual
+/// server as a child and then wait. Only the grandchild binds the port, so
+/// scanning only the direct-child PID would miss it. Grandchild ports are
+/// attributed to the direct-child PID so the status bar entry stays correct.
+///
+/// One level of expansion covers the common case. Deeper nesting (great-
+/// grandchildren) is not tracked — add another pass here if needed.
 async fn find_listening_ports_per_pid(pids: &[u32]) -> HashMap<u32, Vec<u16>> {
-    let pid_arg = pids.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(",");
+    if pids.is_empty() {
+        return HashMap::new();
+    }
+
+    // Build a map of every PID we will ask lsof about → the direct-child PID
+    // it should be attributed to.
+    // Start with direct children mapping to themselves.
+    let mut attribution: HashMap<u32, u32> =
+        pids.iter().map(|&p| (p, p)).collect();
+
+    // Find grandchildren via ps and add them.
+    let grandchildren = find_grandchildren(pids).await;
+    for (grandchild, parent) in grandchildren {
+        attribution.insert(grandchild, parent);
+    }
+
+    let all_pids: Vec<u32> = attribution.keys().cloned().collect();
+    let pid_arg = all_pids.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(",");
 
     let output = tokio::time::timeout(
         tokio::time::Duration::from_secs(3),
@@ -323,13 +353,17 @@ async fn find_listening_ports_per_pid(pids: &[u32]) -> HashMap<u32, Vec<u16>> {
     let text = String::from_utf8_lossy(&output.stdout);
 
     let mut result: HashMap<u32, Vec<u16>> = HashMap::new();
-    let mut current_pid: Option<u32> = None;
+    let mut current_attributed_pid: Option<u32> = None;
 
     for line in text.lines() {
         if let Some(pid_str) = line.strip_prefix('p') {
-            current_pid = pid_str.parse().ok();
+            // Resolve lsof's raw PID to the direct-child PID we surface in the UI.
+            current_attributed_pid = pid_str
+                .parse::<u32>()
+                .ok()
+                .and_then(|raw| attribution.get(&raw).copied());
         } else if let Some(addr) = line.strip_prefix('n') {
-            if let Some(pid) = current_pid {
+            if let Some(pid) = current_attributed_pid {
                 if let Some(port_str) = addr.rsplit(':').next() {
                     if let Ok(port) = port_str.parse::<u16>() {
                         result.entry(pid).or_default().push(port);
@@ -345,4 +379,38 @@ async fn find_listening_ports_per_pid(pids: &[u32]) -> HashMap<u32, Vec<u16>> {
     }
 
     result
+}
+
+/// Return (grandchild_pid, direct_child_pid) pairs for one level below `pids`.
+async fn find_grandchildren(pids: &[u32]) -> Vec<(u32, u32)> {
+    let output = tokio::time::timeout(
+        tokio::time::Duration::from_secs(2),
+        tokio::process::Command::new("ps")
+            .args(["-ax", "-o", "pid=,ppid="])
+            .output(),
+    )
+    .await
+    .ok()
+    .and_then(|r| r.ok());
+
+    let Some(output) = output else { return Vec::new() };
+    let text = String::from_utf8_lossy(&output.stdout);
+    let parent_set: std::collections::HashSet<u32> = pids.iter().cloned().collect();
+
+    let mut pairs = Vec::new();
+    for line in text.lines() {
+        let mut parts = line.split_whitespace();
+        let child: u32 = match parts.next().and_then(|s| s.parse().ok()) {
+            Some(p) => p,
+            None => continue,
+        };
+        let ppid: u32 = match parts.next().and_then(|s| s.parse().ok()) {
+            Some(p) => p,
+            None => continue,
+        };
+        if parent_set.contains(&ppid) {
+            pairs.push((child, ppid));
+        }
+    }
+    pairs
 }
