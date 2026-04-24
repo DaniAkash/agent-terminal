@@ -23,17 +23,28 @@ pub struct PtyExitPayload {
     pub tab_id: String,
 }
 
+/// The active frontend channel, shared between the reader thread and open_tab.
+///
+/// Wrapped in Arc<Mutex<Option<...>>> so open_tab can swap in a new Channel
+/// when the WebView reconnects without stopping or restarting the reader thread.
+/// The Option is None when the WebView is disconnected — the reader discards
+/// output silently during that window rather than exiting.
+pub type SharedChannel = Arc<Mutex<Option<Channel<PtyDataPayload>>>>;
+
 pub struct PtyHandle {
     pub master: Box<dyn portable_pty::MasterPty + Send>,
     pub writer: Box<dyn Write + Send>,
-    /// The child process (shell or agent). Kept alive so we can call
-    /// try_wait() during reconnect to distinguish "child still running but
-    /// channel dropped" from "child exited and PTY is truly dead".
+    /// The child process (shell or agent). Kept so open_tab can call try_wait()
+    /// to distinguish "child still running but WebView disconnected" (healable)
+    /// from "child exited and PTY is truly dead" (needs fresh spawn).
     pub child: Box<dyn portable_pty::Child + Send + Sync>,
-    /// Flipped to false by the reader thread when it exits — for any reason,
-    /// whether the channel was dropped (WebView disconnect) or the PTY process
-    /// exited. open_tab checks this flag to decide whether to reattach.
+    /// Flipped to false when the reader thread exits. Only exits on PTY EOF —
+    /// not on channel failure. Used to know whether a new reader thread must be
+    /// spawned if the reader somehow exited before the reconnect arrived.
     pub reader_alive: Arc<AtomicBool>,
+    /// The live frontend channel. Swapped by open_tab on reconnect without
+    /// touching the reader thread or the PTY process.
+    pub channel: SharedChannel,
 }
 
 pub type PtyMap = Arc<Mutex<HashMap<String, PtyHandle>>>;
@@ -49,51 +60,54 @@ const READ_BUF_SIZE: usize = 256 * 1024;
 
 /// Outcome returned by try_reattach — tells open_tab what happened.
 pub enum ReattachResult {
-    /// Reader thread was alive — already connected, no action taken.
-    AlreadyLive,
-    /// Reader was dead but child is still running — new reader thread spawned
-    /// on the existing PTY. The caller should return false (not a new session).
+    /// Channel was updated and the reader thread is still running. open_tab
+    /// should return false; the reader picks up the new channel on next output.
+    ChannelUpdated,
+    /// Channel was updated and a new reader thread was spawned (the previous one
+    /// had already exited before the reconnect arrived). open_tab returns false.
     Reattached,
-    /// Reader was dead and child has exited — stale PtyMap entry removed.
-    /// The caller should spawn a fresh PTY.
+    /// Child process has exited — PTY is truly dead. Stale entry removed.
+    /// open_tab should spawn a fresh PTY.
     Expired,
-    /// No PtyMap entry for this tab — caller should spawn a fresh PTY.
+    /// No PtyMap entry found. open_tab should spawn a fresh PTY.
     NotFound,
 }
 
-/// Spawns a dedicated reader thread that forwards PTY output to the frontend
-/// via the per-tab Channel.
+/// Spawns a dedicated reader thread that forwards PTY output to the frontend.
 ///
-/// Reader thread exit behaviour:
-/// - PTY process exits (read returns 0 or Err): emits `pty:exit`, calls
-///   on_tab_close, then exits. PTY is truly dead.
-/// - Channel dropped (send returns Err — WebView disconnected): exits silently.
-///   Does NOT emit pty:exit and does NOT call on_tab_close, because the PTY
-///   process is still running. MOD state is preserved so it can be resumed
-///   when the frontend reconnects.
+/// # Channel failure behaviour (self-healing contract)
 ///
-/// In both cases reader_alive is set to false before the thread exits,
-/// allowing open_tab to detect the stale state on reconnect.
+/// When on_data.send() fails (WebView disconnected, Channel JS object dropped),
+/// the reader thread does NOT exit. It clears the shared channel and keeps
+/// reading, discarding output until open_tab swaps in a new Channel.
 ///
-/// # Reconnection limitations
+/// This is the critical design choice that makes reconnection work regardless
+/// of timing: even if the reader thread is blocked on read() when the WebView
+/// disconnects, open_tab can safely hand it a new channel and the reader will
+/// start forwarding again on the very next byte of PTY output — no thread
+/// restart, no race on reader_alive.
 ///
-/// This mechanism heals WebView-restart disconnects (window close/reopen, HMR
-/// reload) by reattaching a new reader thread to the existing PTY master fd.
+/// # Known limitations
 ///
-/// It does NOT cover:
-/// - Output replay: bytes that the old reader thread read but could not send
-///   before the channel drop are gone. Output written by the PTY process after
-///   the channel dropped but before the new reader attaches may survive if still
-///   in the kernel PTY buffer, but this is not guaranteed.
-/// - Mid-session IPC drops while the WebView is still running: those require
-///   an active heartbeat/liveness probe, which is not implemented.
-/// - Full-app crash recovery: if the Tauri process exits, all PTY sessions are
-///   lost. A separate pty-host process (VS Code model) would be needed for that.
+/// - **No output replay**: bytes sent to the terminal between disconnect and
+///   reconnect are discarded. Output still in the kernel PTY buffer at the
+///   moment the channel is cleared may or may not be delivered — it depends on
+///   whether the send error is detected before or after that read() returns.
+///   A VS Code-style ring buffer would close this gap but is not implemented.
+///
+/// - **Mid-session drops only heal on next open_tab**: if the IPC channel dies
+///   while the WebView is still running (not a WebView restart), the reader
+///   clears its channel and goes silent — but nothing triggers open_tab again.
+///   A heartbeat/ping mechanism would be needed to detect and surface this.
+///
+/// - **Full-app crash**: if the Tauri process exits, all PTY sessions are lost.
+///   A separate long-lived pty-host process (VS Code model) would be needed
+///   for crash survival, and is out of scope for now.
 fn spawn_reader_thread(
     app: AppHandle,
     tab_id: String,
     mut reader: Box<dyn Read + Send>,
-    on_data: Channel<PtyDataPayload>,
+    channel: SharedChannel,
     mod_handle: ModEngineHandle,
     reader_alive: Arc<AtomicBool>,
 ) {
@@ -103,7 +117,10 @@ fn spawn_reader_thread(
         loop {
             match reader.read(&mut buf) {
                 Ok(0) | Err(_) => {
-                    // PTY process exited or read error — PTY is dead.
+                    // PTY process exited or master fd closed (close_tab called).
+                    // Clear the channel before emitting exit so no stale sends
+                    // race the teardown.
+                    channel.lock().unwrap().take();
                     app.emit(
                         "pty:exit",
                         PtyExitPayload { tab_id: tab_id.clone() },
@@ -113,38 +130,49 @@ fn spawn_reader_thread(
                     break;
                 }
                 Ok(n) => {
-                    // Send to terminal — always first, never skipped.
-                    if on_data
-                        .send(PtyDataPayload {
-                            data: String::from_utf8_lossy(&buf[..n]).into_owned(),
-                        })
-                        .is_err()
-                    {
-                        // Channel dropped — WebView disconnected.
-                        // The PTY process is still running; do not emit pty:exit
-                        // and do not call on_tab_close. MOD state is intact and
-                        // the next open_tab call will reattach a new reader.
-                        break;
+                    let data = String::from_utf8_lossy(&buf[..n]).into_owned();
+
+                    // Lock briefly to send — released before calling on_output.
+                    let send_ok = {
+                        let guard = channel.lock().unwrap();
+                        match guard.as_ref() {
+                            Some(ch) => {
+                                ch.send(PtyDataPayload { data: data.clone() }).is_ok()
+                            }
+                            // No channel — WebView is disconnected. Discard and
+                            // keep reading so the reader thread stays alive for
+                            // the next open_tab call.
+                            None => true,
+                        }
+                    };
+
+                    if !send_ok {
+                        // Channel dropped mid-flight (WebView disconnected while
+                        // we were sending). Clear the dead channel and keep the
+                        // reader thread alive — the PTY process is still running
+                        // and open_tab will swap in a new channel on reconnect.
+                        // Output from this read is lost; no replay buffer.
+                        channel.lock().unwrap().take();
+                    } else {
+                        // Forward to MOD engine — non-blocking, silently drops
+                        // under load. The terminal always gets every byte.
+                        mod_handle.on_output(&tab_id, buf[..n].to_vec());
                     }
-                    // Forward to MOD engine — non-blocking, silently drops under load.
-                    // The terminal always gets every byte regardless of engine backpressure.
-                    mod_handle.on_output(&tab_id, buf[..n].to_vec());
                 }
             }
         }
 
-        // Always mark dead on exit, regardless of reason. open_tab reads this
-        // flag to decide whether a reattach is needed on the next call.
+        // Reader thread is exiting — only happens on PTY EOF or master fd close.
         reader_alive.store(false, Ordering::Relaxed);
     });
 }
 
-/// Checks whether the PTY for `tab_id` needs reconnection and, if so, handles
-/// it. Call this before spawn_pty so open_tab can short-circuit.
+/// Checks whether an existing PtyMap entry can be reconnected, and if so,
+/// wires up the new Channel and (if needed) a new reader thread.
 ///
-/// Returns a ReattachResult describing what happened. The caller acts on it:
-/// - AlreadyLive / Reattached → return Ok(false) to the frontend
-/// - Expired / NotFound → call spawn_pty, return Ok(true)
+/// Must be called before spawn_pty in open_tab. Acts on the result:
+/// - ChannelUpdated / Reattached → emit pty:reconnected, return Ok(false)
+/// - Expired / NotFound          → call spawn_pty, return Ok(true)
 pub fn try_reattach(
     app: AppHandle,
     pty_map: &PtyMap,
@@ -158,50 +186,37 @@ pub fn try_reattach(
         return Ok(ReattachResult::NotFound);
     };
 
+    // If the child has exited, the PTY is truly dead — remove the stale entry
+    // so the caller can spawn a fresh PTY.
+    if matches!(handle.child.try_wait(), Ok(Some(_))) {
+        map.remove(tab_id);
+        return Ok(ReattachResult::Expired);
+    }
+
+    // Child is still running (or indeterminate). Swap in the new channel.
+    // The reader thread — whether blocking on read() or actively discarding —
+    // will forward output via this channel on its next iteration.
+    *handle.channel.lock().unwrap() = Some(on_data);
+
     if handle.reader_alive.load(Ordering::Relaxed) {
-        // Reader is still running — normal reconnect path (StrictMode double
-        // mount, tab switch, etc.). Nothing to do.
-        return Ok(ReattachResult::AlreadyLive);
+        // Reader is running. Channel is updated. No thread restart needed.
+        return Ok(ReattachResult::ChannelUpdated);
     }
 
-    // Reader thread has exited. Determine whether the child process is alive.
-    // try_wait() is non-blocking: returns Ok(Some(_)) if exited, Ok(None) if
-    // still running, Err if the check itself failed.
-    match handle.child.try_wait() {
-        Ok(Some(_)) => {
-            // Child has exited — PTY is truly dead. Remove the stale entry so
-            // the caller can spawn a fresh PTY for this tab.
-            map.remove(tab_id);
-            Ok(ReattachResult::Expired)
-        }
-        _ => {
-            // Child is still running (try_wait returned Ok(None) or Err).
-            // Reattach: get a new read handle on the same PTY master fd and
-            // spin up a fresh reader thread wired to the new Channel.
-            //
-            // try_clone_reader() is the key API here — it creates a second
-            // Box<dyn Read + Send> on the existing master fd without disturbing
-            // the PTY or the process running inside it. The original read handle
-            // (held by the now-dead thread) has been dropped; this call is safe.
-            let reader = handle.master.try_clone_reader().map_err(|e| e.to_string())?;
+    // Reader thread exited before the reconnect arrived (it detected the dead
+    // channel, cleared it, and then... wait, in the new design the reader does
+    // NOT exit on channel failure). This branch is only reached if the PTY
+    // process itself sent EOF and reader_alive is false, but try_wait() above
+    // did not confirm child exit (race in zombie reaping). Spawn a fresh reader
+    // — it will see EOF quickly and emit pty:exit on its own.
+    let new_alive = Arc::new(AtomicBool::new(true));
+    handle.reader_alive = new_alive.clone();
+    let reader = handle.master.try_clone_reader().map_err(|e| e.to_string())?;
+    let channel = handle.channel.clone();
+    drop(map); // release the PtyMap lock before spawning
 
-            let new_alive = Arc::new(AtomicBool::new(true));
-            handle.reader_alive = new_alive.clone();
-
-            drop(map); // release the lock before spawning the thread
-
-            spawn_reader_thread(
-                app,
-                tab_id.to_string(),
-                reader,
-                on_data,
-                mod_handle,
-                new_alive,
-            );
-
-            Ok(ReattachResult::Reattached)
-        }
-    }
+    spawn_reader_thread(app, tab_id.to_string(), reader, channel, mod_handle, new_alive);
+    Ok(ReattachResult::Reattached)
 }
 
 pub fn spawn_pty(
@@ -277,20 +292,21 @@ pub fn spawn_pty(
     // before any on_output messages in the engine's ordered channel.
     mod_handle.on_tab_open(&tab_id, shell_pid);
 
+    let channel: SharedChannel = Arc::new(Mutex::new(Some(on_data)));
     let reader_alive = Arc::new(AtomicBool::new(true));
 
     spawn_reader_thread(
         app,
         tab_id.clone(),
         reader,
-        on_data,
+        channel.clone(),
         mod_handle,
         reader_alive.clone(),
     );
 
     pty_map.lock().unwrap().insert(
         tab_id,
-        PtyHandle { master: pair.master, writer, child, reader_alive },
+        PtyHandle { master: pair.master, writer, child, reader_alive, channel },
     );
 
     Ok(())

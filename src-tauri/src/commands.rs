@@ -19,27 +19,21 @@ pub async fn open_tab(
     // Returns false → existing PTY (live or just reattached); frontend sends \r
     //                 to make the shell redraw its prompt.
     //
-    // Three cases are handled here before falling through to spawn_pty:
+    // Three cases handled before falling through to spawn_pty:
     //
-    // 1. Reader alive — already connected (StrictMode double-mount, tab switch).
-    //    No action needed; return false.
+    // 1. ChannelUpdated — reader thread is alive and blocking on read(). The
+    //    shared Channel ref has been swapped to the new WebView connection.
+    //    Output resumes on the next byte from the PTY. Returns false.
     //
-    // 2. Reader dead, child alive — WebView previously disconnected (window
-    //    close/reopen, HMR reload). Reattach: a new reader thread is wired to
-    //    the existing PTY master fd and the new Channel. The PTY process (shell
-    //    or running agent) is undisturbed. Returns false so the frontend sends
-    //    \r and the shell redraws its prompt.
+    // 2. Reattached — reader thread had already exited before the reconnect
+    //    arrived (rare race: PTY EOF beat the reconnect). A new reader thread
+    //    is spawned on the same master fd. Returns false.
     //
-    // 3. Reader dead, child exited — PTY is truly dead. The stale PtyMap entry
-    //    is removed and a fresh PTY is spawned below. Returns true.
+    // 3. Expired / NotFound — child exited or no entry. Fall through to a fresh
+    //    spawn_pty. Returns true.
     match try_reattach(app.clone(), &pty_map, mod_engine.handle(), &tab_id, on_data.clone()) {
-        Ok(ReattachResult::AlreadyLive) => {
-            return Ok(false);
-        }
-        Ok(ReattachResult::Reattached) => {
-            // Notify the frontend so it can show a "[Reconnected]" banner.
-            // This fires after the reader thread is already running, so the
-            // banner appears before any buffered PTY output is flushed.
+        Ok(ReattachResult::ChannelUpdated) | Ok(ReattachResult::Reattached) => {
+            // Notify the frontend so it can write a "[Reconnected]" banner.
             app.emit("pty:reconnected", serde_json::json!({ "tabId": &tab_id })).ok();
             return Ok(false);
         }
