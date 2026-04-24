@@ -30,15 +30,6 @@ import { SidebarProjectRow } from './SidebarProjectRow'
 
 export function Sidebar() {
   const projects = useStore($projects)
-  const allTabMeta = useStore($tabMeta)
-  const sessionsRunning = projects.reduce(
-    (n, p) =>
-      n +
-      p.tabs.filter(
-        (t) => allTabMeta[makeTabKey(p.id, t.id)]?.status === 'running',
-      ).length,
-    0,
-  )
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -123,25 +114,6 @@ export function Sidebar() {
           <span className="text-[13px] leading-none">+</span>
           <span>New project</span>
         </button>
-      </div>
-
-      {/* Footer */}
-      <div className="flex items-center gap-2 border-sidebar-border border-t px-3 py-2 text-[11.5px] text-sidebar-fg">
-        <div
-          className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full font-semibold text-[10px] text-white tracking-wide"
-          style={{
-            background:
-              'linear-gradient(135deg, var(--accent), var(--terminal-magenta))',
-          }}
-        >
-          DA
-        </div>
-        <div className="flex flex-1 flex-col leading-tight">
-          <span className="font-medium text-sidebar-fg-strong">dani.akash</span>
-          <span className="text-[10px] opacity-70">
-            {sessionsRunning} sessions running
-          </span>
-        </div>
       </div>
     </div>
   )
