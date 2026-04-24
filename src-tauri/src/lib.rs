@@ -10,8 +10,8 @@ use mod_engine::{
         CodexMod,
         DirTrackerMod,
         GitMonitorMod,
-        ProcessInspectorMod,
         ProcessTrackerMod,
+        ShellProcessMod,
     },
 };
 use shell_integration::setup_shell_integration;
@@ -38,7 +38,7 @@ pub fn run() {
                 .with_mod(ProcessTrackerMod::new())
                 .with_mod(ClaudeCodeMod::new())
                 .with_mod(CodexMod::new())
-                .with_mod(ProcessInspectorMod::new())
+                .with_mod(ShellProcessMod::new())
                 .with_mod(GitMonitorMod::new())
                 .build(app.handle().clone());
             app.manage(mod_engine);

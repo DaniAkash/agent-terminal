@@ -1,6 +1,8 @@
 use std::collections::HashMap;
+use std::time::Instant;
 
 use crate::mod_engine::{AsyncEmitter, Mod, ModContext};
+use crate::mod_engine::osc_parser::OscParser;
 use tokio::sync::watch;
 
 struct GitTabState {
@@ -8,13 +10,22 @@ struct GitTabState {
     /// Watch sender: updated on each on_cwd_changed; the 60s timer reads the receiver.
     cwd_tx: watch::Sender<Option<String>>,
     timer: Option<tokio::task::JoinHandle<()>>,
+    /// OSC 133 parser — detects command-done sequences to trigger immediate git refresh.
+    osc_parser: OscParser,
+    /// Timestamp of the last triggered git query, used to debounce rapid re-runs.
+    last_query_at: Option<Instant>,
 }
 
 /// Monitors git context for the tab's current working directory.
 ///
 /// Triggers:
 /// 1. CWD change (received via `on_cwd_changed` push from the engine)
-/// 2. 60-second periodic refresh timer
+/// 2. Command done — OSC 133;D fired by the shell after any command exits
+/// 3. 60-second periodic refresh timer (fallback for shells without OSC 133)
+///
+/// Trigger 2 fixes the common case where a command like `git push` or `git pull`
+/// changes remote tracking state without changing the CWD. The 60-second timer
+/// remains as a safety net but should rarely be the first to catch an update.
 ///
 /// Emits `git_info` events with branch, ahead/behind, dirty, worktree, and PR.
 pub struct GitMonitorMod {
@@ -63,8 +74,79 @@ impl Mod for GitMonitorMod {
                 last_queried_cwd: None,
                 cwd_tx,
                 timer: Some(timer),
+                osc_parser: OscParser::new(),
+                last_query_at: None,
             },
         );
+    }
+
+    /// Watches for OSC 133;D (command done) sequences and fires an immediate git
+    /// re-query when one is detected. This keeps the status bar up-to-date after
+    /// commands like `git push`, `git pull`, `git commit`, or `git merge` that
+    /// change git state without changing the working directory.
+    ///
+    /// A 2-second debounce prevents a storm of parallel queries when commands
+    /// complete in rapid succession.
+    ///
+    /// The CWD is read inside a short async delay (50 ms) rather than
+    /// immediately. When the user runs `cd` the shell emits OSC 133;D *before*
+    /// OSC 7, so reading the watch value synchronously would capture the old
+    /// directory. The delay lets the engine process OSC 7 and call
+    /// `on_cwd_changed`, which updates `cwd_tx`, before the git query starts.
+    fn on_output(&mut self, data: &[u8], ctx: &ModContext) {
+        let Some(state) = self.tabs.get_mut(ctx.tab_id) else {
+            return;
+        };
+
+        let mut command_done = false;
+        for seq in state.osc_parser.feed(data) {
+            // OSC 133;D = command done. Shell integration emits "D;<exit>"
+            // (e.g. "D;0" on success). Accept bare "D" as well for
+            // compatibility with any producer that omits the exit code.
+            if seq.code == 133 && (seq.arg == "D" || seq.arg.starts_with("D;")) {
+                command_done = true;
+                break;
+            }
+        }
+
+        if !command_done {
+            return;
+        }
+
+        // Debounce: skip if a query fired within the last 2 seconds.
+        let now = Instant::now();
+        if let Some(last) = state.last_query_at {
+            if now.duration_since(last).as_secs() < 2 {
+                return;
+            }
+        }
+
+        // No CWD known yet — shell integration may not have fired OSC 7 yet.
+        if state.cwd_tx.borrow().is_none() {
+            return;
+        }
+
+        state.last_query_at = Some(now);
+
+        // Subscribe before the spawn so the receiver sees updates made during
+        // the 50 ms sleep (i.e. OSC 7 processed by DirTrackerMod in this same
+        // output chunk updating the watch via on_cwd_changed).
+        let mut cwd_rx = state.cwd_tx.subscribe();
+        let emitter = ctx.async_emitter();
+        tokio::spawn(async move {
+            // Yield briefly so the engine can process any OSC 7 that arrived
+            // in the same PTY chunk as the OSC 133;D. After this sleep the
+            // watch receiver holds the correct current directory.
+            tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+            // Wait for a Some value — cwd_rx starts as None only on fresh tabs
+            // where the early-exit above already guards us, so this completes
+            // immediately in practice.
+            let cwd = cwd_rx.borrow_and_update().clone();
+            if let Some(cwd) = cwd {
+                let data = query_git_info(&cwd).await;
+                emitter.emit("git_monitor", "git_info", data);
+            }
+        });
     }
 
     fn on_cwd_changed(&mut self, cwd: &str, ctx: &ModContext) {
@@ -82,6 +164,7 @@ impl Mod for GitMonitorMod {
         let _ = state.cwd_tx.send(Some(cwd.to_string()));
 
         // Fire an immediate git query for the new directory.
+        state.last_query_at = Some(Instant::now());
         self.spawn_git_query(cwd.to_string(), ctx.async_emitter());
     }
 
