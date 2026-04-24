@@ -16,7 +16,6 @@ import { useStore } from '@nanostores/react'
 import { Pin, X } from 'lucide-react'
 import { hasDangerFlag } from '@/components/agent.helpers'
 import { DangerBadge } from '@/components/DangerBadge'
-import { GitBadge } from '@/components/GitBadge'
 import { TabStatusIcon } from '@/components/TabStatusIcon'
 import {
   ContextMenu,
@@ -155,10 +154,16 @@ function TabItem({ tab, projectId }: { tab: Tab; projectId: string }) {
 
 /* ---------------------------------------------------------------------------
  * TabBar — horizontal DnD tab strip
+ *
+ * Layout: [scrollable tabs area | sticky add-tab button]
+ *
+ * The tab list lives in an overflow-x-auto container so it scrolls when tabs
+ * overflow. The add-tab "+" button is kept outside that container so it always
+ * sticks to the right edge. A gradient shadow on the right of the scroll
+ * container gives a visual cue that more tabs exist off-screen. The scrollbar
+ * itself is hidden to keep the UI clean.
  * -------------------------------------------------------------------------*/
 export function TabBar({ project }: { project: Project }) {
-  const activeTabsByProject = useStore($activeTabId)
-  const activeTabId = activeTabsByProject[project.id] ?? ''
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
   )
@@ -195,25 +200,42 @@ export function TabBar({ project }: { project: Project }) {
       className="flex h-[38px] shrink-0 items-end border-[var(--tab-border)] border-b bg-tab-bar px-2"
       style={{ gap: 2 }}
     >
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragEnd={handleDragEnd}
-      >
-        <SortableContext
-          items={orderedTabs.map((t) => t.id)}
-          strategy={horizontalListSortingStrategy}
+      {/* Scrollable tabs — hides scrollbar, shows right-edge shadow */}
+      <div className="relative min-w-0 flex-1 overflow-hidden">
+        <div
+          className="flex items-end overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          style={{ gap: 2 }}
         >
-          {orderedTabs.map((t) => (
-            <TabItem key={t.id} tab={t} projectId={project.id} />
-          ))}
-        </SortableContext>
-      </DndContext>
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext
+              items={orderedTabs.map((t) => t.id)}
+              strategy={horizontalListSortingStrategy}
+            >
+              {orderedTabs.map((t) => (
+                <TabItem key={t.id} tab={t} projectId={project.id} />
+              ))}
+            </SortableContext>
+          </DndContext>
+        </div>
+        {/* Right-edge shadow — signals overflowing tabs */}
+        <div
+          className="pointer-events-none absolute top-0 right-0 bottom-0 w-8"
+          style={{
+            background:
+              'linear-gradient(to left, var(--tab-bar) 20%, transparent)',
+          }}
+        />
+      </div>
 
+      {/* Add-tab button — always visible, sticks to the right */}
       <button
         type="button"
         data-tauri-drag-region={undefined}
-        className="-mb-px flex h-7 w-6 items-center justify-center rounded text-tab-fg hover:bg-sidebar-hover hover:text-tab-fg-active"
+        className="-mb-px flex h-7 w-6 shrink-0 items-center justify-center rounded text-tab-fg hover:bg-sidebar-hover hover:text-tab-fg-active"
         onClick={handleAddTab}
       >
         <svg
@@ -232,20 +254,8 @@ export function TabBar({ project }: { project: Project }) {
         </svg>
       </button>
 
+      {/* Drag region fills the remaining header space */}
       <div className="flex-1" data-tauri-drag-region />
-
-      <div
-        data-tauri-drag-region
-        className="flex h-7 items-center gap-2 pr-1"
-        style={{ fontFamily: MONO_FONT, fontSize: 10.5 }}
-      >
-        {activeTabId && (
-          <GitBadge tabId={makeTabKey(project.id, activeTabId)} />
-        )}
-        <span className="pointer-events-none text-tab-fg opacity-50">
-          {project.path}
-        </span>
-      </div>
     </div>
   )
 }

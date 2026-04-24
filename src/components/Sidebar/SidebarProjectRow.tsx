@@ -28,10 +28,13 @@ import {
 import { cn } from '@/lib/utils'
 import {
   $activeProjectId,
+  $activeTabId,
   navigateToProject,
+  navigateToTab,
 } from '@/modules/stores/$navigation'
 import {
   $expanded,
+  addTab,
   removeProject,
   renameProject,
   reorderTabs,
@@ -86,6 +89,20 @@ export function SidebarProjectRow({ project }: { project: Project }) {
   function handleRename(newName: string) {
     setRenaming(false)
     if (newName) renameProject(project.id, newName)
+  }
+
+  function handleAddTab(e: React.PointerEvent) {
+    e.stopPropagation()
+    e.preventDefault()
+    const tabId = $activeTabId.get()[project.id]
+    const cwd = tabId
+      ? ($tabMeta.get()[makeTabKey(project.id, tabId)]?.cwd ?? '')
+      : ''
+    const newTab = addTab(project.id, cwd || undefined)
+    if (newTab) {
+      navigateToProject(project.id)
+      navigateToTab(project.id, newTab.id)
+    }
   }
 
   return (
@@ -153,6 +170,29 @@ export function SidebarProjectRow({ project }: { project: Project }) {
             )}
             {anyRunning && !isOpen && !renaming && <RunningDot />}
             {anyDanger && !isOpen && !renaming && <DangerBadge size={11} />}
+            {/* Add-tab button — shown only when the project is expanded */}
+            {isOpen && !renaming && (
+              <span
+                title="New terminal"
+                className="shrink-0 opacity-50 hover:opacity-100"
+                onPointerDown={handleAddTab}
+              >
+                <svg
+                  width="11"
+                  height="11"
+                  viewBox="0 0 11 11"
+                  role="img"
+                  aria-label="New terminal"
+                >
+                  <path
+                    d="M5.5 1.5 V9.5 M1.5 5.5 H9.5"
+                    stroke="currentColor"
+                    strokeWidth="1.3"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </span>
+            )}
             {project.pinned && !renaming && (
               <span
                 title="Unpin project"
