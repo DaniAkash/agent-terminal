@@ -4,7 +4,7 @@ import {
   XTermTerminal,
 } from '@/components/XTermTerminal/XTermTerminal'
 import { IPC } from '@/modules/ipc/commands'
-import { onPtyExit } from '@/modules/ipc/events'
+import { onPtyExit, onPtyReconnected } from '@/modules/ipc/events'
 import { makeTabKey } from '@/screens/workspace/workspace.helpers'
 
 // Tracks in-flight openTab calls per tabKey. Prevents concurrent calls
@@ -80,8 +80,20 @@ export const TerminalPane = React.memo(function TerminalPane({
       if (id === tabKey) handleRef.current?.write('\r\n[Process exited]\r\n')
     })
 
+    // Fires when the Rust backend reattaches a new reader thread to a live PTY
+    // after a WebView disconnect (window close/reopen, HMR reload). The banner
+    // appears in the terminal output so the user knows the session survived.
+    //
+    // Note: this event only fires on successful reconnection of a live PTY. If
+    // the PTY process had also exited during the disconnect, a fresh PTY is
+    // spawned instead and pty:exit fires for the old session — no banner here.
+    const unlistenReconnect = onPtyReconnected((id) => {
+      if (id === tabKey) handleRef.current?.write('\r\n[Reconnected]\r\n')
+    })
+
     return () => {
       unlistenExit.then((fn) => fn())
+      unlistenReconnect.then((fn) => fn())
       // Do NOT close the pty here. Pty lifetime is tied to the tab's
       // existence in the store. removeTab() calls IPC.closeTab() when
       // the user explicitly closes the tab.
