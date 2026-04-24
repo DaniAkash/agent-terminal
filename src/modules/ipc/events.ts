@@ -7,17 +7,14 @@ export const onPtyExit = (cb: (tabId: string) => void) =>
   listen<{ tabId: string }>('pty:exit', (e) => cb(e.payload.tabId))
 
 /**
- * Fires when a dead reader thread is successfully reattached to a live PTY.
+ * Fires after the backend successfully reconnects a live PTY to a new WebView
+ * Channel (window close/reopen, HMR reload).
  *
- * This happens when the WebView restarts (window close/reopen, HMR reload)
- * and the frontend calls openTab for a tab whose PTY process is still running.
- * The Rust backend spins up a new reader thread on the existing PTY master fd
- * and emits this event before any buffered output flows through.
- *
- * Limitation: output that the old reader thread read but could not send before
- * the channel dropped is gone. Output written by the PTY process after the
- * disconnect but still in the kernel PTY buffer may be delivered, but replay
- * of earlier history is not supported.
+ * Note: the [Reconnected] banner is written directly into the PTY data stream
+ * by the Rust backend so it appears without any listen() timing gap. This event
+ * is intentionally kept for consumers that need to react to reconnects without
+ * rendering text — for example, resetting status-bar state or logging telemetry.
+ * TerminalPane does not subscribe to it.
  */
 export const onPtyReconnected = (cb: (tabId: string) => void) =>
   listen<{ tabId: string }>('pty:reconnected', (e) => cb(e.payload.tabId))

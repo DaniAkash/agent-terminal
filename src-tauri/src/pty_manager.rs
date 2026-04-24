@@ -118,8 +118,10 @@ fn spawn_reader_thread(
             match reader.read(&mut buf) {
                 Ok(0) | Err(_) => {
                     // PTY process exited or master fd closed (close_tab called).
-                    // Clear the channel before emitting exit so no stale sends
-                    // race the teardown.
+                    // Mark dead immediately — before emitting pty:exit or calling
+                    // on_tab_close — so try_reattach cannot observe reader_alive=true
+                    // on a thread that is in the process of exiting.
+                    reader_alive.store(false, Ordering::Relaxed);
                     channel.lock().unwrap().take();
                     app.emit(
                         "pty:exit",
@@ -139,9 +141,10 @@ fn spawn_reader_thread(
                             Some(ch) => {
                                 ch.send(PtyDataPayload { data: data.clone() }).is_ok()
                             }
-                            // No channel — WebView is disconnected. Discard and
-                            // keep reading so the reader thread stays alive for
-                            // the next open_tab call.
+                            // No channel — WebView is disconnected. Terminal
+                            // forwarding is skipped but MODs still receive output
+                            // so their state stays current for when the frontend
+                            // reconnects.
                             None => true,
                         }
                     };
@@ -153,17 +156,14 @@ fn spawn_reader_thread(
                         // and open_tab will swap in a new channel on reconnect.
                         // Output from this read is lost; no replay buffer.
                         channel.lock().unwrap().take();
-                    } else {
-                        // Forward to MOD engine — non-blocking, silently drops
-                        // under load. The terminal always gets every byte.
-                        mod_handle.on_output(&tab_id, buf[..n].to_vec());
                     }
+                    // Always forward to MOD engine regardless of channel state —
+                    // MOD state (git, CWD, agent detection) must stay current
+                    // even while the WebView is disconnected.
+                    mod_handle.on_output(&tab_id, buf[..n].to_vec());
                 }
             }
         }
-
-        // Reader thread is exiting — only happens on PTY EOF or master fd close.
-        reader_alive.store(false, Ordering::Relaxed);
     });
 }
 
@@ -223,12 +223,11 @@ pub fn try_reattach(
         return Ok(ReattachResult::ChannelUpdated);
     }
 
-    // Reader thread exited before the reconnect arrived (it detected the dead
-    // channel, cleared it, and then... wait, in the new design the reader does
-    // NOT exit on channel failure). This branch is only reached if the PTY
-    // process itself sent EOF and reader_alive is false, but try_wait() above
-    // did not confirm child exit (race in zombie reaping). Spawn a fresh reader
-    // — it will see EOF quickly and emit pty:exit on its own.
+    // reader_alive is false but try_wait() did not confirm child exit. This
+    // happens when the PTY process exits and the reader thread sets reader_alive
+    // to false, but the OS has not yet reaped the zombie by the time try_wait()
+    // runs. Spawn a fresh reader on the same master fd — it will see EOF
+    // immediately and emit pty:exit on its own.
     let new_alive = Arc::new(AtomicBool::new(true));
     handle.reader_alive = new_alive.clone();
     let reader = handle.master.try_clone_reader().map_err(|e| e.to_string())?;

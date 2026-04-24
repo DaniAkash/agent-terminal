@@ -33,7 +33,10 @@ pub async fn open_tab(
     //    spawn_pty. Returns true.
     match try_reattach(app.clone(), &pty_map, mod_engine.handle(), &tab_id, on_data.clone()) {
         Ok(ReattachResult::ChannelUpdated) | Ok(ReattachResult::Reattached) => {
-            // Notify the frontend so it can write a "[Reconnected]" banner.
+            // The [Reconnected] banner is written directly to the data channel
+            // inside try_reattach — no listener timing gap. This event is emitted
+            // for any future consumers that want to react to reconnects without
+            // rendering text (e.g. status bar state, telemetry).
             app.emit("pty:reconnected", serde_json::json!({ "tabId": &tab_id })).ok();
             return Ok(false);
         }
