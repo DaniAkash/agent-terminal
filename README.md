@@ -129,7 +129,7 @@ Agent Terminal is early stage and under heavy active development.
 - [x] MOD system (Rust-native plugin architecture)
 - [x] Claude Code + Codex detection and agent glyphs
 - [x] Live status bar (process metrics, git, CWD, icons)
-- [ ] Keyboard shortcuts (Cmd+T, Cmd+W, Cmd+1–9, and more)
+- [x] Keyboard shortcuts (Ctrl+T, Ctrl+W, Ctrl+Tab, Ctrl+1–9, and more)
 - [ ] Theming support (light / dark / custom color schemes)
 - [ ] Gemini CLI, Cursor, Open Code agent support
 - [ ] Agent turn detection (know when an agent is actively working vs idle)
