@@ -148,6 +148,8 @@ export function SidebarProjectRow({ project }: { project: Project }) {
                 main content button to avoid nested-button invalid HTML */}
             <button
               type="button"
+              aria-label={isOpen ? 'Collapse project' : 'Expand project'}
+              aria-expanded={isOpen}
               className="flex h-full w-6 shrink-0 items-center justify-center"
               onClick={(e) => {
                 e.stopPropagation()
