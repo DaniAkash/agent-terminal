@@ -16,7 +16,6 @@ import { useStore } from '@nanostores/react'
 import { Pin, X } from 'lucide-react'
 import { hasDangerFlag } from '@/components/agent.helpers'
 import { DangerBadge } from '@/components/DangerBadge'
-import { GitBadge } from '@/components/GitBadge'
 import { TabStatusIcon } from '@/components/TabStatusIcon'
 import {
   ContextMenu,
@@ -155,10 +154,20 @@ function TabItem({ tab, projectId }: { tab: Tab; projectId: string }) {
 
 /* ---------------------------------------------------------------------------
  * TabBar — horizontal DnD tab strip
+ *
+ * Layout: [scroll-container (content-sized, capped)] [add-tab button] [spacer]
+ *
+ * The scroll container has no flex-grow — it is sized to its content (tabs).
+ * max-w: calc(100% - button-width) ensures it never pushes the "+" button
+ * off-screen when tabs overflow.
+ *
+ * Result:
+ *   Few tabs  → container is small → "+" sits right after the last tab
+ *   Many tabs → container hits the cap → tabs scroll, "+" stays at the right
+ *
+ * The scrollbar is hidden; a right-edge gradient shadow signals overflow.
  * -------------------------------------------------------------------------*/
 export function TabBar({ project }: { project: Project }) {
-  const activeTabsByProject = useStore($activeTabId)
-  const activeTabId = activeTabsByProject[project.id] ?? ''
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
   )
@@ -195,25 +204,47 @@ export function TabBar({ project }: { project: Project }) {
       className="flex h-[38px] shrink-0 items-end border-[var(--tab-border)] border-b bg-tab-bar px-2"
       style={{ gap: 2 }}
     >
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragEnd={handleDragEnd}
+      {/* Tab strip — content-sized, capped so the add-button is never hidden.
+          `shrink-0` keeps it at content width; max-w caps it when tabs overflow. */}
+      <div
+        className="relative shrink-0 overflow-hidden"
+        style={{ maxWidth: 'calc(100% - 1.5rem)' }}
       >
-        <SortableContext
-          items={orderedTabs.map((t) => t.id)}
-          strategy={horizontalListSortingStrategy}
+        <div
+          className="flex items-end overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          style={{ gap: 2 }}
         >
-          {orderedTabs.map((t) => (
-            <TabItem key={t.id} tab={t} projectId={project.id} />
-          ))}
-        </SortableContext>
-      </DndContext>
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext
+              items={orderedTabs.map((t) => t.id)}
+              strategy={horizontalListSortingStrategy}
+            >
+              {orderedTabs.map((t) => (
+                <TabItem key={t.id} tab={t} projectId={project.id} />
+              ))}
+            </SortableContext>
+          </DndContext>
+        </div>
+        {/* Right-edge shadow — signals overflowing tabs */}
+        <div
+          className="pointer-events-none absolute top-0 right-0 bottom-0 w-8"
+          style={{
+            background:
+              'linear-gradient(to left, var(--color-tab-bar) 20%, transparent)',
+          }}
+        />
+      </div>
 
+      {/* Add-tab button — flows right after the last tab when few tabs,
+          sits at the right edge when the strip hits its max-width cap. */}
       <button
         type="button"
         data-tauri-drag-region={undefined}
-        className="-mb-px flex h-7 w-6 items-center justify-center rounded text-tab-fg hover:bg-sidebar-hover hover:text-tab-fg-active"
+        className="-mb-px flex h-7 w-6 shrink-0 items-center justify-center rounded text-tab-fg hover:bg-sidebar-hover hover:text-tab-fg-active"
         onClick={handleAddTab}
       >
         <svg
@@ -232,20 +263,8 @@ export function TabBar({ project }: { project: Project }) {
         </svg>
       </button>
 
+      {/* Remaining space is drag region — filled by the outer data-tauri-drag-region */}
       <div className="flex-1" data-tauri-drag-region />
-
-      <div
-        data-tauri-drag-region
-        className="flex h-7 items-center gap-2 pr-1"
-        style={{ fontFamily: MONO_FONT, fontSize: 10.5 }}
-      >
-        {activeTabId && (
-          <GitBadge tabId={makeTabKey(project.id, activeTabId)} />
-        )}
-        <span className="pointer-events-none text-tab-fg opacity-50">
-          {project.path}
-        </span>
-      </div>
     </div>
   )
 }

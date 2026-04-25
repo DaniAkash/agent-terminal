@@ -78,42 +78,54 @@ export function Sidebar() {
         </span>
       </div>
 
-      {/* Project tree */}
-      <div className="flex-1 overflow-y-auto py-1.5">
-        {projects.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-1 px-4 py-8 text-center">
-            <p className="text-[12px] text-sidebar-fg opacity-60">
-              No projects yet.
-            </p>
-            <p className="text-[11px] text-sidebar-fg opacity-40">
-              Click below to add your first project.
-            </p>
-          </div>
-        ) : (
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragEnd={handleDragEnd}
-          >
-            <SortableContext
-              items={ordered.map((p) => p.id)}
-              strategy={verticalListSortingStrategy}
+      {/* Project tree — scrolls vertically; scrollbar hidden, bottom shadow
+          gives a visual cue when more content exists below. */}
+      <div className="relative min-h-0 flex-1 overflow-hidden">
+        <div className="h-full overflow-y-auto py-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {projects.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-1 px-4 py-8 text-center">
+              <p className="text-[12px] text-sidebar-fg opacity-60">
+                No projects yet.
+              </p>
+              <p className="text-[11px] text-sidebar-fg opacity-40">
+                Click below to add your first project.
+              </p>
+            </div>
+          ) : (
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
             >
-              {ordered.map((p) => (
-                <SidebarProjectRow key={p.id} project={p} />
-              ))}
-            </SortableContext>
-          </DndContext>
-        )}
+              <SortableContext
+                items={ordered.map((p) => p.id)}
+                strategy={verticalListSortingStrategy}
+              >
+                {ordered.map((p) => (
+                  <SidebarProjectRow key={p.id} project={p} />
+                ))}
+              </SortableContext>
+            </DndContext>
+          )}
 
-        <button
-          type="button"
-          onClick={handleAddProject}
-          className="mx-1.5 mt-1 flex h-[26px] w-[calc(100%-12px)] items-center gap-1.5 rounded-md px-3 text-[12px] text-sidebar-fg opacity-70 hover:bg-sidebar-hover hover:opacity-100"
-        >
-          <span className="text-[13px] leading-none">+</span>
-          <span>New project</span>
-        </button>
+          <button
+            type="button"
+            onClick={handleAddProject}
+            className="mx-1.5 mt-1 flex h-[26px] w-[calc(100%-12px)] items-center gap-1.5 rounded-md px-3 text-[12px] text-sidebar-fg opacity-70 hover:bg-sidebar-hover hover:opacity-100"
+          >
+            <span className="text-[13px] leading-none">+</span>
+            <span>New project</span>
+          </button>
+        </div>
+
+        {/* Bottom shadow — signals overflowing project rows */}
+        <div
+          className="pointer-events-none absolute right-0 bottom-0 left-0 h-8"
+          style={{
+            background:
+              'linear-gradient(to top, var(--color-sidebar) 20%, transparent)',
+          }}
+        />
       </div>
     </div>
   )
