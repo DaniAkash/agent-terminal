@@ -124,15 +124,17 @@ export function SidebarProjectRow({ project }: { project: Project }) {
            * add-tab action to fire on right-click / middle-click (pointerdown).
            * As a sibling it is keyboard-accessible and only fires on click.
            */}
-          <div className="mx-1.5 flex h-[26px] w-[calc(100%-12px)] items-center">
+          <div
+            className={cn(
+              'mx-1.5 flex h-[26px] w-[calc(100%-12px)] items-center rounded-md',
+              isActive
+                ? 'bg-sidebar-active text-sidebar-fg-strong'
+                : 'text-sidebar-fg hover:bg-sidebar-hover',
+            )}
+          >
             <button
               type="button"
-              className={cn(
-                'flex h-full flex-1 cursor-grab select-none items-center gap-1.5 rounded-md px-1.5 text-left text-[12.5px]',
-                isActive
-                  ? 'bg-sidebar-active text-sidebar-fg-strong'
-                  : 'text-sidebar-fg hover:bg-sidebar-hover',
-              )}
+              className="flex h-full flex-1 cursor-grab select-none items-center gap-1.5 px-1.5 text-left text-[12.5px]"
               onClick={() => {
                 if (renaming) return
                 toggleExpanded(project.id)
