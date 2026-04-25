@@ -34,7 +34,6 @@ import {
   navigateToTab,
 } from '@/modules/stores/$navigation'
 import {
-  $expanded,
   $projects,
   addTab,
   removeProject,
@@ -48,8 +47,8 @@ import { makeTabKey } from '@/screens/workspace/workspace.helpers'
 import type { Project } from '@/screens/workspace/workspace.types'
 
 export function SidebarProjectRow({ project }: { project: Project }) {
-  const expanded = useStore($expanded)
-  const isOpen = !!expanded[project.id]
+  // undefined means the project pre-dates this field → treat as expanded
+  const isOpen = project.isExpanded !== false
   const ctrlHeld = useStore($ctrlHeld)
   const allProjects = useStore($projects)
 

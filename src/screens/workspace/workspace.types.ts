@@ -20,4 +20,10 @@ export type Project = {
   path: string
   tabs: Tab[]
   pinned: boolean
+  /**
+   * Whether the project row is expanded in the sidebar.
+   * Persisted so the layout survives restarts.
+   * Defaults to true for projects that pre-date this field (undefined → expanded).
+   */
+  isExpanded?: boolean
 }

@@ -9,7 +9,6 @@ import {
 import type { Project, Tab } from '@/screens/workspace/workspace.types'
 
 export const $projects = atom<Project[]>([])
-export const $expanded = atom<Record<string, boolean>>({})
 
 function persist(projects: Project[]): void {
   IPC.saveProjects(projects).catch(() => {})
@@ -23,8 +22,13 @@ function arrayMove<T>(arr: T[], from: number, to: number): T[] {
 }
 
 export function toggleExpanded(projectId: string): void {
-  const cur = $expanded.get()
-  $expanded.set({ ...cur, [projectId]: !cur[projectId] })
+  const updated = $projects
+    .get()
+    .map((p) =>
+      p.id !== projectId ? p : { ...p, isExpanded: !(p.isExpanded !== false) },
+    )
+  $projects.set(updated)
+  persist(updated)
 }
 
 export function toggleProjectPin(projectId: string): void {
@@ -133,6 +137,7 @@ export function addProject(inheritCwd?: string): Project {
     name,
     path: inheritCwd ?? '',
     pinned: false,
+    isExpanded: true,
     tabs: [
       {
         id: 'shell',
@@ -145,7 +150,6 @@ export function addProject(inheritCwd?: string): Project {
   }
   const updated = [...projects, project]
   $projects.set(updated)
-  $expanded.set({ ...$expanded.get(), [id]: true })
   persist(updated)
   return project
 }
