@@ -69,6 +69,11 @@ export function WorkspaceLayout() {
     }
   }, [])
 
+  // enableOnFormTags is required because xterm uses a hidden <textarea> to
+  // capture keyboard input. Without it react-hotkeys-hook silently ignores
+  // all key events while the terminal has focus.
+  const hotkeyOpts = { preventDefault: true, enableOnFormTags: true } as const
+
   // Ctrl+T — new tab in the active project
   useHotkeys(
     'ctrl+t',
@@ -77,7 +82,7 @@ export function WorkspaceLayout() {
       const newTab = addTab(projectId)
       if (newTab) navigateToTab(projectId, newTab.id)
     },
-    { preventDefault: true },
+    hotkeyOpts,
   )
 
   // Ctrl+W — close the active tab (pinned tabs are protected)
@@ -93,7 +98,7 @@ export function WorkspaceLayout() {
       onTabRemoved(projectId, tabId)
       removeTab(projectId, tabId)
     },
-    { preventDefault: true },
+    hotkeyOpts,
   )
 
   // Ctrl+Tab — cycle to the next tab in the active project (wraps around)
@@ -108,7 +113,7 @@ export function WorkspaceLayout() {
       const next = project.tabs[(idx + 1) % project.tabs.length]
       if (next) navigateToTab(projectId, next.id)
     },
-    { preventDefault: true },
+    hotkeyOpts,
   )
 
   // Ctrl+Shift+Tab — cycle to the previous tab in the active project (wraps around)
@@ -124,7 +129,7 @@ export function WorkspaceLayout() {
         project.tabs[(idx - 1 + project.tabs.length) % project.tabs.length]
       if (prev) navigateToTab(projectId, prev.id)
     },
-    { preventDefault: true },
+    hotkeyOpts,
   )
 
   // Ctrl+1–9 — switch to project N in sidebar display order (pinned first).
@@ -151,7 +156,7 @@ export function WorkspaceLayout() {
       const target = ordered[n]
       if (target) navigateToProject(target.id)
     },
-    { preventDefault: true },
+    hotkeyOpts,
   )
 
   return (
