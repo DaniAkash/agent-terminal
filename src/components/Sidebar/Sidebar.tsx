@@ -123,7 +123,7 @@ export function Sidebar() {
           className="pointer-events-none absolute right-0 bottom-0 left-0 h-8"
           style={{
             background:
-              'linear-gradient(to top, var(--sidebar) 20%, transparent)',
+              'linear-gradient(to top, var(--color-sidebar) 20%, transparent)',
           }}
         />
       </div>

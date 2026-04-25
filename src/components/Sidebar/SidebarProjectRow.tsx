@@ -91,9 +91,7 @@ export function SidebarProjectRow({ project }: { project: Project }) {
     if (newName) renameProject(project.id, newName)
   }
 
-  function handleAddTab(e: React.PointerEvent) {
-    e.stopPropagation()
-    e.preventDefault()
+  function handleAddTab() {
     const tabId = $activeTabId.get()[project.id]
     const cwd = tabId
       ? ($tabMeta.get()[makeTabKey(project.id, tabId)]?.cwd ?? '')
@@ -118,64 +116,93 @@ export function SidebarProjectRow({ project }: { project: Project }) {
     >
       <ContextMenu>
         <ContextMenuTrigger className="block">
-          <button
-            type="button"
-            className={cn(
-              'mx-1.5 flex h-[26px] w-[calc(100%-12px)] cursor-grab select-none items-center gap-1.5 rounded-md px-1.5 text-left text-[12.5px]',
-              isActive
-                ? 'bg-sidebar-active text-sidebar-fg-strong'
-                : 'text-sidebar-fg hover:bg-sidebar-hover',
-            )}
-            onClick={() => {
-              if (renaming) return
-              toggleExpanded(project.id)
-              navigateToProject(project.id)
-            }}
-            onDoubleClick={() => {
-              if (!renaming) setRenaming(true)
-            }}
-          >
-            <span
+          {/*
+           * Row layout: [main button flex-1] [add-tab button?]
+           *
+           * The "+" new-terminal button is a sibling of the main button, not
+           * nested inside it. Nesting buttons is invalid HTML and causes the
+           * add-tab action to fire on right-click / middle-click (pointerdown).
+           * As a sibling it is keyboard-accessible and only fires on click.
+           */}
+          <div className="mx-1.5 flex h-[26px] w-[calc(100%-12px)] items-center">
+            <button
+              type="button"
               className={cn(
-                'flex h-5 w-5 shrink-0 items-center justify-center rounded transition-transform duration-[140ms]',
-                isOpen && 'rotate-90',
+                'flex h-full flex-1 cursor-grab select-none items-center gap-1.5 rounded-md px-1.5 text-left text-[12.5px]',
+                isActive
+                  ? 'bg-sidebar-active text-sidebar-fg-strong'
+                  : 'text-sidebar-fg hover:bg-sidebar-hover',
               )}
-            >
-              <ChevronRight
-                size={10}
-                className="shrink-0"
-                style={{ color: 'var(--sidebar-foreground)' }}
-              />
-            </span>
-            <Folder
-              size={13}
-              className="shrink-0"
-              style={{
-                color: isActive
-                  ? 'var(--sidebar-foreground-strong)'
-                  : 'var(--sidebar-foreground)',
+              onClick={() => {
+                if (renaming) return
+                toggleExpanded(project.id)
+                navigateToProject(project.id)
               }}
-            />
-            {renaming ? (
-              <InlineEdit
-                value={project.name}
-                onSave={handleRename}
-                onCancel={() => setRenaming(false)}
-                className="flex-1 bg-transparent text-[12.5px] outline-none"
-              />
-            ) : (
-              <span className="flex-1 truncate font-medium">
-                {project.name}
-              </span>
-            )}
-            {anyRunning && !isOpen && !renaming && <RunningDot />}
-            {anyDanger && !isOpen && !renaming && <DangerBadge size={11} />}
-            {/* Add-tab button — shown only when the project is expanded */}
-            {isOpen && !renaming && (
+              onDoubleClick={() => {
+                if (!renaming) setRenaming(true)
+              }}
+            >
               <span
+                className={cn(
+                  'flex h-5 w-5 shrink-0 items-center justify-center rounded transition-transform duration-[140ms]',
+                  isOpen && 'rotate-90',
+                )}
+              >
+                <ChevronRight
+                  size={10}
+                  className="shrink-0"
+                  style={{ color: 'var(--sidebar-foreground)' }}
+                />
+              </span>
+              <Folder
+                size={13}
+                className="shrink-0"
+                style={{
+                  color: isActive
+                    ? 'var(--sidebar-foreground-strong)'
+                    : 'var(--sidebar-foreground)',
+                }}
+              />
+              {renaming ? (
+                <InlineEdit
+                  value={project.name}
+                  onSave={handleRename}
+                  onCancel={() => setRenaming(false)}
+                  className="flex-1 bg-transparent text-[12.5px] outline-none"
+                />
+              ) : (
+                <span className="flex-1 truncate font-medium">
+                  {project.name}
+                </span>
+              )}
+              {anyRunning && !isOpen && !renaming && <RunningDot />}
+              {anyDanger && !isOpen && !renaming && <DangerBadge size={11} />}
+              {project.pinned && !renaming && (
+                <span
+                  title="Unpin project"
+                  className="shrink-0 opacity-50 hover:opacity-100"
+                  onPointerDown={(e) => {
+                    e.stopPropagation()
+                    e.preventDefault()
+                    toggleProjectPin(project.id)
+                  }}
+                >
+                  <Pin size={9} />
+                </span>
+              )}
+            </button>
+
+            {/* Add-tab — proper sibling button; only fires on primary click */}
+            {isOpen && !renaming && (
+              <button
+                type="button"
                 title="New terminal"
-                className="shrink-0 opacity-50 hover:opacity-100"
-                onPointerDown={handleAddTab}
+                className="ml-0.5 flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded opacity-50 hover:opacity-100"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  handleAddTab()
+                }}
               >
                 <svg
                   width="11"
@@ -191,22 +218,9 @@ export function SidebarProjectRow({ project }: { project: Project }) {
                     strokeLinecap="round"
                   />
                 </svg>
-              </span>
+              </button>
             )}
-            {project.pinned && !renaming && (
-              <span
-                title="Unpin project"
-                className="shrink-0 opacity-50 hover:opacity-100"
-                onPointerDown={(e) => {
-                  e.stopPropagation()
-                  e.preventDefault()
-                  toggleProjectPin(project.id)
-                }}
-              >
-                <Pin size={9} />
-              </span>
-            )}
-          </button>
+          </div>
         </ContextMenuTrigger>
         <ContextMenuContent className="w-44 text-[12px]">
           <ContextMenuItem onClick={() => setRenaming(true)}>

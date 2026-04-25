@@ -234,7 +234,7 @@ export function TabBar({ project }: { project: Project }) {
           className="pointer-events-none absolute top-0 right-0 bottom-0 w-8"
           style={{
             background:
-              'linear-gradient(to left, var(--tab-bar) 20%, transparent)',
+              'linear-gradient(to left, var(--color-tab-bar) 20%, transparent)',
           }}
         />
       </div>
