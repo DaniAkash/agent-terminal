@@ -16,15 +16,32 @@ type Props = {
   projectId: string
   tabId: string
   cwd: string
+  /** True when this tab is the currently visible one. Used to auto-focus
+   *  the xterm canvas so the user can type immediately after switching tabs
+   *  or projects without needing to click into the terminal first. */
+  isActive: boolean
 }
 
 export const TerminalPane = React.memo(function TerminalPane({
   projectId,
   tabId,
   cwd,
+  isActive,
 }: Props) {
   const tabKey = makeTabKey(projectId, tabId)
   const handleRef = useRef<XTermHandle | null>(null)
+
+  // Auto-focus the xterm canvas when this tab becomes active.
+  //
+  // The effect runs after React has painted, which means WorkspaceView has
+  // already applied `display: block` to the container div. Calling focus()
+  // on a display:none element is a no-op in xterm, so the paint-after timing
+  // here is load-bearing — do not call focus() synchronously on prop change.
+  useEffect(() => {
+    if (isActive) {
+      handleRef.current?.focus()
+    }
+  }, [isActive])
 
   // Called once when the xterm canvas is ready.
   //

@@ -36,18 +36,20 @@ export function WorkspaceView({ project }: Props) {
       <div className="relative min-h-0 flex-1 bg-terminal">
         {project.tabs.map((tab) => {
           if (!mounted.has(tab.id)) return null
+          const isActive = tab.id === activeTabId
           return (
             <div
               key={tab.id}
               className="absolute inset-0"
               // CSS show/hide: terminal instance stays mounted, preserving
               // ghostty-web canvas state, pty process, and scrollback history.
-              style={{ display: tab.id === activeTabId ? 'block' : 'none' }}
+              style={{ display: isActive ? 'block' : 'none' }}
             >
               <TerminalPane
                 projectId={project.id}
                 tabId={tab.id}
                 cwd={tab.lastCwd ?? project.path}
+                isActive={isActive}
               />
             </div>
           )
