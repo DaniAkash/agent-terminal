@@ -26,6 +26,7 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/context-menu'
 import { cn } from '@/lib/utils'
+import { $ctrlHeld } from '@/modules/stores/$keyboard'
 import {
   $activeProjectId,
   $activeTabId,
@@ -34,6 +35,7 @@ import {
 } from '@/modules/stores/$navigation'
 import {
   $expanded,
+  $projects,
   addTab,
   removeProject,
   renameProject,
@@ -48,6 +50,17 @@ import type { Project } from '@/screens/workspace/workspace.types'
 export function SidebarProjectRow({ project }: { project: Project }) {
   const expanded = useStore($expanded)
   const isOpen = !!expanded[project.id]
+  const ctrlHeld = useStore($ctrlHeld)
+  const allProjects = useStore($projects)
+
+  // 1-based position in sidebar display order (pinned first) — matches Ctrl+N shortcut.
+  // Only projects 1–9 show a badge; beyond that there is no keyboard shortcut.
+  const orderedProjects = [
+    ...allProjects.filter((p) => p.pinned),
+    ...allProjects.filter((p) => !p.pinned),
+  ]
+  const projectNumber =
+    orderedProjects.findIndex((p) => p.id === project.id) + 1
   const activeProjectId = useStore($activeProjectId)
   const isActive = activeProjectId === project.id
   const allTabMeta = useStore($tabMeta)
@@ -156,15 +169,22 @@ export function SidebarProjectRow({ project }: { project: Project }) {
                   style={{ color: 'var(--sidebar-foreground)' }}
                 />
               </span>
-              <Folder
-                size={13}
-                className="shrink-0"
-                style={{
-                  color: isActive
-                    ? 'var(--sidebar-foreground-strong)'
-                    : 'var(--sidebar-foreground)',
-                }}
-              />
+              {/* Folder icon with Ctrl+N badge overlay */}
+              <span className="relative flex shrink-0 items-center justify-center">
+                <Folder
+                  size={13}
+                  style={{
+                    color: isActive
+                      ? 'var(--sidebar-foreground-strong)'
+                      : 'var(--sidebar-foreground)',
+                  }}
+                />
+                {ctrlHeld && projectNumber >= 1 && projectNumber <= 9 && (
+                  <span className="absolute -top-1.5 -right-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-primary font-bold text-[8px] text-primary-foreground leading-none">
+                    {projectNumber}
+                  </span>
+                )}
+              </span>
               {renaming ? (
                 <InlineEdit
                   value={project.name}
