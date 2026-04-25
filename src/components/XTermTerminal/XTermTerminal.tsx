@@ -63,6 +63,21 @@ const LIGHT_THEME: ITheme = {
   brightWhite: '#383a42',
 }
 
+// Returns true when the key combo is claimed by the app's hotkey layer
+// (react-hotkeys-hook at document level). Returning false from xterm's
+// attachCustomKeyEventHandler skips xterm's own handler so the event bubbles.
+function isAppShortcut(e: KeyboardEvent): boolean {
+  if (!e.ctrlKey) return false
+  return (
+    e.key === 'Tab' || // Ctrl+Tab, Ctrl+Shift+Tab
+    e.key === 't' ||
+    e.key === 'T' || // Ctrl+T
+    e.key === 'w' ||
+    e.key === 'W' || // Ctrl+W
+    '123456789'.includes(e.key) // Ctrl+1–9
+  )
+}
+
 export const XTermTerminal = React.memo(function XTermTerminal({
   onReady,
   onData,
@@ -119,6 +134,11 @@ export const XTermTerminal = React.memo(function XTermTerminal({
 
     termRef.current = term
     fitAddonRef.current = fitAddon
+
+    // Pass app-level shortcuts through to document-level hotkey handlers.
+    // xterm calls preventDefault on keys it processes; returning false here
+    // short-circuits that so the events bubble up to react-hotkeys-hook.
+    term.attachCustomKeyEventHandler((e) => !isAppShortcut(e))
 
     // WebGL renderer — falls back to xterm's built-in DOM renderer on context
     // loss. The canvas addon is not used: it is v5-only and was removed in v6.

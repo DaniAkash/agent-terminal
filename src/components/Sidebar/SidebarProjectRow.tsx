@@ -145,21 +145,19 @@ export function SidebarProjectRow({ project }: { project: Project }) {
                 : 'text-sidebar-fg hover:bg-sidebar-hover',
             )}
           >
+            {/* Chevron — controls expand/collapse only; separate from the
+                main content button to avoid nested-button invalid HTML */}
             <button
               type="button"
-              className="flex h-full flex-1 cursor-grab select-none items-center gap-1.5 px-1.5 text-left text-[12.5px]"
-              onClick={() => {
-                if (renaming) return
-                toggleExpanded(project.id)
-                navigateToProject(project.id)
-              }}
-              onDoubleClick={() => {
-                if (!renaming) setRenaming(true)
+              className="flex h-full w-6 shrink-0 items-center justify-center"
+              onClick={(e) => {
+                e.stopPropagation()
+                if (!renaming) toggleExpanded(project.id)
               }}
             >
               <span
                 className={cn(
-                  'flex h-5 w-5 shrink-0 items-center justify-center rounded transition-transform duration-[140ms]',
+                  'flex h-5 w-5 items-center justify-center rounded transition-transform duration-[140ms]',
                   isOpen && 'rotate-90',
                 )}
               >
@@ -169,6 +167,19 @@ export function SidebarProjectRow({ project }: { project: Project }) {
                   style={{ color: 'var(--sidebar-foreground)' }}
                 />
               </span>
+            </button>
+
+            <button
+              type="button"
+              className="flex h-full flex-1 cursor-grab select-none items-center gap-1.5 pr-1.5 text-left text-[12.5px]"
+              onClick={() => {
+                if (renaming) return
+                navigateToProject(project.id)
+              }}
+              onDoubleClick={() => {
+                if (!renaming) setRenaming(true)
+              }}
+            >
               {/* Folder icon with Ctrl+N badge overlay */}
               <span className="relative flex shrink-0 items-center justify-center">
                 <Folder
