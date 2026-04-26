@@ -40,7 +40,7 @@ pub fn run() {
 
             // Silently install/verify agent hook configs at every launch.
             // Runs in the background — never blocks startup, never crashes the app.
-            tokio::spawn(ensure_hooks_installed());
+            tauri::async_runtime::spawn(ensure_hooks_installed());
 
             // Build the mod engine. Hook channel is created inside the builder.
             let engine_builder = ModEngine::builder()

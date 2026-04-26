@@ -39,7 +39,7 @@ pub struct HookPayload {
 /// logs a warning and returns — the rest of the app is unaffected. Hook-based
 /// agent state tracking will degrade gracefully to the `ps`-based heuristics.
 pub fn start_hook_server(hook_tx: mpsc::UnboundedSender<HookPayload>) {
-    tokio::spawn(async move {
+    tauri::async_runtime::spawn(async move {
         let app = Router::new()
             .route("/hook", post(receive_hook))
             .with_state(hook_tx);
