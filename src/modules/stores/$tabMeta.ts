@@ -3,6 +3,13 @@ import { atom } from 'nanostores'
 export type TabStatus = 'idle' | 'running' | 'done' | 'error'
 export type TabType = 'shell' | 'task' | 'agent'
 
+/**
+ * Rich agent turn state — driven by hook events from AgentTurnMod.
+ * Matches the AgentState type in agent.helpers.ts so deriveAgentState can
+ * return it directly: `if (meta.agentState) return meta.agentState`.
+ */
+export type AgentTurnState = 'idle' | 'in-progress' | 'awaiting' | 'completed'
+
 export type GitInfo = {
   branch: string
   aheadBy: number
@@ -58,6 +65,18 @@ export type TabMeta = {
    * Derived from `processes` in the mod-listener; kept for backwards compat.
    */
   listeningPorts?: number[]
+  /**
+   * Rich agent turn state — set by AgentTurnMod via hook events.
+   * `undefined` means no hook data has arrived yet; deriveAgentState falls
+   * back to OSC 133-based heuristics in that case.
+   */
+  agentState?: AgentTurnState
+  /**
+   * Optional message associated with the current agentState.
+   * `awaiting`: the question or permission text the agent needs answered.
+   * `completed`: the last assistant message (truncated to ~200 chars).
+   */
+  agentMessage?: string
 }
 
 const defaultMeta: TabMeta = { status: 'idle', type: 'shell' }
