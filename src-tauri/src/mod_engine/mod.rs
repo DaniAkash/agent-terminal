@@ -50,4 +50,12 @@ pub trait Mod: Send + 'static {
     /// Called by the engine when `ProcessInspectorMod` no longer sees an agent
     /// process that was previously detected in this tab's CWD. Default is a no-op.
     fn on_agent_cleared(&mut self, _agent: &str, _ctx: &ModContext) {}
+
+    /// Called by the engine when a hook event arrives from the HTTP hook server.
+    ///
+    /// Hook events are not tab-scoped at the engine level — the payload carries
+    /// `session_id` and `cwd` that the MOD uses internally to resolve which tab
+    /// the event belongs to. `AgentTurnMod` is the only MOD that implements this;
+    /// all others use the default no-op.
+    fn on_hook_event(&mut self, _payload: &crate::hook_server::HookPayload) {}
 }

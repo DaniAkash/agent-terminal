@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use super::context::{AgentSignal, AgentSignalKind, CwdUpdate, ModContext, ModEvent};
 use super::Mod;
+use crate::hook_server::HookPayload;
 use tauri::{AppHandle, Emitter, async_runtime};
 use tokio::sync::mpsc;
 
@@ -56,8 +57,13 @@ impl ModEngineHandle {
 }
 
 /// Collects MODs before building the engine.
+///
+/// Also creates the hook event channel. Call `hook_sender()` before `build()` to
+/// get a sender you can pass to `start_hook_server()`.
 pub struct ModEngineBuilder {
     mods: Vec<Box<dyn Mod>>,
+    hook_tx: mpsc::UnboundedSender<HookPayload>,
+    hook_rx: mpsc::UnboundedReceiver<HookPayload>,
 }
 
 impl ModEngineBuilder {
@@ -66,8 +72,13 @@ impl ModEngineBuilder {
         self
     }
 
+    /// Returns a sender for hook events. Pass this to `start_hook_server()`.
+    pub fn hook_sender(&self) -> mpsc::UnboundedSender<HookPayload> {
+        self.hook_tx.clone()
+    }
+
     pub fn build(self, app: AppHandle) -> ModEngine {
-        ModEngine::start(self.mods, app)
+        ModEngine::start(self.mods, self.hook_rx, app)
     }
 }
 
@@ -83,7 +94,8 @@ pub struct ModEngine {
 
 impl ModEngine {
     pub fn builder() -> ModEngineBuilder {
-        ModEngineBuilder { mods: Vec::new() }
+        let (hook_tx, hook_rx) = mpsc::unbounded_channel::<HookPayload>();
+        ModEngineBuilder { mods: Vec::new(), hook_tx, hook_rx }
     }
 
     /// Returns a cheap cloneable handle suitable for passing to threads or commands.
@@ -91,7 +103,7 @@ impl ModEngine {
         self.handle.clone()
     }
 
-    fn start(mods: Vec<Box<dyn Mod>>, app: AppHandle) -> Self {
+    fn start(mods: Vec<Box<dyn Mod>>, mut hook_rx: mpsc::UnboundedReceiver<HookPayload>, app: AppHandle) -> Self {
         // Bounded channel for data messages (Output/Input/Resize).
         let (msg_tx, mut msg_rx) = mpsc::channel::<ModMessage>(512);
         // Unbounded channel for lifecycle messages (Open/Close) — never dropped.
@@ -189,6 +201,13 @@ impl ModEngine {
                                 for m in &mut mods { m.on_agent_cleared(&sig.agent, &ctx); }
                             }
                         }
+                    }
+                    // Hook events from the HTTP server. Not tab-scoped at the engine
+                    // level — AgentTurnMod resolves the tab internally via session_id /
+                    // CWD matching and emits directly via its own AsyncEmitter map.
+                    hook = hook_rx.recv() => {
+                        let Some(payload) = hook else { break };
+                        for m in &mut mods { m.on_hook_event(&payload); }
                     }
                 }
             }

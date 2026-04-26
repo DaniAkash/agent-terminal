@@ -1,5 +1,6 @@
 import { listen } from '@tauri-apps/api/event'
 import {
+  type AgentTurnState,
   clearTabMeta,
   type GitInfo,
   type ProcessInfo,
@@ -56,6 +57,9 @@ function dispatch({
           type,
           agentName: undefined,
           agentCmd: undefined,
+          // Clear hook-driven state when the agent process exits.
+          agentState: undefined,
+          agentMessage: undefined,
         })
       } else {
         updateTabMeta(tabId, { type, agentName: agent, agentCmd: cmd })
@@ -83,6 +87,17 @@ function dispatch({
     case 'listening_ports': {
       const { ports } = data as { ports: number[] }
       updateTabMeta(tabId, { listeningPorts: ports })
+      break
+    }
+    case 'agent_state_changed': {
+      const { state, message } = data as {
+        state: AgentTurnState
+        message?: string
+      }
+      updateTabMeta(tabId, {
+        agentState: state,
+        agentMessage: message ?? undefined,
+      })
       break
     }
     case 'closed': {

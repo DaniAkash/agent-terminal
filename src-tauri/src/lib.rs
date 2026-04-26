@@ -1,11 +1,16 @@
 mod commands;
+mod hook_config;
+mod hook_server;
 mod mod_engine;
 mod pty_manager;
 mod shell_integration;
 
+use hook_config::ensure_hooks_installed;
+use hook_server::start_hook_server;
 use mod_engine::{
     ModEngine,
     mods::{
+        AgentTurnMod,
         ClaudeCodeMod,
         CodexMod,
         DirTrackerMod,
@@ -33,14 +38,25 @@ pub fn run() {
                 eprintln!("[agent-terminal] shell integration setup failed: {e}");
             }
 
-            let mod_engine = ModEngine::builder()
+            // Silently install/verify agent hook configs at every launch.
+            // Runs in the background — never blocks startup, never crashes the app.
+            tokio::spawn(ensure_hooks_installed());
+
+            // Build the mod engine. Hook channel is created inside the builder.
+            let engine_builder = ModEngine::builder()
                 .with_mod(DirTrackerMod::new())
                 .with_mod(ProcessTrackerMod::new())
                 .with_mod(ClaudeCodeMod::new())
                 .with_mod(CodexMod::new())
                 .with_mod(ShellProcessMod::new())
                 .with_mod(GitMonitorMod::new())
-                .build(app.handle().clone());
+                .with_mod(AgentTurnMod::new());
+
+            // Start the hook HTTP server, wired to the engine's hook channel.
+            let hook_tx = engine_builder.hook_sender();
+            start_hook_server(hook_tx);
+
+            let mod_engine = engine_builder.build(app.handle().clone());
             app.manage(mod_engine);
             Ok(())
         })
