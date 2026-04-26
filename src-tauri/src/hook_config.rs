@@ -302,6 +302,10 @@ mod tests {
 
     fn temp_dir(suffix: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("at_hook_test_{suffix}"));
+        // Wipe from any previous run so each test starts clean.
+        if dir.exists() {
+            fs::remove_dir_all(&dir).unwrap();
+        }
         fs::create_dir_all(&dir).unwrap();
         dir
     }

@@ -12,7 +12,7 @@
     "lint": "biome check && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets",
     "lint:rust": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets",
     "typecheck": "tsc --noEmit",
-    "test": "bun test",
+    "test": "bun test && cargo test --manifest-path src-tauri/Cargo.toml",
     "lint:fix": "biome check --write --unsafe && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --fix --allow-dirty --allow-staged"
   },
   "dependencies": {
