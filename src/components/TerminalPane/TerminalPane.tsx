@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useRef } from 'react'
 import {
-  type XTermHandle,
-  XTermTerminal,
-} from '@/components/XTermTerminal/XTermTerminal'
+  type WTermHandle,
+  WTermTerminal,
+} from '@/components/WTermTerminal/WTermTerminal'
 import { IPC } from '@/modules/ipc/commands'
 import { onPtyExit } from '@/modules/ipc/events'
 import { makeTabKey } from '@/screens/workspace/workspace.helpers'
@@ -17,7 +17,7 @@ type Props = {
   tabId: string
   cwd: string
   /** True when this tab is the currently visible one. Used to auto-focus
-   *  the xterm canvas so the user can type immediately after switching tabs
+   *  the wterm host so the user can type immediately after switching tabs
    *  or projects without needing to click into the terminal first. */
   isActive: boolean
 }
@@ -29,21 +29,22 @@ export const TerminalPane = React.memo(function TerminalPane({
   isActive,
 }: Props) {
   const tabKey = makeTabKey(projectId, tabId)
-  const handleRef = useRef<XTermHandle | null>(null)
+  const handleRef = useRef<WTermHandle | null>(null)
 
-  // Auto-focus the xterm canvas when this tab becomes active.
+  // Auto-focus the wterm host when this tab becomes active.
   //
   // The effect runs after React has painted, which means WorkspaceView has
   // already applied `display: block` to the container div. Calling focus()
-  // on a display:none element is a no-op in xterm, so the paint-after timing
-  // here is load-bearing — do not call focus() synchronously on prop change.
+  // on a display:none element is a no-op (wterm focuses its hidden textarea,
+  // which can't take focus when display:none) — paint-after timing is
+  // load-bearing here, do not call focus() synchronously on prop change.
   useEffect(() => {
     if (isActive) {
       handleRef.current?.focus()
     }
   }, [isActive])
 
-  // Called once when the xterm canvas is ready.
+  // Called once when the wterm host is ready.
   //
   // Pty lifecycle is owned by the store, not this component:
   //   - openTab is idempotent — returns true if a new pty was spawned,
@@ -56,7 +57,7 @@ export const TerminalPane = React.memo(function TerminalPane({
   // Data arrives via the per-tab Channel passed to openTab — no global event
   // bus listener, no fan-out to other tabs.
   const handleReady = useCallback(
-    (handle: XTermHandle) => {
+    (handle: WTermHandle) => {
       handleRef.current = handle
 
       if (pendingOpens.has(tabKey)) return
@@ -106,7 +107,7 @@ export const TerminalPane = React.memo(function TerminalPane({
   }, [tabKey])
 
   return (
-    <XTermTerminal
+    <WTermTerminal
       onReady={handleReady}
       onData={handleData}
       onResize={handleResize}

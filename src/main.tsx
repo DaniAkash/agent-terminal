@@ -7,7 +7,7 @@ import { initNavigation } from '@/modules/stores/$navigation'
 import { $projects } from '@/modules/stores/$projects'
 import { WorkspaceLayout } from '@/screens/workspace/WorkspaceLayout'
 import type { Project } from '@/screens/workspace/workspace.types'
-import '@xterm/xterm/css/xterm.css'
+import '@wterm/dom/css'
 import './index.css'
 
 async function bootstrap() {
