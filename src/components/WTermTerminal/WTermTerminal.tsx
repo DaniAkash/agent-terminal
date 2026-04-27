@@ -54,38 +54,58 @@ export const WTermTerminal = React.memo(function WTermTerminal({
   }, [onReady, onData, onResize])
 
   useEffect(() => {
-    const container = containerRef.current
-    if (!container) return
+    const outer = containerRef.current
+    if (!outer) return
+
+    // Create a fresh inner host div per effect instance.
+    //
+    // wterm's destroy() runs `this.element.innerHTML = ""`, which clears all
+    // children of the host element. In React StrictMode (and any other case
+    // where two effect instances overlap during mount/unmount), Mount 1's
+    // async init() can resolve AFTER Mount 2 has already constructed its own
+    // WTerm on the same host — at which point Mount 1's destroy() clobbers
+    // Mount 2's term-grid and input textarea, leaving Mount 2 rendering into
+    // a detached DOM subtree (terminal stays blank).
+    //
+    // Giving each instance its own host (this `inner` div) isolates the
+    // subtrees: Mount 1's destroy only operates on inner1, which by then has
+    // already been removed from outer.
+    const inner = document.createElement('div')
+    inner.style.height = '100%'
+    inner.style.width = '100%'
+    outer.appendChild(inner)
 
     let cancelled = false
     let term: WTerm | null = null
 
-    // App-level shortcut interceptor — capture phase so it runs before
-    // wterm's textarea keydown handler. stopImmediatePropagation prevents
-    // wterm from converting the keystroke into PTY input. Intentionally NOT
-    // preventDefault — react-hotkeys-hook still needs the event at the
-    // document level.
+    // App-level shortcut interceptor — capture phase on the outer div so it
+    // runs before wterm's textarea (deeper in the tree) handles the keydown.
+    // stopImmediatePropagation prevents wterm from converting the keystroke
+    // into PTY input. Intentionally NOT preventDefault — react-hotkeys-hook
+    // still needs the event at the document level.
+    //
+    // wterm has no `attachCustomKeyEventHandler` equivalent; this is the
+    // replacement.
     const onAppKey = (e: KeyboardEvent) => {
       if (isAppShortcut(e)) {
         e.stopImmediatePropagation()
       }
     }
-    container.addEventListener('keydown', onAppKey, true)
+    outer.addEventListener('keydown', onAppKey, true)
 
     // Light-mode class — wterm built-in. Dark mode uses wterm's default
-    // (VS Code Dark+) palette, so no class is needed.
+    // (VS Code Dark+) palette, so no class is needed. Class goes on inner
+    // because that's the `.wterm` element wterm reads CSS variables from.
     const darkMq = window.matchMedia('(prefers-color-scheme: dark)')
     const applyTheme = (isDark: boolean) => {
-      container.classList.toggle('theme-light', !isDark)
+      inner.classList.toggle('theme-light', !isDark)
     }
     applyTheme(darkMq.matches)
     const onColorSchemeChange = (e: MediaQueryListEvent) =>
       applyTheme(e.matches)
     darkMq.addEventListener('change', onColorSchemeChange)
     ;(async () => {
-      // wterm appends children to `container` immediately; do not pass a
-      // container holding other DOM you intend to keep.
-      term = new WTerm(container, {
+      term = new WTerm(inner, {
         cursorBlink: true,
         autoResize: true, // built-in ResizeObserver — replaces FitAddon
         onData: (data) => onDataRef.current(data),
@@ -112,9 +132,11 @@ export const WTermTerminal = React.memo(function WTermTerminal({
 
     return () => {
       cancelled = true
-      container.removeEventListener('keydown', onAppKey, true)
+      outer.removeEventListener('keydown', onAppKey, true)
       darkMq.removeEventListener('change', onColorSchemeChange)
-      term?.destroy()
+      if (term) term.destroy()
+      // Remove our inner host. Idempotent if the node is already detached.
+      inner.remove()
       termRef.current = null
     }
   }, []) // mount once — callbacks accessed via stable refs
