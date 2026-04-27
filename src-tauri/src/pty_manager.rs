@@ -114,10 +114,38 @@ fn spawn_reader_thread(
     std::thread::spawn(move || {
         let mut buf = [0u8; READ_BUF_SIZE];
 
+        // Stateful UTF-8 decoder. PTY read() can return a chunk that ends in
+        // the middle of a multi-byte UTF-8 sequence — common with TUI agents
+        // (Claude Code, Codex) that emit dense Unicode (box drawing, em-dashes,
+        // emoji). String::from_utf8_lossy would replace those partial bytes
+        // with U+FFFD on every chunk boundary, corrupting roughly one character
+        // per multi-byte char that lands on a read boundary.
+        //
+        // encoding_rs::Decoder maintains internal state across decode_to_string
+        // calls — partial trailing bytes are buffered and prepended to the
+        // next chunk. Same approach node-pty uses, just one layer up from the
+        // PTY read in our case.
+        let mut decoder = encoding_rs::UTF_8.new_decoder();
+        // Pre-sized for one read's worth of decoded output. UTF-8 → UTF-8 means
+        // the output never exceeds the input length; +4 for a safety margin
+        // around the decoder's internal carryover.
+        let mut decoded = String::with_capacity(READ_BUF_SIZE + 4);
+
         loop {
             match reader.read(&mut buf) {
                 Ok(0) | Err(_) => {
                     // PTY process exited or master fd closed (close_tab called).
+                    // Flush the decoder — any partial UTF-8 bytes left over at
+                    // EOF become U+FFFD (last=true tells the decoder no more
+                    // input is coming, so it must commit any pending state).
+                    decoded.clear();
+                    let _ = decoder.decode_to_string(&[], &mut decoded, true);
+                    if !decoded.is_empty() {
+                        if let Some(ch) = channel.lock().unwrap().as_ref() {
+                            ch.send(PtyDataPayload { data: decoded.clone() }).ok();
+                        }
+                    }
+
                     // Mark dead immediately — before emitting pty:exit or calling
                     // on_tab_close — so try_reattach cannot observe reader_alive=true
                     // on a thread that is in the process of exiting.
@@ -132,14 +160,19 @@ fn spawn_reader_thread(
                     break;
                 }
                 Ok(n) => {
-                    let data = String::from_utf8_lossy(&buf[..n]).into_owned();
+                    // Stream-decode this chunk. Partial trailing bytes (1–3 bytes
+                    // of an incomplete UTF-8 sequence) stay inside the decoder's
+                    // state and are prepended to the next chunk automatically.
+                    decoded.clear();
+                    let (_result, _bytes_read, _had_errors) =
+                        decoder.decode_to_string(&buf[..n], &mut decoded, false);
 
                     // Lock briefly to send — released before calling on_output.
                     let send_ok = {
                         let guard = channel.lock().unwrap();
                         match guard.as_ref() {
                             Some(ch) => {
-                                ch.send(PtyDataPayload { data: data.clone() }).is_ok()
+                                ch.send(PtyDataPayload { data: decoded.clone() }).is_ok()
                             }
                             // No channel — WebView is disconnected. Terminal
                             // forwarding is skipped but MODs still receive output
@@ -159,7 +192,9 @@ fn spawn_reader_thread(
                     }
                     // Always forward to MOD engine regardless of channel state —
                     // MOD state (git, CWD, agent detection) must stay current
-                    // even while the WebView is disconnected.
+                    // even while the WebView is disconnected. Pass raw bytes —
+                    // the OSC parser is byte-oriented and unaffected by UTF-8
+                    // boundaries.
                     mod_handle.on_output(&tab_id, buf[..n].to_vec());
                 }
             }
