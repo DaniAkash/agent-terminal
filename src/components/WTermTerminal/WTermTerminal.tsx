@@ -73,6 +73,13 @@ export const WTermTerminal = React.memo(function WTermTerminal({
     const inner = document.createElement('div')
     inner.style.height = '100%'
     inner.style.width = '100%'
+    // Override wterm's default "card" presentation — its CSS ships with
+    // padding: 12px, border-radius: 8px, and a drop shadow that look out of
+    // place when the terminal is embedded in a pane (the wterm-shipped React
+    // demo overrides these the same way for embedded use).
+    inner.style.padding = '0'
+    inner.style.borderRadius = '0'
+    inner.style.boxShadow = 'none'
     outer.appendChild(inner)
 
     let cancelled = false
@@ -105,6 +112,25 @@ export const WTermTerminal = React.memo(function WTermTerminal({
       applyTheme(e.matches)
     darkMq.addEventListener('change', onColorSchemeChange)
     ;(async () => {
+      // Wait for custom fonts (Geist Mono, loaded async via
+      // @fontsource-variable/geist) to be ready before constructing WTerm.
+      // wterm measures char width once during init() to compute cols/rows; if
+      // it measures with the fallback monospace font and Geist Mono lands
+      // afterwards, the cell metrics are wrong and ResizeObserver does NOT
+      // re-fire on font swaps (it only observes element size changes). The
+      // user-visible symptom: the terminal doesn't fill the pane width until
+      // the window is manually resized.
+      //
+      // document.fonts.ready resolves once all currently-pending fonts have
+      // either loaded or failed — never hangs indefinitely.
+      try {
+        await document.fonts.ready
+      } catch {
+        // Some browsers may reject; proceed with whatever font is current.
+      }
+
+      if (cancelled) return
+
       term = new WTerm(inner, {
         cursorBlink: true,
         autoResize: true, // built-in ResizeObserver — replaces FitAddon
@@ -123,6 +149,33 @@ export const WTermTerminal = React.memo(function WTermTerminal({
       }
 
       termRef.current = term
+
+      // Force wterm's autoResize ResizeObserver to fire a fresh observation
+      // with current dimensions. Without this, the terminal stays stuck at the
+      // default 80x24 on first launch — the user's symptom is "the terminal
+      // doesn't fill the pane width until I resize the window".
+      //
+      // Two reasons the initial observer firing can fail to size correctly:
+      //   1. The first firing lands before flex layout has fully settled, so
+      //      contentRect is smaller than the eventual settled size.
+      //   2. wterm's observer callback does
+      //         `if (newCols !== this.cols || newRows !== this.rows) resize(...)`
+      //      so if the initial firing happens to compute the default 80x24
+      //      (e.g. when char metrics are slightly off), no resize() call fires.
+      //
+      // Briefly perturbing inner's max-width by a sub-pixel amount triggers a
+      // fresh ResizeObserver callback. wterm then re-measures char metrics and
+      // calls resize() with the correct dimensions. The visual delta is
+      // imperceptible (sub-pixel) and reverts on the next animation frame.
+      requestAnimationFrame(() => {
+        if (cancelled) return
+        const orig = inner.style.maxWidth
+        inner.style.maxWidth = 'calc(100% - 0.01px)'
+        requestAnimationFrame(() => {
+          if (cancelled) return
+          inner.style.maxWidth = orig
+        })
+      })
 
       onReadyRef.current({
         write: (data) => termRef.current?.write(data),
