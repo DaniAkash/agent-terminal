@@ -15,9 +15,7 @@
         "@tauri-apps/api": "^2",
         "@tauri-apps/plugin-dialog": "^2.7.0",
         "@tauri-apps/plugin-opener": "^2",
-        "@wterm/core": "0.1.9",
         "@wterm/dom": "0.1.9",
-        "@wterm/markdown": "0.1.9",
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",
         "lucide-react": "^1.8.0",
@@ -390,8 +388,6 @@
     "@wterm/core": ["@wterm/core@0.1.9", "", {}, "sha512-RqyS/w7SU3sLCY2yfsw5p+T7wYIIgCYzOMQIWkoJHKN7o+n/uerr2nTNygR3MBQ2FOcznilFm30w9aOJ2OK3GQ=="],
 
     "@wterm/dom": ["@wterm/dom@0.1.9", "", { "dependencies": { "@wterm/core": "0.1.9" } }, "sha512-jccLWVW36loRWWnieY3iRLmDgvTgvCroMQfkcuMUeLmTSwnmrm6dB7RAAngal+udQ6VaTp0QF0gLpA+kq1R1fw=="],
-
-    "@wterm/markdown": ["@wterm/markdown@0.1.9", "", {}, "sha512-EAeirXHJ3erFh+rEd9SQy5y4smOvd7aM2fZ50Zz30kALNH5I/TQXBpkTOLcOc13AX9YN+H//tGJ2zI4xbZox3w=="],
 
     "accepts": ["accepts@2.0.0", "", { "dependencies": { "mime-types": "^3.0.0", "negotiator": "^1.0.0" } }, "sha512-5cvg6CtKwfgdmVqY1WIiXKc3Q1bkRqGLi+2W/6ao+6Y7gu/RCwRuAhGEzh5B4KlszSuTLgZYuqFqo5bImjNKng=="],
 

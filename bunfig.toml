@@ -1,5 +1,0 @@
-[install]
-# wterm 0.2.0 was published recently — exempt from the global
-# minimumReleaseAge policy. wterm is the project's terminal renderer
-# (replacing xterm.js); we knowingly opt in to the latest version.
-minimumReleaseAgeExcludes = ["@wterm/core", "@wterm/dom", "@wterm/markdown"]
