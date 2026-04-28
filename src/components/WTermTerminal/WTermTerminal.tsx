@@ -74,10 +74,11 @@ export const WTermTerminal = React.memo(function WTermTerminal({
     inner.style.height = '100%'
     inner.style.width = '100%'
     // Override wterm's default "card" presentation — its CSS ships with
-    // padding: 12px, border-radius: 8px, and a drop shadow that look out of
-    // place when the terminal is embedded in a pane (the wterm-shipped React
-    // demo overrides these the same way for embedded use).
-    inner.style.padding = '0'
+    // padding: 12px, border-radius: 8px, and a drop shadow. The padding/radius
+    // are excessive for an embedded pane, but a tiny 2px gutter keeps text
+    // from sitting flush against the pane edges (where it visually collides
+    // with the tab bar and status bar).
+    inner.style.padding = '2px'
     inner.style.borderRadius = '0'
     inner.style.boxShadow = 'none'
     outer.appendChild(inner)
