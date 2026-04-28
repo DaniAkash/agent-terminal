@@ -136,29 +136,10 @@ export const XTermTerminal = React.memo(function XTermTerminal({
       fontFamily: '"Geist Mono", "Cascadia Code", "Fira Code", monospace',
       fontSize: 13,
       lineHeight: 1.2,
-      // Lock the variable-axis weight so the WebGL atlas can't sample a
-      // slightly different weight when re-rasterising selected cells.
-      // Geist Mono is variable-weight; without this option, the same
-      // glyph can render at subtly different stem widths in selected vs
-      // unselected runs.
-      fontWeight: 400,
-      fontWeightBold: 600,
       cursorBlink: true,
       cursorStyle: 'block',
       scrollback: 5000,
       allowTransparency: false,
-      // Disable xterm.js's automatic contrast adjustment. With the default
-      // (4.5), xterm dynamically recolours text to meet a contrast ratio
-      // against the cell background — including in selected cells, which
-      // is one of the sources of "fonts changing during selection".
-      // Trade-off: we lose WCAG auto-contrast. Since users pick the theme
-      // (Dark+/Light+) and these palettes are already tuned for legibility,
-      // this is acceptable. Revisit if anyone reports unreadable colours.
-      minimumContrastRatio: 1,
-      // Bold stays at the bold colour; never auto-shifts to the bright ANSI
-      // variant. Removes another way selection rendering can alter how
-      // text reads.
-      drawBoldTextInBrightColors: false,
     })
 
     const fitAddon = new FitAddon()
