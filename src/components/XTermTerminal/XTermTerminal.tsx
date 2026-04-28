@@ -20,10 +20,16 @@ type Props = {
 // VS Code Dark+ palette, sourced from VS Code's terminal defaults
 // (src/vs/workbench/contrib/terminal/browser/terminalConfiguration.ts, MIT).
 //
-// The single deviation from upstream is `background`: we override `#1e1e1e`
-// to `#0e0f10` so the terminal pane matches the app's --terminal-background
-// CSS variable and blends with the surrounding chrome. Every other slot
-// (foreground, cursor, ANSI 16, selection) is upstream-faithful.
+// Deviations from upstream:
+//   - `background` is set to `#0e0f10` (upstream `#1e1e1e`) so the terminal
+//     pane matches the app's --terminal-background CSS variable and blends
+//     with the surrounding chrome.
+//   - `cursorAccent` follows the overridden background. cursorAccent is
+//     drawn behind a block-style cursor and must equal the terminal bg for
+//     the cursor character to invert cleanly; it's a derived value, not an
+//     independent palette choice.
+//
+// Every other slot (foreground, cursor, ANSI 16, selection) is upstream-faithful.
 //
 // `selectionForeground` is the load-bearing addition vs. the previous
 // hand-rolled palette: without it, xterm.js leaves the glyph colour
