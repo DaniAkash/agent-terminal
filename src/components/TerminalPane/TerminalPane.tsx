@@ -1,3 +1,4 @@
+import { useStore } from '@nanostores/react'
 import React, { useCallback, useEffect, useRef } from 'react'
 import {
   type XTermHandle,
@@ -5,6 +6,7 @@ import {
 } from '@/components/XTermTerminal/XTermTerminal'
 import { IPC } from '@/modules/ipc/commands'
 import { onPtyExit } from '@/modules/ipc/events'
+import { $tabMeta } from '@/modules/stores/$tabMeta'
 import { makeTabKey } from '@/screens/workspace/workspace.helpers'
 
 // Tracks in-flight openTab calls per tabKey. Prevents concurrent calls
@@ -29,6 +31,8 @@ export const TerminalPane = React.memo(function TerminalPane({
   isActive,
 }: Props) {
   const tabKey = makeTabKey(projectId, tabId)
+  const meta = useStore($tabMeta)
+  const isAgent = meta[tabKey]?.type === 'agent'
   const handleRef = useRef<XTermHandle | null>(null)
 
   // Auto-focus the xterm canvas when this tab becomes active.
@@ -110,6 +114,7 @@ export const TerminalPane = React.memo(function TerminalPane({
       onReady={handleReady}
       onData={handleData}
       onResize={handleResize}
+      isAgent={isAgent}
       className="h-full min-h-0 w-full"
     />
   )

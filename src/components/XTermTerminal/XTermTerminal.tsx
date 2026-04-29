@@ -15,6 +15,9 @@ type Props = {
   onData: (data: string) => void
   onResize: (cols: number, rows: number) => void
   className?: string
+  /** True when the tab is an agent session (claude, codex).
+   *  Enables multiline input via Shift+Enter. */
+  isAgent?: boolean
 }
 
 // VS Code Dark+ palette, sourced from VS Code's terminal defaults
@@ -109,21 +112,24 @@ export const XTermTerminal = React.memo(function XTermTerminal({
   onData,
   onResize,
   className,
+  isAgent = false,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
 
-  // Keep callbacks in refs so the mount-once effect always calls the latest
-  // versions without needing to re-run when they change reference.
+  // Keep callbacks and flags in refs so the mount-once effect always calls
+  // the latest versions without needing to re-run when they change reference.
   const onReadyRef = useRef(onReady)
   const onDataRef = useRef(onData)
   const onResizeRef = useRef(onResize)
+  const isAgentRef = useRef(isAgent)
   useEffect(() => {
     onReadyRef.current = onReady
     onDataRef.current = onData
     onResizeRef.current = onResize
-  }, [onReady, onData, onResize])
+    isAgentRef.current = isAgent
+  }, [onReady, onData, onResize, isAgent])
 
   useEffect(() => {
     const container = containerRef.current
@@ -164,7 +170,18 @@ export const XTermTerminal = React.memo(function XTermTerminal({
     // Pass app-level shortcuts through to document-level hotkey handlers.
     // xterm calls preventDefault on keys it processes; returning false here
     // short-circuits that so the events bubble up to react-hotkeys-hook.
-    term.attachCustomKeyEventHandler((e) => !isAppShortcut(e))
+    term.attachCustomKeyEventHandler((e) => {
+      // Support multiline input (Shift+Enter) for AI agents.
+      // Standard Enter sends \r (CR). Shift+Enter is intercepted to send \n (LF),
+      // which many modern interactive agents (Claude Code, Codex) recognize
+      // as a newline rather than a command submission.
+      if (isAgentRef.current && e.key === 'Enter' && e.shiftKey) {
+        if (e.type === 'keydown') onDataRef.current('\n')
+        return false
+      }
+
+      return !isAppShortcut(e)
+    })
 
     // WebGL renderer — falls back to xterm's built-in DOM renderer on context
     // loss. The canvas addon is not used: it is v5-only and was removed in v6.
