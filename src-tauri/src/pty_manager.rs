@@ -126,9 +126,11 @@ fn spawn_reader_thread(
         // next chunk. Same approach node-pty uses, just one layer up from the
         // PTY read in our case.
         let mut decoder = encoding_rs::UTF_8.new_decoder();
-        // Pre-sized for one read's worth of decoded output. UTF-8 → UTF-8 means
-        // the output never exceeds the input length; +4 for a safety margin
-        // around the decoder's internal carryover.
+        // Pre-sized for roughly one read's worth of decoded output. For valid
+        // UTF-8, the decoded text is about the same size as the input bytes,
+        // but malformed sequences or an EOF flush of trailing partial bytes
+        // can emit U+FFFD and expand the UTF-8 byte length. This is just a
+        // reasonable starting capacity, not a strict upper bound.
         let mut decoded = String::with_capacity(READ_BUF_SIZE + 4);
 
         loop {
