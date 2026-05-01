@@ -138,7 +138,15 @@ export const WTermTerminal = React.memo(function WTermTerminal({
       // Zig core. Each WTerm instance gets its own GhosttyCore — the WASM
       // binary is browser-cached after the first fetch, so subsequent loads
       // are cheap.
-      const core = await GhosttyCore.load()
+      //
+      // The WASM file is copied from node_modules/@wterm/ghostty/wasm/ to
+      // public/ via the `predev` and `prebuild` npm scripts. We pass an
+      // explicit wasmPath because the package's default
+      // `new URL('../wasm/...', import.meta.url)` lookup doesn't reliably
+      // resolve under Vite's dev server (Vite returns HTML/JS bytes for the
+      // path, breaking WebAssembly.compile with "doesn't start with '\0asm'").
+      // Vite serves files in public/ at the site root.
+      const core = await GhosttyCore.load({ wasmPath: '/ghostty-vt.wasm' })
 
       if (cancelled) return
 

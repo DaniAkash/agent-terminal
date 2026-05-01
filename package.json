@@ -4,8 +4,10 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "predev": "cp node_modules/@wterm/ghostty/wasm/ghostty-vt.wasm public/ghostty-vt.wasm",
     "dev": "vite",
     "tauri:dev": "tauri dev",
+    "prebuild": "cp node_modules/@wterm/ghostty/wasm/ghostty-vt.wasm public/ghostty-vt.wasm",
     "build": "vite build",
     "tauri:build": "tauri build",
     "preview": "vite preview",
