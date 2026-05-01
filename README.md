@@ -2,6 +2,8 @@
 
 > A mouse-first, project-scoped terminal workspace built for running AI coding agents effectively.
 
+<a href="https://www.producthunt.com/products/agent-terminal?embed=true&utm_source=badge-featured&utm_medium=badge&utm_campaign=badge-agent-terminal" target="_blank"><img src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1136595&theme=light&t=1777623264721" alt="Agent terminal - One terminal. Every agent. Total clarity. | Product Hunt" width="250" height="54" /></a>
+
 **⚠️ Early stage — under heavy active development. APIs and UI will change.**
 
 ---
