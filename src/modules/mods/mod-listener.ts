@@ -10,6 +10,8 @@ import {
 } from '@/modules/stores/$tabMeta'
 
 type ModEventPayload = {
+  /** Composite `${projectId}:${tabId}` key — the Rust side names this `tabId`
+   *  on the wire, but it is what React calls a tabKey (see makeTabKey). */
   tabId: string
   modId: string
   event: string
@@ -29,7 +31,7 @@ export async function startModListener(): Promise<() => void> {
 }
 
 function dispatch({
-  tabId,
+  tabId: tabKey,
   modId: _modId,
   event,
   data,
@@ -43,7 +45,7 @@ function dispatch({
         status: TabStatus
         exitCode?: number
       }
-      updateTabMeta(tabId, { status, exitCode })
+      updateTabMeta(tabKey, { status, exitCode })
       break
     }
     case 'tab_type_changed': {
@@ -53,7 +55,7 @@ function dispatch({
         cmd?: string
       }
       if (type === 'shell') {
-        updateTabMeta(tabId, {
+        updateTabMeta(tabKey, {
           type,
           agentName: undefined,
           agentCmd: undefined,
@@ -62,23 +64,23 @@ function dispatch({
           agentMessage: undefined,
         })
       } else {
-        updateTabMeta(tabId, { type, agentName: agent, agentCmd: cmd })
+        updateTabMeta(tabKey, { type, agentName: agent, agentCmd: cmd })
       }
       break
     }
     case 'cwd_changed': {
       const { cwd } = data as { cwd: string }
-      updateTabMeta(tabId, { cwd })
+      updateTabMeta(tabKey, { cwd })
       break
     }
     case 'git_info': {
-      updateTabMeta(tabId, { git: (data as GitInfo) ?? undefined })
+      updateTabMeta(tabKey, { git: (data as GitInfo) ?? undefined })
       break
     }
     case 'process_info': {
       const { processes } = data as { processes: ProcessInfo[] }
       const ports = processes.flatMap((p) => p.listeningPorts ?? [])
-      updateTabMeta(tabId, {
+      updateTabMeta(tabKey, {
         processes,
         listeningPorts: [...new Set(ports)],
       })
@@ -86,7 +88,7 @@ function dispatch({
     }
     case 'listening_ports': {
       const { ports } = data as { ports: number[] }
-      updateTabMeta(tabId, { listeningPorts: ports })
+      updateTabMeta(tabKey, { listeningPorts: ports })
       break
     }
     case 'agent_state_changed': {
@@ -94,7 +96,7 @@ function dispatch({
         state: AgentTurnState
         message?: string
       }
-      updateTabMeta(tabId, {
+      updateTabMeta(tabKey, {
         agentState: state,
         agentMessage: message ?? undefined,
       })
@@ -102,7 +104,7 @@ function dispatch({
     }
     case 'closed': {
       // EchoMod fires this — used to GC stale tabMeta entries on tab close.
-      clearTabMeta(tabId)
+      clearTabMeta(tabKey)
       break
     }
   }

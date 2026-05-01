@@ -82,7 +82,8 @@ export type TabMeta = {
 const defaultMeta: TabMeta = { status: 'idle', type: 'shell' }
 
 /**
- * Ephemeral runtime metadata for each terminal tab, keyed by tabId.
+ * Ephemeral runtime metadata for each terminal tab, keyed by tabKey
+ * (the `${projectId}:${tabId}` string produced by `makeTabKey`).
  *
  * This store is never persisted — MODs recompute all values from scratch when
  * a tab is opened. Keeping it separate from `$projects` means persisted user
@@ -90,19 +91,19 @@ const defaultMeta: TabMeta = { status: 'idle', type: 'shell' }
  */
 export const $tabMeta = atom<Record<string, TabMeta>>({})
 
-export function updateTabMeta(tabId: string, patch: Partial<TabMeta>): void {
+export function updateTabMeta(tabKey: string, patch: Partial<TabMeta>): void {
   const cur = $tabMeta.get()
-  const next = { ...defaultMeta, ...cur[tabId], ...patch }
-  if (JSON.stringify(cur[tabId]) === JSON.stringify(next)) return
-  $tabMeta.set({ ...cur, [tabId]: next })
+  const next = { ...defaultMeta, ...cur[tabKey], ...patch }
+  if (JSON.stringify(cur[tabKey]) === JSON.stringify(next)) return
+  $tabMeta.set({ ...cur, [tabKey]: next })
 }
 
-export function clearTabMeta(tabId: string): void {
+export function clearTabMeta(tabKey: string): void {
   const cur = $tabMeta.get()
   const next = { ...cur }
-  delete next[tabId]
+  delete next[tabKey]
   $tabMeta.set(next)
-  isAgentAtomCache.delete(tabId)
+  isAgentAtomCache.delete(tabKey)
 }
 
 const isAgentAtomCache = new Map<string, ReadableAtom<boolean>>()
