@@ -1,0 +1,5 @@
+[install]
+# wterm 0.3.0 (and the new @wterm/ghostty package) was published recently.
+# Exempt from the global minimumReleaseAge policy so we can pull them in.
+# Remove this file once @wterm/dom 0.3.0 is past the 7-day age window.
+minimumReleaseAgeExcludes = ["@wterm/core", "@wterm/dom", "@wterm/ghostty"]

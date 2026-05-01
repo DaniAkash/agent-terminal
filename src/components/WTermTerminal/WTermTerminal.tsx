@@ -1,4 +1,5 @@
 import { WTerm } from '@wterm/dom'
+import { GhosttyCore } from '@wterm/ghostty'
 import React, { useEffect, useRef } from 'react'
 
 export type WTermHandle = {
@@ -132,15 +133,26 @@ export const WTermTerminal = React.memo(function WTermTerminal({
 
       if (cancelled) return
 
+      // Use the libghostty-powered core (full VT emulation: grapheme handling,
+      // all SGR attributes, terminal modes, etc.) instead of wterm's built-in
+      // Zig core. Each WTerm instance gets its own GhosttyCore — the WASM
+      // binary is browser-cached after the first fetch, so subsequent loads
+      // are cheap.
+      const core = await GhosttyCore.load()
+
+      if (cancelled) return
+
       term = new WTerm(inner, {
+        core,
         cursorBlink: true,
         autoResize: true, // built-in ResizeObserver — replaces FitAddon
         onData: (data) => onDataRef.current(data),
         onResize: (cols, rows) => onResizeRef.current(cols, rows),
       })
 
-      // init() loads the WASM core. Writes/resize calls before init resolves
-      // are silently dropped — must await before exposing the handle.
+      // init() initialises the core (no WASM load — already loaded above).
+      // Writes/resize calls before init resolves are silently dropped, so
+      // we must await before exposing the handle.
       await term.init()
 
       if (cancelled) {
