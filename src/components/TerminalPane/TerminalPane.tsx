@@ -6,7 +6,7 @@ import {
 } from '@/components/XTermTerminal/XTermTerminal'
 import { IPC } from '@/modules/ipc/commands'
 import { onPtyExit } from '@/modules/ipc/events'
-import { $tabMeta } from '@/modules/stores/$tabMeta'
+import { $isAgentForTab } from '@/modules/stores/$tabMeta'
 import { makeTabKey } from '@/screens/workspace/workspace.helpers'
 
 // Tracks in-flight openTab calls per tabKey. Prevents concurrent calls
@@ -31,8 +31,7 @@ export const TerminalPane = React.memo(function TerminalPane({
   isActive,
 }: Props) {
   const tabKey = makeTabKey(projectId, tabId)
-  const meta = useStore($tabMeta)
-  const isAgent = meta[tabKey]?.type === 'agent'
+  const isAgent = useStore($isAgentForTab(tabKey))
   const handleRef = useRef<XTermHandle | null>(null)
 
   // Auto-focus the xterm canvas when this tab becomes active.

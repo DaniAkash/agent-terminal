@@ -1,4 +1,4 @@
-import { atom } from 'nanostores'
+import { atom, computed, type ReadableAtom } from 'nanostores'
 
 export type TabStatus = 'idle' | 'running' | 'done' | 'error'
 export type TabType = 'shell' | 'task' | 'agent'
@@ -102,4 +102,22 @@ export function clearTabMeta(tabId: string): void {
   const next = { ...cur }
   delete next[tabId]
   $tabMeta.set(next)
+  isAgentAtomCache.delete(tabId)
+}
+
+const isAgentAtomCache = new Map<string, ReadableAtom<boolean>>()
+
+/**
+ * Per-tab derived store of `meta.type === 'agent'`. Subscribers re-render
+ * only when this tab's `type` flips, not on every $tabMeta update — important
+ * for components mounted across many tabs (e.g. TerminalPane is kept mounted
+ * for every visited tab while ProcessInspectorMod writes to $tabMeta every 2s).
+ */
+export function $isAgentForTab(tabKey: string): ReadableAtom<boolean> {
+  let store = isAgentAtomCache.get(tabKey)
+  if (!store) {
+    store = computed($tabMeta, (all) => all[tabKey]?.type === 'agent')
+    isAgentAtomCache.set(tabKey, store)
+  }
+  return store
 }
