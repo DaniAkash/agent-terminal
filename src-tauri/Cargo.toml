@@ -1,6 +1,6 @@
 [package]
 name = "agent-terminal"
-version = "0.1.0"
+version = "0.1.1"
 description = "Agent Terminal — a mouse-first project-scoped terminal workspace"
 authors = ["DaniAkash"]
 edition = "2021"
