@@ -1,0 +1,92 @@
+# Manually-triggered signed + notarized macOS build.
+#
+# Produces a notarized .dmg attached to the workflow run as a downloadable
+# artifact. Does NOT create a GitHub Release — that workflow comes later
+# once we have a versioning + changelog story.
+#
+# Trigger from GitHub: Actions tab → "Build production app (manual)" →
+# Run workflow → pick a branch → Run.
+#
+# Required repo secrets (settings → Secrets and variables → Actions):
+#   APPLE_CERTIFICATE           — base64-encoded Developer ID .p12
+#   APPLE_CERTIFICATE_PASSWORD  — password for the .p12
+#   APPLE_SIGNING_IDENTITY      — "Developer ID Application: Dani Akash (TEAMID)"
+#   APPLE_ID                    — Apple ID email
+#   APPLE_PASSWORD              — app-specific password for notarytool
+#   APPLE_TEAM_ID               — e.g. "S5S9V27NBH"
+#   KEYCHAIN_PASSWORD           — throwaway, unlocks the temp runner keychain
+
+name: Build production app (manual)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build (macOS arm64, signed + notarized)
+    runs-on: macos-latest # Apple Silicon — matches Dani's machine
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install Rust toolchain (with aarch64-apple-darwin target)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Cache Cargo registry + build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Install frontend dependencies
+        run: bun install
+
+      - name: Tauri build (signed + notarized)
+        # tauri-action handles: cert decode + temp keychain import +
+        # `bun tauri build` + signing + notarization + stapling.
+        # Skipping `tagName` means it does NOT create a release — exactly
+        # what we want for this artifact-only workflow.
+        uses: tauri-apps/tauri-action@v0
+        env:
+          # Code signing — tauri-action imports APPLE_CERTIFICATE (.p12)
+          # into a temp keychain unlocked with KEYCHAIN_PASSWORD, then
+          # signs with APPLE_SIGNING_IDENTITY.
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          # Notarization — submitted via notarytool, ticket stapled on
+          # success.
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          # arm64-only build (matches Dani's machine). Switch to
+          # universal-apple-darwin if Intel support is ever needed.
+          args: --target aarch64-apple-darwin
+
+      - name: Upload .dmg as workflow artifact
+        # The .dmg already contains the signed + notarized .app, so this
+        # single artifact is enough — no need to upload the raw .app
+        # separately. Retention is 30 days; downloads available from the
+        # workflow run summary page.
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-terminal-${{ github.sha }}-aarch64-dmg
+          path: src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+          retention-days: 30
