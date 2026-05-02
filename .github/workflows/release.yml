@@ -9,7 +9,9 @@
 #
 # How to cut a release:
 #   1. Bump version in package.json + src-tauri/tauri.conf.json + src-tauri/Cargo.toml
-#   2. Commit ("chore: bump version to X.Y.Z")
+#   2. Commit ("chore(release): vX.Y.Z") — the `chore(release)` scope is
+#      filtered out by cliff.toml so the version-bump commit doesn't show
+#      up in the next release's changelog.
 #   3. git tag vX.Y.Z && git push origin main --tags
 #   4. Wait ~10 min, then publish the draft from the Releases page
 #
@@ -30,7 +32,10 @@ name: Release (signed + notarized universal macOS build)
 on:
   push:
     tags:
-      - 'v*'
+      # Only semver-style tags trigger releases — `v0.1.0`, `v1.2.3-rc.1`,
+      # etc. Loose patterns like `v*` would also match `vnext`, `vendor-fix`,
+      # or typo'd tags and silently kick off a notarized build.
+      - 'v[0-9]*'
 
 # `contents: write` is required for softprops/action-gh-release to create
 # the draft release. Everything else stays at default-deny.
@@ -87,12 +92,15 @@ jobs:
       - name: Determine previous tag (for changelog range)
         id: previous_tag
         run: |
-          # `git describe --tags --abbrev=0 <tag>^` returns the most recent
-          # tag *before* <tag>. For the very first tag this errors (no
-          # ancestor tag exists) — we treat that as the "first release"
-          # case and short-circuit the changelog generation.
+          # `git describe --tags --abbrev=0 --match 'v[0-9]*' <tag>^`
+          # returns the most recent release-style tag *before* <tag>. The
+          # `--match` filter ensures only semver-style `v…` tags count, so
+          # any non-release tags that ever land on the branch can't hijack
+          # the changelog range. For the very first release this errors
+          # (no ancestor release tag exists) — we treat that as the
+          # "first release" case and short-circuit changelog generation.
           set +e
-          PREVIOUS_TAG=$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null)
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 --match 'v[0-9]*' "${GITHUB_REF_NAME}^" 2>/dev/null)
           set -e
           if [ -z "$PREVIOUS_TAG" ]; then
             echo "first_release=true" >> "$GITHUB_OUTPUT"
