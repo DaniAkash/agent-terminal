@@ -24,10 +24,20 @@ name: Build production app (manual)
 on:
   workflow_dispatch:
 
+# Least-privilege: this workflow only reads the repo and uploads an artifact
+# (artifact upload does not require any permissions scope). No write access
+# anywhere — keeps blast radius minimal if any third-party action is ever
+# compromised.
+permissions:
+  contents: read
+
 jobs:
   build:
     name: Build (macOS arm64, signed + notarized)
-    runs-on: macos-latest # Apple Silicon — matches Dani's machine
+    # Pinned to a specific runner image (not `macos-latest`) so the build
+    # environment is stable across GitHub's runner rollouts. Bump
+    # deliberately when needed.
+    runs-on: macos-15
     timeout-minutes: 60
 
     steps:
@@ -35,9 +45,11 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install Bun
+        # No `bun-version` here on purpose — setup-bun reads the version from
+        # the checked-in `.bun-version` file at the repo root. Bumping Bun is
+        # therefore a one-line change to that file, reviewed like any other
+        # source change, and stays in sync between local dev and CI.
         uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
 
       - name: Install Rust toolchain (with aarch64-apple-darwin target)
         uses: dtolnay/rust-toolchain@stable
@@ -51,9 +63,13 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             src-tauri/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
+          # Key includes runner.arch + the Rust target triple so caches are
+          # never reused across architectures or build targets — protects
+          # against subtle link errors if we ever add an Intel/universal
+          # variant or change runner images.
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-aarch64-apple-darwin-${{ hashFiles('src-tauri/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-
+            ${{ runner.os }}-${{ runner.arch }}-cargo-aarch64-apple-darwin-
 
       - name: Install frontend dependencies
         run: bun install
