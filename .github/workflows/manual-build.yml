@@ -10,11 +10,14 @@
 # Required repo secrets (settings → Secrets and variables → Actions):
 #   APPLE_CERTIFICATE           — base64-encoded Developer ID .p12
 #   APPLE_CERTIFICATE_PASSWORD  — password for the .p12
-#   APPLE_SIGNING_IDENTITY      — "Developer ID Application: Dani Akash (TEAMID)"
+#   APPLE_SIGNING_IDENTITY      — full Developer ID Application identity string
 #   APPLE_ID                    — Apple ID email
 #   APPLE_PASSWORD              — app-specific password for notarytool
-#   APPLE_TEAM_ID               — e.g. "S5S9V27NBH"
+#   APPLE_TEAM_ID               — Apple Developer team identifier
 #   KEYCHAIN_PASSWORD           — throwaway, unlocks the temp runner keychain
+#
+# All values stored in repo Settings → Secrets and variables → Actions.
+# Never inline any of them here, even as examples.
 
 name: Build production app (manual)
 
