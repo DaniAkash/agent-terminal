@@ -24,17 +24,8 @@ export function DangerBadge({ size = 12 }: { size?: number }) {
         <TooltipTrigger
           render={
             <span
-              role="img"
-              aria-label="All permissions enabled"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
-                fontSize: size,
-                lineHeight: 1,
-                cursor: 'help',
-              }}
+              className="inline-flex shrink-0 items-center justify-center leading-none"
+              style={{ fontSize: size }}
             >
               🤘
             </span>
