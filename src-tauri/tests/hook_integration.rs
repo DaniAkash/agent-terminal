@@ -12,7 +12,7 @@
 //! ```
 //!
 //! `--test-threads=1` is REQUIRED — every test in this file binds (or asserts
-//! the absence of a binding on) port 47384. Parallel execution would race.
+//! the absence of a binding on) the hook port. Parallel execution would race.
 //! The tests internally serialize with a Mutex as a defence-in-depth measure,
 //! but the test runner can still interleave with other tests in other files.
 //!
@@ -36,7 +36,7 @@ use tokio::time::{Duration, timeout};
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-/// Cross-test serialization for port 47384. Tests cannot run in parallel because
+/// Cross-test serialization for the hook port. Tests cannot run in parallel because
 /// they all share this single fixed port. The integration tests assume
 /// `--test-threads=1`, but the mutex is also held inside each test as a guard
 /// against accidental parallelism.
@@ -55,7 +55,7 @@ fn acquire_port_lock() -> std::sync::MutexGuard<'static, ()> {
 fn hook_scripts_dir() -> PathBuf {
     dirs::home_dir()
         .expect("no home dir")
-        .join(".agent-terminal")
+        .join(format!(".{}", agent_terminal_lib::identity::NAMESPACE))
         .join("hooks")
 }
 
@@ -67,9 +67,11 @@ fn codex_hook() -> PathBuf {
     hook_scripts_dir().join("codex-hook")
 }
 
-/// Try to bind port 47384. Returns the listener or None if the port is busy.
+/// Try to bind the hook port (47384 prod / 47385 dev — see `identity.rs`).
+/// Returns the listener or None if the port is busy.
 async fn try_bind_hook_port() -> Option<TcpListener> {
-    TcpListener::bind("127.0.0.1:47384").await.ok()
+    let addr = format!("127.0.0.1:{}", agent_terminal_lib::identity::HOOK_PORT);
+    TcpListener::bind(&addr).await.ok()
 }
 
 type Received = Arc<Mutex<VecDeque<Value>>>;
@@ -85,7 +87,7 @@ async fn collect_hook(
     StatusCode::OK
 }
 
-/// Server handle that shuts down on drop, freeing port 47384 for the next test.
+/// Server handle that shuts down on drop, freeing the hook port for the next test.
 struct CollectorServer {
     received: Received,
     shutdown: Option<oneshot::Sender<()>>,
@@ -205,7 +207,7 @@ async fn i1_claude_hook_fires_session_start() {
     }
 
     let Some(listener) = try_bind_hook_port().await else {
-        eprintln!("SKIP i1: port 47384 busy (agent-terminal running?)");
+        eprintln!("SKIP i1: port {} busy (agent-terminal running?)", agent_terminal_lib::identity::HOOK_PORT);
         return;
     };
     let server = start_collector(listener);
@@ -236,7 +238,7 @@ async fn i2_claude_hook_fires_pre_tool_use() {
         return;
     }
     let Some(listener) = try_bind_hook_port().await else {
-        eprintln!("SKIP i2: port 47384 busy");
+        eprintln!("SKIP i2: port {} busy", agent_terminal_lib::identity::HOOK_PORT);
         return;
     };
     let server = start_collector(listener);
@@ -265,7 +267,7 @@ async fn i3_codex_hook_fires_session_start() {
         return;
     }
     let Some(listener) = try_bind_hook_port().await else {
-        eprintln!("SKIP i3: port 47384 busy");
+        eprintln!("SKIP i3: port {} busy", agent_terminal_lib::identity::HOOK_PORT);
         return;
     };
     let server = start_collector(listener);
@@ -295,7 +297,7 @@ async fn i4_codex_hook_fires_stop() {
         return;
     }
     let Some(listener) = try_bind_hook_port().await else {
-        eprintln!("SKIP i4: port 47384 busy");
+        eprintln!("SKIP i4: port {} busy", agent_terminal_lib::identity::HOOK_PORT);
         return;
     };
     let server = start_collector(listener);
@@ -312,7 +314,7 @@ async fn i4_codex_hook_fires_stop() {
     assert_eq!(got["last_assistant_message"], "Done.");
 }
 
-// ─── I7: Hook script exits fast when nothing is listening on 47384 ────────────
+// ─── I7: Hook script exits fast when nothing is listening on the hook port ────
 //
 // Regression test: confirms ECONNREFUSED is fast on macOS and the script
 // doesn't hang when agent-terminal is closed. Pre-fix this passed (curl fails
@@ -331,7 +333,7 @@ async fn i7_hook_script_does_not_hang_when_server_absent() {
     // Confirm port really is free. If an external process holds it, skip
     // rather than report a misleading failure.
     if try_bind_hook_port().await.is_none() {
-        eprintln!("SKIP i7: port 47384 busy — cannot test absent-server case");
+        eprintln!("SKIP i7: port {} busy — cannot test absent-server case", agent_terminal_lib::identity::HOOK_PORT);
         return;
     }
     // (Listener dropped immediately above so the script sees a free port.)
@@ -362,7 +364,7 @@ async fn i8_hook_script_does_not_hang_when_server_unresponsive() {
     }
 
     let Some(listener) = try_bind_hook_port().await else {
-        eprintln!("SKIP i8: port 47384 busy");
+        eprintln!("SKIP i8: port {} busy", agent_terminal_lib::identity::HOOK_PORT);
         return;
     };
 
@@ -427,7 +429,7 @@ async fn i5_real_claude_settings_no_duplicates() {
     };
 
     let our_prefix = home
-        .join(".agent-terminal")
+        .join(format!(".{}", agent_terminal_lib::identity::NAMESPACE))
         .join("hooks")
         .join("claude-hook")
         .to_string_lossy()
@@ -477,7 +479,7 @@ async fn i6_real_codex_hooks_no_duplicates() {
         return;
     };
     let our_prefix = home
-        .join(".agent-terminal")
+        .join(format!(".{}", agent_terminal_lib::identity::NAMESPACE))
         .join("hooks")
         .join("codex-hook")
         .to_string_lossy()
@@ -510,7 +512,7 @@ async fn i9_claude_hook_forwards_tab_id_when_env_set() {
         return;
     }
     let Some(listener) = try_bind_hook_port().await else {
-        eprintln!("SKIP i9: port 47384 busy");
+        eprintln!("SKIP i9: port {} busy", agent_terminal_lib::identity::HOOK_PORT);
         return;
     };
     let server = start_collector(listener);
@@ -552,7 +554,7 @@ async fn i10_claude_hook_omits_tab_id_when_env_unset() {
         return;
     }
     let Some(listener) = try_bind_hook_port().await else {
-        eprintln!("SKIP i10: port 47384 busy");
+        eprintln!("SKIP i10: port {} busy", agent_terminal_lib::identity::HOOK_PORT);
         return;
     };
     let server = start_collector(listener);
@@ -597,7 +599,7 @@ async fn i11_claude_hook_omits_tab_id_when_value_unsafe() {
         return;
     }
     let Some(listener) = try_bind_hook_port().await else {
-        eprintln!("SKIP i11: port 47384 busy");
+        eprintln!("SKIP i11: port {} busy", agent_terminal_lib::identity::HOOK_PORT);
         return;
     };
     let server = start_collector(listener);
@@ -638,7 +640,7 @@ async fn i11_claude_hook_omits_tab_id_when_value_unsafe() {
 // Why guided instead of automated subprocess spawning:
 //   1. AI CLIs prompt interactively for trust dialogs, auth, etc. — automating
 //      around all of that is brittle and per-version.
-//   2. While the test collector is bound to 47384, EVERY claude/codex process
+//   2. While the test collector is bound to the hook port, EVERY claude/codex process
 //      on the machine fires hooks at it (incl. the user's other terminals).
 //      Filtering by cwd helps but the cleanest signal is a human pointing the
 //      CLI at a known-empty directory created by the test.
@@ -656,7 +658,7 @@ async fn i11_claude_hook_omits_tab_id_when_value_unsafe() {
 //
 // SKIPPED when:
 //   - CI=true (CI/CD environments — these tests need a human)
-//   - port 47384 busy (agent-terminal running, or stale binding)
+//   - hook port busy (agent-terminal running, or stale binding)
 
 fn ci_environment() -> bool {
     std::env::var("CI").map(|v| v == "true").unwrap_or(false)
@@ -782,7 +784,7 @@ async fn e1_guided_claude_fires_hooks_end_to_end() {
     agent_terminal_lib::hook_config::ensure_hooks_installed().await;
 
     let Some(listener) = try_bind_hook_port().await else {
-        eprintln!("SKIP e1: port 47384 busy (agent-terminal running?)");
+        eprintln!("SKIP e1: port {} busy (agent-terminal running?)", agent_terminal_lib::identity::HOOK_PORT);
         return;
     };
     let server = start_collector(listener);
@@ -854,7 +856,7 @@ async fn e2_guided_codex_fires_hooks_end_to_end() {
     agent_terminal_lib::hook_config::ensure_hooks_installed().await;
 
     let Some(listener) = try_bind_hook_port().await else {
-        eprintln!("SKIP e2: port 47384 busy (agent-terminal running?)");
+        eprintln!("SKIP e2: port {} busy (agent-terminal running?)", agent_terminal_lib::identity::HOOK_PORT);
         return;
     };
     let server = start_collector(listener);

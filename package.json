@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "tauri:dev": "tauri dev",
+    "tauri:dev": "tauri dev --config src-tauri/tauri.dev.conf.json --features dev-instance",
     "build": "vite build",
     "tauri:build": "tauri build",
     "preview": "vite preview",

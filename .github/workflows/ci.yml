@@ -1,0 +1,112 @@
+# PR CI, gated behind manual approval.
+#
+# One-time setup (otherwise the `approve` gate is a no-op):
+#   Repo Settings → Environments → New environment → name `ci-approval`
+#   → enable "Required reviewers" → add yourself → save.
+
+name: CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  approve:
+    name: Wait for manual approval
+    runs-on: ubuntu-latest
+    environment: ci-approval
+    timeout-minutes: 60
+    steps:
+      - name: Approved
+        run: echo "CI approved by ${{ github.actor }}"
+
+  # `if: ${{ !cancelled() }}` on every check below is deliberate: one CI run
+  # surfaces every failure in the diff (lint + typecheck + tests, both langs),
+  # so the next push can fix all of them at once instead of one-per-cycle.
+  js-checks:
+    name: JS / TypeScript
+    needs: approve
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+
+      - name: Biome
+        if: ${{ !cancelled() }}
+        run: bunx biome check
+      - name: tsc --noEmit
+        if: ${{ !cancelled() }}
+        run: bunx tsc --noEmit
+      - name: bun test
+        if: ${{ !cancelled() }}
+        run: bun test
+
+  # Single job, not split per check: cargo's incremental build cache is shared
+  # across check / clippy / test, so splitting would recompile Tauri/Wry deps
+  # from scratch in each parallel job.
+  rust-checks:
+    name: Rust / Tauri
+    needs: approve
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      RUST_BACKTRACE: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      # tauri-runtime-wry's build script links against WebKitGTK during
+      # dependency compilation — required even for `cargo check`, not just
+      # build. Apt list mirrors Tauri 2's prerequisites doc.
+      - name: Install Tauri Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: cargo check
+        if: ${{ !cancelled() }}
+        working-directory: src-tauri
+        run: cargo check --all-targets
+      - name: cargo clippy
+        if: ${{ !cancelled() }}
+        working-directory: src-tauri
+        run: cargo clippy --all-targets
+      - name: cargo test --lib
+        if: ${{ !cancelled() }}
+        working-directory: src-tauri
+        run: cargo test --lib
+
+      # hook_integration tests share filesystem state and a fixed HTTP port,
+      # so they must run serially. Mirrors the project's `bun run test` script.
+      - name: cargo test --test hook_integration
+        if: ${{ !cancelled() }}
+        working-directory: src-tauri
+        run: cargo test --test hook_integration -- --test-threads=1

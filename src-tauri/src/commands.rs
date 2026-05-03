@@ -152,5 +152,8 @@ pub async fn list_projects() -> Result<serde_json::Value, String> {
 
 fn projects_config_path() -> Result<std::path::PathBuf, String> {
     let home = dirs::home_dir().ok_or("could not determine home directory")?;
-    Ok(home.join(".config/agent-terminal/projects.json"))
+    Ok(home
+        .join(".config")
+        .join(crate::identity::NAMESPACE)
+        .join("projects.json"))
 }

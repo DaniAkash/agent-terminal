@@ -1,13 +1,16 @@
 //! Minimal HTTP server that receives hook payloads from AI coding agents.
 //!
 //! Agent hooks (Claude Code, Codex) are configured to POST structured JSON to
-//! `http://127.0.0.1:47384/hook` via a small shell helper script. This module
-//! receives those POSTs and forwards them to the MOD engine via an unbounded
-//! channel, where `AgentTurnMod` consumes them.
+//! `http://127.0.0.1:<HOOK_PORT>/hook` via a small shell helper script. This
+//! module receives those POSTs and forwards them to the MOD engine via an
+//! unbounded channel, where `AgentTurnMod` consumes them.
 //!
-//! The port is fixed so hook configs written to disk (e.g. `~/.claude/settings.json`)
-//! don't need to be rewritten on every launch. `47384` is not assigned to any
-//! common service in the IANA registry.
+//! `HOOK_PORT` is fixed per build variant (47384 for prod, 47385 for dev — see
+//! `identity::HOOK_PORT`) so hook configs written to disk
+//! (e.g. `~/.claude/settings.json`) don't need to be rewritten on every launch,
+//! and a dev build can coexist with a prod install on the same machine without
+//! fighting for the port. Neither port is assigned to any common service in
+//! the IANA registry.
 
 use axum::{Router, extract::State, http::StatusCode, routing::post, Json};
 use serde::Deserialize;
@@ -46,8 +49,9 @@ pub struct HookPayload {
 
 /// Starts the hook HTTP server in a background task.
 ///
-/// Binds to `127.0.0.1:47384`. If the port is unavailable (another
-/// agent-terminal instance is already running, or a conflicting service),
+/// Binds to `127.0.0.1:<HOOK_PORT>` (47384 for prod builds, 47385 for dev
+/// builds — see `identity.rs`). If the port is unavailable (another instance
+/// of the same build variant is already running, or a conflicting service),
 /// logs a warning and returns — the rest of the app is unaffected. Hook-based
 /// agent state tracking will degrade gracefully to the `ps`-based heuristics.
 pub fn start_hook_server(hook_tx: mpsc::UnboundedSender<HookPayload>) {
@@ -56,7 +60,8 @@ pub fn start_hook_server(hook_tx: mpsc::UnboundedSender<HookPayload>) {
             .route("/hook", post(receive_hook))
             .with_state(hook_tx);
 
-        match tokio::net::TcpListener::bind("127.0.0.1:47384").await {
+        let addr = format!("127.0.0.1:{}", crate::identity::HOOK_PORT);
+        match tokio::net::TcpListener::bind(&addr).await {
             Ok(listener) => {
                 if let Err(e) = axum::serve(listener, app).await {
                     eprintln!("[hook_server] server error: {e}");
@@ -64,7 +69,7 @@ pub fn start_hook_server(hook_tx: mpsc::UnboundedSender<HookPayload>) {
             }
             Err(e) => {
                 eprintln!(
-                    "[hook_server] failed to bind 127.0.0.1:47384 — \
+                    "[hook_server] failed to bind {addr} — \
                      hook-based agent state will not be available: {e}"
                 );
             }

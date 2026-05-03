@@ -4,6 +4,8 @@ mod commands;
 // modules directly.
 pub mod hook_config;
 pub mod hook_server;
+// `pub` so integration tests can read NAMESPACE/HOOK_PORT.
+pub mod identity;
 mod mod_engine;
 mod notifications;
 mod pty_manager;

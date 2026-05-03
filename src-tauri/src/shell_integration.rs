@@ -1,15 +1,16 @@
 //! Agent Terminal shell integration scripts.
 //!
-//! These scripts are written to `~/.config/agent-terminal/` on first launch and
-//! injected into each new PTY session via ZDOTDIR (zsh) or --init-file (bash).
-//! They emit OSC 7 (cwd) and OSC 133 (shell marks) sequences that the MOD engine
-//! parses to track directories and process lifecycle.
+//! These scripts are written to `~/.config/<NAMESPACE>/` (see `identity::NAMESPACE`
+//! — `agent-terminal` for prod builds, `agent-terminal-dev` for dev builds) on
+//! first launch and injected into each new PTY session via ZDOTDIR (zsh) or
+//! --init-file (bash). They emit OSC 7 (cwd) and OSC 133 (shell marks) sequences
+//! that the MOD engine parses to track directories and process lifecycle.
 
 // zsh dotfile load order (login shell):
 //   /etc/zshenv → $ZDOTDIR/.zshenv → /etc/zprofile → $ZDOTDIR/.zprofile →
 //   /etc/zshrc → $ZDOTDIR/.zshrc → /etc/zlogin → $ZDOTDIR/.zlogin
 //
-// We redirect ZDOTDIR to ~/.config/agent-terminal/zsh/, which means by default
+// We redirect ZDOTDIR to ~/.config/<NAMESPACE>/zsh/, which means by default
 // zsh would NOT load the user's real .zshenv / .zprofile / .zshrc. We supply
 // shim files in our ZDOTDIR that source the user's real ones — otherwise PATH
 // (set in .zshenv / .zprofile / via Homebrew's path_helper) is missing in
@@ -54,7 +55,7 @@ PROMPT_COMMAND="_at_osc133_exit; _at_osc7; _at_osc133_prompt${PROMPT_COMMAND:+; 
 trap '_at_osc133_preexec' DEBUG
 "#;
 
-/// Write shell integration scripts to `~/.config/agent-terminal/`.
+/// Write shell integration scripts to `~/.config/<NAMESPACE>/`.
 ///
 /// This is called once at application startup. If it fails (e.g. the directory
 /// can't be created), the error is logged but the app continues — shell
@@ -63,7 +64,7 @@ pub fn setup_shell_integration() -> Result<(), String> {
     let config_dir = dirs::home_dir()
         .ok_or_else(|| "cannot determine home directory".to_string())?
         .join(".config")
-        .join("agent-terminal");
+        .join(crate::identity::NAMESPACE);
 
     // zsh: ZDOTDIR points to this directory. We write shims for .zshenv,
     // .zprofile, .zshrc — each sources the user's real file if present.

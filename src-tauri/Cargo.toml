@@ -11,6 +11,12 @@ edition = "2021"
 name = "agent_terminal_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+default = []
+# Switches the running instance to a separate "dev" namespace so a dev build
+# can coexist with a production install on the same machine. See src/identity.rs.
+dev-instance = []
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

@@ -109,7 +109,9 @@ pub async fn ensure_hooks_installed() {
             return;
         }
     };
-    let hooks_dir = home.join(".agent-terminal").join("hooks");
+    let hooks_dir = home
+        .join(format!(".{}", crate::identity::NAMESPACE))
+        .join("hooks");
     for config in AGENT_HOOK_CONFIGS {
         if let Err(e) = install_for_agent(config, &home, &hooks_dir).await {
             eprintln!(
@@ -196,11 +198,12 @@ pub(crate) async fn write_hook_script_to(
 /// a ceiling on background curl lifetime so they don't accumulate as zombies
 /// if the server is hung and hooks fire repeatedly.
 ///
-/// Why `127.0.0.1` and not `localhost`: the server binds `127.0.0.1:47384`
-/// (IPv4 only). On macOS, `localhost` resolves to `::1` first, so curl tries
-/// IPv6 and gets ECONNREFUSED before falling back to IPv4 (Happy Eyeballs).
-/// The fallback works, but every hook eats the latency for nothing. Pinning
-/// the script to `127.0.0.1` matches the server's address family directly.
+/// Why `127.0.0.1` and not `localhost`: the server binds `127.0.0.1:<HOOK_PORT>`
+/// (IPv4 only — port is 47384 in prod, 47385 in dev, see `identity.rs`). On
+/// macOS, `localhost` resolves to `::1` first, so curl tries IPv6 and gets
+/// ECONNREFUSED before falling back to IPv4 (Happy Eyeballs). The fallback
+/// works, but every hook eats the latency for nothing. Pinning the script to
+/// `127.0.0.1` matches the server's address family directly.
 fn build_hook_script(agent_id: &str) -> String {
     // The sed command removes the leading `{` from the agent's JSON payload so
     // we can inject our own fields at the front. The result is a valid JSON object:
@@ -240,11 +243,12 @@ case \"$AGENT_TERMINAL_TAB_ID\" in\n\
   *) TAB_FIELD=\"\\\"tab_id\\\":\\\"$AGENT_TERMINAL_TAB_ID\\\",\" ;;\n\
 esac\n\
 PAYLOAD=\"{{\\\"agent\\\":\\\"{agent_id}\\\",\\\"event\\\":\\\"$EVENT\\\",${{TAB_FIELD}}$STRIPPED\"\n\
-{{ curl -sf --max-time 5 -X POST http://127.0.0.1:47384/hook \\\n\
+{{ curl -sf --max-time 5 -X POST http://127.0.0.1:{port}/hook \\\n\
     -H 'Content-Type: application/json' \\\n\
     -d \"$PAYLOAD\" \\\n\
     >/dev/null 2>&1 & }} 2>/dev/null\n\
 exit 0\n",
+        port = crate::identity::HOOK_PORT,
     )
 }
 
@@ -332,7 +336,20 @@ pub(crate) async fn merge_hook_config_at(
 
     // Atomic write: temp file → rename.
     let serialized = serde_json::to_string_pretty(&root)?;
-    let tmp_path = config_path.with_extension("agent-terminal.tmp");
+    // Per-PID temp filename so two instances writing the same config file
+    // concurrently don't corrupt each other's atomic writes.
+    //
+    // TODO(DaniAkash): atomic write protects the temp file from corruption
+    // but not the read-modify-write of the config file itself. If two
+    // instances read concurrently, the second rename's content overwrites
+    // the first instance's entry — self-heals on the loser's next launch
+    // (re-add path), but means hooks in the missing-entry window are
+    // dropped. Proper fix: advisory file lock around the load → merge →
+    // write_atomic block (fs4 crate's `FileExt::lock_exclusive`).
+    let tmp_path = config_path.with_extension(format!(
+        "agent-terminal-{}.tmp",
+        std::process::id()
+    ));
     tokio::fs::write(&tmp_path, format!("{serialized}\n")).await?;
     tokio::fs::rename(&tmp_path, config_path).await?;
 
@@ -870,7 +887,8 @@ mod tests {
         let content = fs::read_to_string(&script).unwrap();
         // 127.0.0.1 (not `localhost`) so the script's address family matches
         // the server's bind. See doc comment on `build_hook_script`.
-        assert!(content.contains("127.0.0.1:47384"), "script should be updated");
+        let expected = format!("127.0.0.1:{}", crate::identity::HOOK_PORT);
+        assert!(content.contains(&expected), "script should contain {expected}");
         assert!(!content.contains("echo old"), "old content should be replaced");
     }
 
