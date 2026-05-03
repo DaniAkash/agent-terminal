@@ -91,7 +91,7 @@ Specifically helpful:
 - **Other agent integrations** — adding Gemini CLI, Cursor, Open Code, etc. is a focused PR (see [CONTRIBUTING.md](./CONTRIBUTING.md) for the MOD system guide).
 - **Bug reports + feature ideas** — open an issue, even rough ones.
 
-If you're interested, drop a comment on [#1](https://github.com/DaniAkash/agent-terminal/issues) or [reach out on X](https://x.com/dani_akash_) — happy to pair / sync on direction.
+If you're interested, [open an issue](https://github.com/DaniAkash/agent-terminal/issues/new) or [reach out on X](https://x.com/dani_akash_) — happy to pair / sync on direction.
 
 ---
 
