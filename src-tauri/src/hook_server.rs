@@ -1,13 +1,16 @@
 //! Minimal HTTP server that receives hook payloads from AI coding agents.
 //!
 //! Agent hooks (Claude Code, Codex) are configured to POST structured JSON to
-//! `http://127.0.0.1:47384/hook` via a small shell helper script. This module
-//! receives those POSTs and forwards them to the MOD engine via an unbounded
-//! channel, where `AgentTurnMod` consumes them.
+//! `http://127.0.0.1:<HOOK_PORT>/hook` via a small shell helper script. This
+//! module receives those POSTs and forwards them to the MOD engine via an
+//! unbounded channel, where `AgentTurnMod` consumes them.
 //!
-//! The port is fixed so hook configs written to disk (e.g. `~/.claude/settings.json`)
-//! don't need to be rewritten on every launch. `47384` is not assigned to any
-//! common service in the IANA registry.
+//! `HOOK_PORT` is fixed per build variant (47384 for prod, 47385 for dev — see
+//! `identity::HOOK_PORT`) so hook configs written to disk
+//! (e.g. `~/.claude/settings.json`) don't need to be rewritten on every launch,
+//! and a dev build can coexist with a prod install on the same machine without
+//! fighting for the port. Neither port is assigned to any common service in
+//! the IANA registry.
 
 use axum::{Router, extract::State, http::StatusCode, routing::post, Json};
 use serde::Deserialize;

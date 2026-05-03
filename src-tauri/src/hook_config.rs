@@ -336,7 +336,20 @@ pub(crate) async fn merge_hook_config_at(
 
     // Atomic write: temp file → rename.
     let serialized = serde_json::to_string_pretty(&root)?;
-    let tmp_path = config_path.with_extension("agent-terminal.tmp");
+    // Per-PID temp filename so two instances writing the same config file
+    // concurrently don't corrupt each other's atomic writes.
+    //
+    // TODO(DaniAkash): atomic write protects the temp file from corruption
+    // but not the read-modify-write of the config file itself. If two
+    // instances read concurrently, the second rename's content overwrites
+    // the first instance's entry — self-heals on the loser's next launch
+    // (re-add path), but means hooks in the missing-entry window are
+    // dropped. Proper fix: advisory file lock around the load → merge →
+    // write_atomic block (fs4 crate's `FileExt::lock_exclusive`).
+    let tmp_path = config_path.with_extension(format!(
+        "agent-terminal-{}.tmp",
+        std::process::id()
+    ));
     tokio::fs::write(&tmp_path, format!("{serialized}\n")).await?;
     tokio::fs::rename(&tmp_path, config_path).await?;
 
