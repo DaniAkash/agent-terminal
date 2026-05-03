@@ -42,13 +42,6 @@ That's it. No config files, no daemons, no tmux setup.
 ### Projects and tabs that survive
 Group tabs under projects (`my-app`, `notes`, `infra`). Switch projects without losing your place — every tab remembers its working directory and reopens there.
 
-### Agent-aware terminals
-When you launch Claude Code, Codex, or another supported agent in a tab, Agent Terminal notices and treats it as a first-class session:
-
-- A brand mark appears on the tab (Anthropic sunburst for Claude, OpenAI hex for Codex).
-- The model in use (`--model sonnet`, etc.) shows in the status bar.
-- A 🤘 danger badge appears if the agent is running with full permissions (`--dangerously-skip-permissions`, `--yolo`).
-
 ### Live status bar
 Always-on context for the focused tab — refreshed every couple of seconds, never gets stale:
 
