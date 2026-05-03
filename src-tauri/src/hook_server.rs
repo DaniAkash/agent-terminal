@@ -46,8 +46,9 @@ pub struct HookPayload {
 
 /// Starts the hook HTTP server in a background task.
 ///
-/// Binds to `127.0.0.1:47384`. If the port is unavailable (another
-/// agent-terminal instance is already running, or a conflicting service),
+/// Binds to `127.0.0.1:<HOOK_PORT>` (47384 for prod builds, 47385 for dev
+/// builds — see `identity.rs`). If the port is unavailable (another instance
+/// of the same build variant is already running, or a conflicting service),
 /// logs a warning and returns — the rest of the app is unaffected. Hook-based
 /// agent state tracking will degrade gracefully to the `ps`-based heuristics.
 pub fn start_hook_server(hook_tx: mpsc::UnboundedSender<HookPayload>) {
@@ -56,7 +57,8 @@ pub fn start_hook_server(hook_tx: mpsc::UnboundedSender<HookPayload>) {
             .route("/hook", post(receive_hook))
             .with_state(hook_tx);
 
-        match tokio::net::TcpListener::bind("127.0.0.1:47384").await {
+        let addr = format!("127.0.0.1:{}", crate::identity::HOOK_PORT);
+        match tokio::net::TcpListener::bind(&addr).await {
             Ok(listener) => {
                 if let Err(e) = axum::serve(listener, app).await {
                     eprintln!("[hook_server] server error: {e}");
@@ -64,7 +66,7 @@ pub fn start_hook_server(hook_tx: mpsc::UnboundedSender<HookPayload>) {
             }
             Err(e) => {
                 eprintln!(
-                    "[hook_server] failed to bind 127.0.0.1:47384 — \
+                    "[hook_server] failed to bind {addr} — \
                      hook-based agent state will not be available: {e}"
                 );
             }

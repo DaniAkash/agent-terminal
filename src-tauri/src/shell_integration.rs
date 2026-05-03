@@ -63,7 +63,7 @@ pub fn setup_shell_integration() -> Result<(), String> {
     let config_dir = dirs::home_dir()
         .ok_or_else(|| "cannot determine home directory".to_string())?
         .join(".config")
-        .join("agent-terminal");
+        .join(crate::identity::NAMESPACE);
 
     // zsh: ZDOTDIR points to this directory. We write shims for .zshenv,
     // .zprofile, .zshrc — each sources the user's real file if present.

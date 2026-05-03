@@ -438,7 +438,7 @@ fn build_shell_command(
 
     if shell_name == "zsh" {
         let at_zsh_dir = dirs::home_dir()
-            .map(|h| h.join(".config").join("agent-terminal").join("zsh"))
+            .map(|h| h.join(".config").join(crate::identity::NAMESPACE).join("zsh"))
             .and_then(|p| p.to_str().map(|s| s.to_string()));
 
         if let Some(zdotdir) = at_zsh_dir {
@@ -454,7 +454,7 @@ fn build_shell_command(
         cmd.arg("-l");
     } else if shell_name == "bash" {
         let init_file = dirs::home_dir()
-            .map(|h| h.join(".config").join("agent-terminal").join("bash-integration.bash"))
+            .map(|h| h.join(".config").join(crate::identity::NAMESPACE).join("bash-integration.bash"))
             .and_then(|p| p.to_str().map(|s| s.to_string()));
 
         if let Some(init) = init_file {

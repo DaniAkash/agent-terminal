@@ -55,7 +55,7 @@ fn acquire_port_lock() -> std::sync::MutexGuard<'static, ()> {
 fn hook_scripts_dir() -> PathBuf {
     dirs::home_dir()
         .expect("no home dir")
-        .join(".agent-terminal")
+        .join(format!(".{}", agent_terminal_lib::identity::NAMESPACE))
         .join("hooks")
 }
 
@@ -67,9 +67,11 @@ fn codex_hook() -> PathBuf {
     hook_scripts_dir().join("codex-hook")
 }
 
-/// Try to bind port 47384. Returns the listener or None if the port is busy.
+/// Try to bind the hook port (47384 prod / 47385 dev — see `identity.rs`).
+/// Returns the listener or None if the port is busy.
 async fn try_bind_hook_port() -> Option<TcpListener> {
-    TcpListener::bind("127.0.0.1:47384").await.ok()
+    let addr = format!("127.0.0.1:{}", agent_terminal_lib::identity::HOOK_PORT);
+    TcpListener::bind(&addr).await.ok()
 }
 
 type Received = Arc<Mutex<VecDeque<Value>>>;
@@ -427,7 +429,7 @@ async fn i5_real_claude_settings_no_duplicates() {
     };
 
     let our_prefix = home
-        .join(".agent-terminal")
+        .join(format!(".{}", agent_terminal_lib::identity::NAMESPACE))
         .join("hooks")
         .join("claude-hook")
         .to_string_lossy()
@@ -477,7 +479,7 @@ async fn i6_real_codex_hooks_no_duplicates() {
         return;
     };
     let our_prefix = home
-        .join(".agent-terminal")
+        .join(format!(".{}", agent_terminal_lib::identity::NAMESPACE))
         .join("hooks")
         .join("codex-hook")
         .to_string_lossy()
