@@ -1,34 +1,8 @@
-# Pull-request CI: lint, typecheck, and test the JS and Rust sides on
-# every PR commit — gated behind a manual approval so CI minutes aren't
-# burned on every WIP nudge.
+# PR CI, gated behind manual approval.
 #
-# How it works
-# ────────────
-#   1. PR opened / updated → workflow starts in a "Waiting" state.
-#   2. The `approve` job targets the `ci-approval` environment, which
-#      has a required reviewer set in repo settings. Until that
-#      reviewer clicks "Approve and run" on the workflow page, no
-#      other job is allowed to start.
-#   3. Once approved, `js-checks` and `rust-checks` run in parallel.
-#   4. Within each job, every check step uses `if: ${{ !cancelled() }}`
-#      so a single check failure does not skip the rest — one CI run
-#      surfaces every problem in the diff (lint + typecheck + tests
-#      across both languages), so the next commit can fix all of them
-#      at once instead of playing whack-a-mole.
-#   5. New push to the PR → an in-flight run on the same PR is
-#      cancelled (`concurrency: cancel-in-progress`), and the fresh
-#      run waits for approval again. New commit, new approval.
-#
-# One-time setup before this gate is real
-# ───────────────────────────────────────
-# In repo Settings → Environments:
-#   1. Click "New environment"
-#   2. Name it exactly: `ci-approval`
-#   3. Under "Deployment protection rules", check
-#      "Required reviewers" and add at least one reviewer (typically
-#      the repo owner). Save.
-# Without that environment + reviewer, the `approve` job auto-passes
-# and the gate is a no-op.
+# One-time setup (otherwise the `approve` gate is a no-op):
+#   Repo Settings → Environments → New environment → name `ci-approval`
+#   → enable "Required reviewers" → add yourself → save.
 
 name: CI
 
@@ -38,8 +12,6 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# Cancel in-flight runs on the same PR so a fresh push doesn't queue
-# a second approval prompt and double-billed minutes.
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -48,12 +20,6 @@ permissions:
   contents: read
 
 jobs:
-  # ────────────────────────────────────────────────────────────────────
-  # Manual approval gate. Pauses here until a reviewer of the
-  # `ci-approval` environment approves the run in the GitHub Actions
-  # UI. The job itself does no real work — its only purpose is being
-  # `needs:`-ed by every check job below.
-  # ────────────────────────────────────────────────────────────────────
   approve:
     name: Wait for manual approval
     runs-on: ubuntu-latest
@@ -61,16 +27,11 @@ jobs:
     timeout-minutes: 60
     steps:
       - name: Approved
-        run: echo "CI approved by ${{ github.actor }} for ${{ github.event.pull_request.html_url || github.ref }}"
+        run: echo "CI approved by ${{ github.actor }}"
 
-  # ────────────────────────────────────────────────────────────────────
-  # JS / TypeScript checks
-  # ────────────────────────────────────────────────────────────────────
-  # Biome (lint + format), tsc --noEmit (typecheck), bun test (unit).
-  # All three run in sequence as steps; each uses `if: ${{ !cancelled() }}`
-  # so a Biome failure does not skip tsc, and a tsc failure does not
-  # skip the tests. The job fails if any step fails.
-  # ────────────────────────────────────────────────────────────────────
+  # `if: ${{ !cancelled() }}` on every check below is deliberate: one CI run
+  # surfaces every failure in the diff (lint + typecheck + tests, both langs),
+  # so the next push can fix all of them at once instead of one-per-cycle.
   js-checks:
     name: JS / TypeScript
     needs: approve
@@ -78,56 +39,37 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
+      - run: bun install --frozen-lockfile
 
-      - name: Install JS dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Biome — lint + format check
+      - name: Biome
         if: ${{ !cancelled() }}
         run: bunx biome check
-
-      - name: TypeScript — typecheck
+      - name: tsc --noEmit
         if: ${{ !cancelled() }}
         run: bunx tsc --noEmit
-
-      - name: Bun — frontend tests
+      - name: bun test
         if: ${{ !cancelled() }}
         run: bun test
 
-  # ────────────────────────────────────────────────────────────────────
-  # Rust / Tauri checks
-  # ────────────────────────────────────────────────────────────────────
-  # Kept as ONE job (not split per check) because cargo's incremental
-  # build cache is shared across `check`, `clippy`, and `test`. Splitting
-  # would force each job to recompile dependencies from scratch — minutes
-  # of Tauri / Wry compile per job, multiplied across the matrix.
-  #
-  # Same `if: ${{ !cancelled() }}` pattern as js-checks so clippy doesn't
-  # skip tests, etc.
-  # ────────────────────────────────────────────────────────────────────
+  # Single job, not split per check: cargo's incremental build cache is shared
+  # across check / clippy / test, so splitting would recompile Tauri/Wry deps
+  # from scratch in each parallel job.
   rust-checks:
     name: Rust / Tauri
     needs: approve
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      # Useful in CI failure logs without affecting normal output.
       RUST_BACKTRACE: '1'
     steps:
       - uses: actions/checkout@v4
 
-      # Tauri's wry runtime links against WebKitGTK on Linux even for
-      # `cargo check` — tauri-runtime-wry has a build script that
-      # invokes pkg-config during dependency compilation. macOS and
-      # Windows runners don't need this; Ubuntu is used purely for
-      # cost (Linux runners are 1× billed minutes vs 10× for macOS).
-      # Apt list mirrors Tauri 2's official prerequisites doc:
-      # https://v2.tauri.app/start/prerequisites/#linux
+      # tauri-runtime-wry's build script links against WebKitGTK during
+      # dependency compilation — required even for `cargo check`, not just
+      # build. Apt list mirrors Tauri 2's prerequisites doc.
       - name: Install Tauri Linux dependencies
         run: |
           sudo apt-get update
@@ -142,38 +84,29 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev
 
-      - name: Install Rust toolchain (stable + clippy)
-        uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
-
-      # Caches target/, ~/.cargo/registry, ~/.cargo/git. With a warm
-      # cache, cargo check on a Rust-only diff drops from several
-      # minutes (full Tauri/Wry compile) to seconds.
-      - name: Cache Cargo build artefacts
-        uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri -> target
 
-      - name: cargo check (typecheck)
+      - name: cargo check
         if: ${{ !cancelled() }}
         working-directory: src-tauri
         run: cargo check --all-targets
-
-      - name: cargo clippy (lint)
+      - name: cargo clippy
         if: ${{ !cancelled() }}
         working-directory: src-tauri
         run: cargo clippy --all-targets
-
-      - name: cargo test --lib (unit tests)
+      - name: cargo test --lib
         if: ${{ !cancelled() }}
         working-directory: src-tauri
         run: cargo test --lib
 
-      # hook_integration uses shared filesystem state under ~/.agent-terminal
-      # paths + a fixed HTTP port, so its tests must run serially. This
-      # mirrors the project's `bun run test` script exactly.
-      - name: cargo test --test hook_integration (integration, single-threaded)
+      # hook_integration tests share filesystem state and a fixed HTTP port,
+      # so they must run serially. Mirrors the project's `bun run test` script.
+      - name: cargo test --test hook_integration
         if: ${{ !cancelled() }}
         working-directory: src-tauri
         run: cargo test --test hook_integration -- --test-threads=1
