@@ -1,7 +1,9 @@
 import { useStore } from '@nanostores/react'
+import { openUrl } from '@tauri-apps/plugin-opener'
 import { FitAddon } from '@xterm/addon-fit'
 import { SearchAddon } from '@xterm/addon-search'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
+import { WebLinksAddon } from '@xterm/addon-web-links'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { Terminal } from '@xterm/xterm'
 import React, { useEffect, useRef } from 'react'
@@ -104,10 +106,17 @@ export const XTermTerminal = React.memo(function XTermTerminal({
     const fitAddon = new FitAddon()
     const unicode11Addon = new Unicode11Addon()
     const searchAddon = new SearchAddon()
+    // Custom click handler — the addon's default calls window.open(), which
+    // inside Tauri's webview either no-ops or hijacks the app window. Route
+    // through plugin-opener so URLs land in the OS default browser.
+    const webLinksAddon = new WebLinksAddon((_event, uri) => {
+      openUrl(uri).catch(() => {})
+    })
 
     term.loadAddon(fitAddon)
     term.loadAddon(unicode11Addon)
     term.loadAddon(searchAddon)
+    term.loadAddon(webLinksAddon)
     term.open(container)
 
     // Activate Unicode 11 after open() per addon docs.
@@ -212,6 +221,7 @@ export const XTermTerminal = React.memo(function XTermTerminal({
       searchAddon.dispose()
       fitAddon.dispose()
       unicode11Addon.dispose()
+      webLinksAddon.dispose()
       term.dispose()
       termRef.current = null
       fitAddonRef.current = null
