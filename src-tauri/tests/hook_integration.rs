@@ -12,7 +12,7 @@
 //! ```
 //!
 //! `--test-threads=1` is REQUIRED — every test in this file binds (or asserts
-//! the absence of a binding on) port 47384. Parallel execution would race.
+//! the absence of a binding on) the hook port. Parallel execution would race.
 //! The tests internally serialize with a Mutex as a defence-in-depth measure,
 //! but the test runner can still interleave with other tests in other files.
 //!
@@ -36,7 +36,7 @@ use tokio::time::{Duration, timeout};
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-/// Cross-test serialization for port 47384. Tests cannot run in parallel because
+/// Cross-test serialization for the hook port. Tests cannot run in parallel because
 /// they all share this single fixed port. The integration tests assume
 /// `--test-threads=1`, but the mutex is also held inside each test as a guard
 /// against accidental parallelism.
@@ -55,7 +55,7 @@ fn acquire_port_lock() -> std::sync::MutexGuard<'static, ()> {
 fn hook_scripts_dir() -> PathBuf {
     dirs::home_dir()
         .expect("no home dir")
-        .join(".agent-terminal")
+        .join(format!(".{}", agent_terminal_lib::identity::NAMESPACE))
         .join("hooks")
 }
 
@@ -67,9 +67,11 @@ fn codex_hook() -> PathBuf {
     hook_scripts_dir().join("codex-hook")
 }
 
-/// Try to bind port 47384. Returns the listener or None if the port is busy.
+/// Try to bind the hook port (47384 prod / 47385 dev — see `identity.rs`).
+/// Returns the listener or None if the port is busy.
 async fn try_bind_hook_port() -> Option<TcpListener> {
-    TcpListener::bind("127.0.0.1:47384").await.ok()
+    let addr = format!("127.0.0.1:{}", agent_terminal_lib::identity::HOOK_PORT);
+    TcpListener::bind(&addr).await.ok()
 }
 
 type Received = Arc<Mutex<VecDeque<Value>>>;
@@ -85,7 +87,7 @@ async fn collect_hook(
     StatusCode::OK
 }
 
-/// Server handle that shuts down on drop, freeing port 47384 for the next test.
+/// Server handle that shuts down on drop, freeing the hook port for the next test.
 struct CollectorServer {
     received: Received,
     shutdown: Option<oneshot::Sender<()>>,
@@ -124,12 +126,30 @@ fn start_collector(listener: TcpListener) -> CollectorServer {
 /// Pipes `payload` to `script event` via stdin and waits for the child to exit.
 /// Returns the elapsed wall-clock time.
 fn run_hook(script: &PathBuf, event: &str, payload: &str) -> Duration {
+    run_hook_with_env(script, event, payload, &[], &[])
+}
+
+/// Runs the hook script with explicit env-var additions and removals.
+fn run_hook_with_env(
+    script: &PathBuf,
+    event: &str,
+    payload: &str,
+    env_overrides: &[(&str, &str)],
+    env_removes: &[&str],
+) -> Duration {
     let start = Instant::now();
-    let mut child = Command::new(script)
-        .arg(event)
+    let mut cmd = Command::new(script);
+    cmd.arg(event)
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(Stdio::null());
+    for (k, v) in env_overrides {
+        cmd.env(k, v);
+    }
+    for k in env_removes {
+        cmd.env_remove(k);
+    }
+    let mut child = cmd
         .spawn()
         .unwrap_or_else(|e| panic!("failed to spawn {}: {e}", script.display()));
 
@@ -146,10 +166,26 @@ fn run_hook(script: &PathBuf, event: &str, payload: &str) -> Duration {
 
 /// Polls the received queue until a payload arrives or the timeout expires.
 async fn wait_for_payload(received: &Received) -> Option<Value> {
+    wait_for_payload_matching(received, |_| true).await
+}
+
+/// Polls the received queue and returns the first payload satisfying `pred`.
+/// Skips and discards earlier payloads that don't match — needed because i7's
+/// fire-and-forget curl can still be in-flight when the next test binds the
+/// port, and its delayed POST then lands in the next test's queue.
+async fn wait_for_payload_matching<F>(received: &Received, pred: F) -> Option<Value>
+where
+    F: Fn(&Value) -> bool,
+{
     timeout(Duration::from_secs(3), async {
         loop {
-            if let Some(p) = received.lock().unwrap().pop_front() {
-                return p;
+            {
+                let mut q = received.lock().unwrap();
+                while let Some(p) = q.pop_front() {
+                    if pred(&p) {
+                        return p;
+                    }
+                }
             }
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
@@ -171,7 +207,7 @@ async fn i1_claude_hook_fires_session_start() {
     }
 
     let Some(listener) = try_bind_hook_port().await else {
-        eprintln!("SKIP i1: port 47384 busy (agent-terminal running?)");
+        eprintln!("SKIP i1: port {} busy (agent-terminal running?)", agent_terminal_lib::identity::HOOK_PORT);
         return;
     };
     let server = start_collector(listener);
@@ -202,7 +238,7 @@ async fn i2_claude_hook_fires_pre_tool_use() {
         return;
     }
     let Some(listener) = try_bind_hook_port().await else {
-        eprintln!("SKIP i2: port 47384 busy");
+        eprintln!("SKIP i2: port {} busy", agent_terminal_lib::identity::HOOK_PORT);
         return;
     };
     let server = start_collector(listener);
@@ -231,7 +267,7 @@ async fn i3_codex_hook_fires_session_start() {
         return;
     }
     let Some(listener) = try_bind_hook_port().await else {
-        eprintln!("SKIP i3: port 47384 busy");
+        eprintln!("SKIP i3: port {} busy", agent_terminal_lib::identity::HOOK_PORT);
         return;
     };
     let server = start_collector(listener);
@@ -261,7 +297,7 @@ async fn i4_codex_hook_fires_stop() {
         return;
     }
     let Some(listener) = try_bind_hook_port().await else {
-        eprintln!("SKIP i4: port 47384 busy");
+        eprintln!("SKIP i4: port {} busy", agent_terminal_lib::identity::HOOK_PORT);
         return;
     };
     let server = start_collector(listener);
@@ -278,7 +314,7 @@ async fn i4_codex_hook_fires_stop() {
     assert_eq!(got["last_assistant_message"], "Done.");
 }
 
-// ─── I7: Hook script exits fast when nothing is listening on 47384 ────────────
+// ─── I7: Hook script exits fast when nothing is listening on the hook port ────
 //
 // Regression test: confirms ECONNREFUSED is fast on macOS and the script
 // doesn't hang when agent-terminal is closed. Pre-fix this passed (curl fails
@@ -297,7 +333,7 @@ async fn i7_hook_script_does_not_hang_when_server_absent() {
     // Confirm port really is free. If an external process holds it, skip
     // rather than report a misleading failure.
     if try_bind_hook_port().await.is_none() {
-        eprintln!("SKIP i7: port 47384 busy — cannot test absent-server case");
+        eprintln!("SKIP i7: port {} busy — cannot test absent-server case", agent_terminal_lib::identity::HOOK_PORT);
         return;
     }
     // (Listener dropped immediately above so the script sees a free port.)
@@ -328,7 +364,7 @@ async fn i8_hook_script_does_not_hang_when_server_unresponsive() {
     }
 
     let Some(listener) = try_bind_hook_port().await else {
-        eprintln!("SKIP i8: port 47384 busy");
+        eprintln!("SKIP i8: port {} busy", agent_terminal_lib::identity::HOOK_PORT);
         return;
     };
 
@@ -393,7 +429,7 @@ async fn i5_real_claude_settings_no_duplicates() {
     };
 
     let our_prefix = home
-        .join(".agent-terminal")
+        .join(format!(".{}", agent_terminal_lib::identity::NAMESPACE))
         .join("hooks")
         .join("claude-hook")
         .to_string_lossy()
@@ -443,7 +479,7 @@ async fn i6_real_codex_hooks_no_duplicates() {
         return;
     };
     let our_prefix = home
-        .join(".agent-terminal")
+        .join(format!(".{}", agent_terminal_lib::identity::NAMESPACE))
         .join("hooks")
         .join("codex-hook")
         .to_string_lossy()
@@ -463,6 +499,138 @@ async fn i6_real_codex_hooks_no_duplicates() {
     }
 }
 
+// ─── I9: tab_id forwarded when AGENT_TERMINAL_TAB_ID is set ──────────────────
+
+/// Confirms the script forwards `$AGENT_TERMINAL_TAB_ID` as a `tab_id` field.
+#[tokio::test]
+async fn i9_claude_hook_forwards_tab_id_when_env_set() {
+    let _g = acquire_port_lock();
+
+    let script = claude_hook();
+    if !script.exists() {
+        eprintln!("SKIP i9: claude-hook not installed");
+        return;
+    }
+    let Some(listener) = try_bind_hook_port().await else {
+        eprintln!("SKIP i9: port {} busy", agent_terminal_lib::identity::HOOK_PORT);
+        return;
+    };
+    let server = start_collector(listener);
+
+    let payload = r#"{"session_id":"test-session-i9","cwd":"/tmp/i9-project"}"#;
+    run_hook_with_env(
+        &script,
+        "SessionStart",
+        payload,
+        &[("AGENT_TERMINAL_TAB_ID", "proj-A:tab-42")],
+        &[],
+    );
+
+    let got = wait_for_payload_matching(&server.received, |p| {
+        p["session_id"] == "test-session-i9"
+    })
+    .await
+    .expect("no payload received within 3s");
+
+    assert_eq!(got["agent"], "claude-code");
+    assert_eq!(got["event"], "SessionStart");
+    assert_eq!(
+        got["tab_id"], "proj-A:tab-42",
+        "tab_id must be forwarded from $AGENT_TERMINAL_TAB_ID"
+    );
+    assert_eq!(got["cwd"], "/tmp/i9-project");
+}
+
+// ─── I10: tab_id field omitted when env var is unset ─────────────────────────
+
+/// Confirms the script omits `tab_id` when `$AGENT_TERMINAL_TAB_ID` is unset.
+#[tokio::test]
+async fn i10_claude_hook_omits_tab_id_when_env_unset() {
+    let _g = acquire_port_lock();
+
+    let script = claude_hook();
+    if !script.exists() {
+        eprintln!("SKIP i10: claude-hook not installed");
+        return;
+    }
+    let Some(listener) = try_bind_hook_port().await else {
+        eprintln!("SKIP i10: port {} busy", agent_terminal_lib::identity::HOOK_PORT);
+        return;
+    };
+    let server = start_collector(listener);
+
+    let payload = r#"{"session_id":"test-session-i10","cwd":"/tmp/i10-project"}"#;
+    // env_remove, not env("", "") — the calling cargo-test process may run
+    // inside agent-terminal and an empty-string override would still let the
+    // parent's value leak through; also future-proofs against any guard
+    // change that distinguishes set-empty from unset.
+    run_hook_with_env(
+        &script,
+        "SessionStart",
+        payload,
+        &[],
+        &["AGENT_TERMINAL_TAB_ID"],
+    );
+
+    let got = wait_for_payload_matching(&server.received, |p| {
+        p["session_id"] == "test-session-i10"
+    })
+    .await
+    .expect("no payload received within 3s");
+
+    assert_eq!(got["agent"], "claude-code");
+    assert_eq!(got["event"], "SessionStart");
+    assert!(
+        got.get("tab_id").is_none(),
+        "tab_id must be omitted when AGENT_TERMINAL_TAB_ID is unset, got: {got:?}"
+    );
+}
+
+// ─── I11: tab_id field omitted when env value contains unsafe chars ──────────
+
+/// Unsafe characters in `$AGENT_TERMINAL_TAB_ID` must omit the field, not corrupt the JSON.
+#[tokio::test]
+async fn i11_claude_hook_omits_tab_id_when_value_unsafe() {
+    let _g = acquire_port_lock();
+
+    let script = claude_hook();
+    if !script.exists() {
+        eprintln!("SKIP i11: claude-hook not installed");
+        return;
+    }
+    let Some(listener) = try_bind_hook_port().await else {
+        eprintln!("SKIP i11: port {} busy", agent_terminal_lib::identity::HOOK_PORT);
+        return;
+    };
+    let server = start_collector(listener);
+
+    let payload = r#"{"session_id":"test-session-i11","cwd":"/tmp/i11-project"}"#;
+    // Embedded `"` would close the JSON string early and inject extra
+    // fields if the script didn't validate the env value.
+    run_hook_with_env(
+        &script,
+        "SessionStart",
+        payload,
+        &[("AGENT_TERMINAL_TAB_ID", "evil\",\"injected\":\"true")],
+        &[],
+    );
+
+    let got = wait_for_payload_matching(&server.received, |p| {
+        p["session_id"] == "test-session-i11"
+    })
+    .await
+    .expect("no payload received within 3s");
+
+    assert!(
+        got.get("tab_id").is_none(),
+        "tab_id must be omitted when the env value contains unsafe chars, got: {got:?}"
+    );
+    assert!(
+        got.get("injected").is_none(),
+        "no injected field should appear in the payload"
+    );
+}
+
 // ─── E2E (guided / interactive) helpers ──────────────────────────────────────
 //
 // IMPORTANT: E1/E2 below are NOT fully automated. They are guided tests that
@@ -472,7 +640,7 @@ async fn i6_real_codex_hooks_no_duplicates() {
 // Why guided instead of automated subprocess spawning:
 //   1. AI CLIs prompt interactively for trust dialogs, auth, etc. — automating
 //      around all of that is brittle and per-version.
-//   2. While the test collector is bound to 47384, EVERY claude/codex process
+//   2. While the test collector is bound to the hook port, EVERY claude/codex process
 //      on the machine fires hooks at it (incl. the user's other terminals).
 //      Filtering by cwd helps but the cleanest signal is a human pointing the
 //      CLI at a known-empty directory created by the test.
@@ -490,7 +658,7 @@ async fn i6_real_codex_hooks_no_duplicates() {
 //
 // SKIPPED when:
 //   - CI=true (CI/CD environments — these tests need a human)
-//   - port 47384 busy (agent-terminal running, or stale binding)
+//   - hook port busy (agent-terminal running, or stale binding)
 
 fn ci_environment() -> bool {
     std::env::var("CI").map(|v| v == "true").unwrap_or(false)
@@ -616,7 +784,7 @@ async fn e1_guided_claude_fires_hooks_end_to_end() {
     agent_terminal_lib::hook_config::ensure_hooks_installed().await;
 
     let Some(listener) = try_bind_hook_port().await else {
-        eprintln!("SKIP e1: port 47384 busy (agent-terminal running?)");
+        eprintln!("SKIP e1: port {} busy (agent-terminal running?)", agent_terminal_lib::identity::HOOK_PORT);
         return;
     };
     let server = start_collector(listener);
@@ -688,7 +856,7 @@ async fn e2_guided_codex_fires_hooks_end_to_end() {
     agent_terminal_lib::hook_config::ensure_hooks_installed().await;
 
     let Some(listener) = try_bind_hook_port().await else {
-        eprintln!("SKIP e2: port 47384 busy (agent-terminal running?)");
+        eprintln!("SKIP e2: port {} busy (agent-terminal running?)", agent_terminal_lib::identity::HOOK_PORT);
         return;
     };
     let server = start_collector(listener);

@@ -120,6 +120,17 @@ impl AsyncEmitter {
             data,
         });
     }
+
+    /// Direct constructor for unit tests inside the crate. Production code
+    /// always builds an `AsyncEmitter` via `ModContext::async_emitter` so the
+    /// internal `event_tx` stays private to the engine. Unit tests of mods
+    /// (e.g. `agent_turn::tests`) need their own emitter without spinning up
+    /// the full engine — this lets them pair the emitter with a dummy
+    /// channel.
+    #[cfg(test)]
+    pub fn new_for_test(tab_id: String, event_tx: mpsc::Sender<ModEvent>) -> Self {
+        Self { tab_id, event_tx }
+    }
 }
 
 /// A `Clone + Send` agent lifecycle signaler for use inside `tokio::spawn` tasks.

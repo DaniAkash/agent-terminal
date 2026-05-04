@@ -18,3 +18,11 @@ export const onPtyExit = (cb: (tabId: string) => void) =>
  */
 export const onPtyReconnected = (cb: (tabId: string) => void) =>
   listen<{ tabId: string }>('pty:reconnected', (e) => cb(e.payload.tabId))
+
+/** Fires when the backend respawns a shell after self-exit (e.g. user typed `exit`). */
+export const onPtyRespawned = (
+  cb: (tabId: string, cwd: string | null) => void,
+) =>
+  listen<{ tabId: string; cwd: string | null }>('pty:respawned', (e) =>
+    cb(e.payload.tabId, e.payload.cwd),
+  )

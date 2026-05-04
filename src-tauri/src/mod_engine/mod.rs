@@ -5,7 +5,7 @@ pub mod osc_parser;
 
 #[allow(unused_imports)]
 pub use context::{AgentSignal, AgentSignalKind, AsyncAgentSignaler, AsyncEmitter, CwdUpdate, ModContext, ModEvent};
-pub use engine::{ModEngine, ModEngineHandle};
+pub use engine::{CwdTable, ModEngine, ModEngineHandle};
 
 /// The trait every MOD implements.
 ///

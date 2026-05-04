@@ -2,6 +2,7 @@ use crate::mod_engine::ModEngine;
 use crate::pty_manager::{spawn_pty, try_reattach, PtyDataPayload, PtyMap, ReattachResult};
 use portable_pty::PtySize;
 use std::io::Write;
+use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Emitter, State};
 use tauri::ipc::Channel;
 
@@ -31,7 +32,14 @@ pub async fn open_tab(
     //
     // 3. Expired / NotFound — child exited or no entry. Fall through to a fresh
     //    spawn_pty. Returns true.
-    match try_reattach(app.clone(), &pty_map, mod_engine.handle(), &tab_id, on_data.clone()) {
+    match try_reattach(
+        app.clone(),
+        &pty_map,
+        mod_engine.handle(),
+        mod_engine.cwd_table(),
+        &tab_id,
+        on_data.clone(),
+    ) {
         Ok(ReattachResult::ChannelUpdated) | Ok(ReattachResult::Reattached) => {
             // The [Reconnected] banner is written directly to the data channel
             // inside try_reattach — no listener timing gap. This event is emitted
@@ -46,7 +54,16 @@ pub async fn open_tab(
         Err(e) => return Err(e),
     }
 
-    spawn_pty(app, &pty_map, mod_engine.handle(), tab_id, cwd, shell, on_data)?;
+    spawn_pty(
+        app,
+        &pty_map,
+        mod_engine.handle(),
+        mod_engine.cwd_table(),
+        tab_id,
+        cwd,
+        shell,
+        on_data,
+    )?;
     Ok(true)
 }
 
@@ -98,11 +115,18 @@ pub async fn close_tab(
     pty_map: State<'_, PtyMap>,
     tab_id: String,
 ) -> Result<(), String> {
-    // MOD on_close is triggered by the PTY read thread exiting (pty:exit), not
-    // here — close_tab only drops the master/writer, causing the thread to see
-    // EOF and fire on_close itself. This avoids a double on_close if the shell
-    // exits on its own before close_tab is called.
-    pty_map.lock().unwrap().remove(&tab_id);
+    // The reader thread reads `closing` on EOF to decide between emitting
+    // pty:exit (user close, current path) and respawning the shell at the
+    // last known cwd (self-exit). Setting the flag and dropping the entry
+    // under the same lock means there's no torn state: by the time the
+    // reader reads `closing`, either we've already set it (and the entry
+    // is gone — exit path) or we haven't yet (entry still present —
+    // respawn path).
+    let mut map = pty_map.lock().unwrap();
+    if let Some(handle) = map.get(&tab_id) {
+        handle.closing.store(true, Ordering::Release);
+    }
+    map.remove(&tab_id);
     Ok(())
 }
 
@@ -128,5 +152,8 @@ pub async fn list_projects() -> Result<serde_json::Value, String> {
 
 fn projects_config_path() -> Result<std::path::PathBuf, String> {
     let home = dirs::home_dir().ok_or("could not determine home directory")?;
-    Ok(home.join(".config/agent-terminal/projects.json"))
+    Ok(home
+        .join(".config")
+        .join(crate::identity::NAMESPACE)
+        .join("projects.json"))
 }

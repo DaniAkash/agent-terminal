@@ -14,8 +14,6 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { useStore } from '@nanostores/react'
 import { Pin, X } from 'lucide-react'
-import { hasDangerFlag } from '@/components/agent.helpers'
-import { DangerBadge } from '@/components/DangerBadge'
 import { TabStatusIcon } from '@/components/TabStatusIcon'
 import {
   ContextMenu,
@@ -25,13 +23,12 @@ import {
 } from '@/components/ui/context-menu'
 import { cn } from '@/lib/utils'
 import {
-  $activeProjectId,
   $activeTabId,
   navigateToTab,
   onTabRemoved,
+  openNewTabInProject,
 } from '@/modules/stores/$navigation'
 import {
-  addTab,
   removeTab,
   reorderTabs,
   toggleTabPin,
@@ -106,9 +103,9 @@ function TabItem({ tab, projectId }: { tab: Tab; projectId: string }) {
               <span className="truncate" style={{ fontFamily: MONO_FONT }}>
                 {resolveTabLabel(tab, tabMeta?.cwd)}
               </span>
-              {tabMeta?.type === 'agent' && hasDangerFlag(tabMeta.agentCmd) && (
-                <DangerBadge size={11} />
-              )}
+              {/* Danger indicator intentionally omitted here — the sidebar
+                  already shows it for the same tab; duplicating it on the
+                  top tab bar adds visual noise without new information. */}
             </button>
 
             {/* Pin / close action — sibling of nav button, not nested */}
@@ -187,15 +184,7 @@ export function TabBar({ project }: { project: Project }) {
   }
 
   function handleAddTab() {
-    const projectId = $activeProjectId.get()
-    const tabId = $activeTabId.get()[projectId]
-    const cwd = tabId
-      ? ($tabMeta.get()[makeTabKey(projectId, tabId)]?.cwd ?? '')
-      : ''
-    const newTab = addTab(project.id, cwd || undefined)
-    if (newTab) {
-      navigateToTab(project.id, newTab.id)
-    }
+    openNewTabInProject(project.id)
   }
 
   return (

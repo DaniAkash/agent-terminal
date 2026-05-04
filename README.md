@@ -1,149 +1,128 @@
-# Agent Terminal
+<div align="center">
+  <img src="./src-tauri/icons/icon.png" width="128" alt="Agent Terminal" />
 
-> A mouse-first, project-scoped terminal workspace built for running AI coding agents effectively.
+  # Agent Terminal
+
+**⚠️ Early stage — under heavy active development. APIs and UI will change.**
+  **A terminal workspace built around AI coding agents.**
+
+  [![Download](https://img.shields.io/github/v/release/DaniAkash/agent-terminal?include_prereleases&label=Download%20DMG&color=blue)](https://github.com/DaniAkash/agent-terminal/releases/latest)
+  [![Status](https://img.shields.io/badge/status-pre--alpha-orange)](#status)
+  [![Platform](https://img.shields.io/badge/platform-macOS-lightgrey)](#download)
+</div>
 
 <a href="https://www.producthunt.com/products/agent-terminal?embed=true&utm_source=badge-featured&utm_medium=badge&utm_campaign=badge-agent-terminal" target="_blank"><img src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1136595&theme=light&t=1777623264721" alt="Agent terminal - One terminal. Every agent. Total clarity. | Product Hunt" width="250" height="54" /></a>
 
-**⚠️ Early stage — under heavy active development. APIs and UI will change.**
+
 
 ---
 
-## What is Agent Terminal?
+## Status
 
-Agent Terminal is a native macOS terminal app designed around the way developers actually work with AI coding agents today: multiple projects, multiple agents, multiple sessions — all running simultaneously and all needing context at a glance.
+> 🧪 **Pre-alpha.** Heavily tested on **macOS + Zsh** — that's the daily-driver setup. Other shells and platforms may work but aren't part of the test matrix yet. Things will change without warning.
 
-Most terminals treat every tab equally. Agent Terminal gives each project its own workspace, tracks your AI agent sessions as first-class citizens, and surfaces live runtime metadata — memory usage, listening ports, model in use, git state — directly in the status bar without you having to switch windows or run commands.
+## Why this exists
 
-It is built on [Tauri](https://tauri.app) (Rust backend, WebView frontend) and uses [xterm.js](https://xtermjs.org) for terminal rendering. There are no config files to edit and no tmux dependency — just open it and use it.
+If you live in a terminal alongside [Claude Code](https://claude.ai/code), [Codex](https://github.com/openai/codex), or other AI coding agents, you've probably noticed normal terminals weren't designed for the way you work now: **multiple agents, multiple projects, multiple long-lived sessions, all needing context at a glance**.
+
+Agent Terminal is a terminal that knows the difference between a shell and an agent. It groups your tabs by project, recognises when an agent is running, and surfaces what's happening — the model in use, what's listening on which port, the git branch, your cwd — without you switching windows or running `ps`.
 
 ![Agent Terminal screenshot](./docs/assets/screenshot.png)
 
 ---
 
-## Features
+## Download
 
-### Project-scoped workspaces
-Tabs are organized under named projects. Switch between projects without losing your place. Each tab remembers its working directory and restores it on the next launch.
+1. Grab the latest `.dmg` (universal binary — Apple Silicon + Intel) from the [releases page](https://github.com/DaniAkash/agent-terminal/releases).
+2. Open it, drag **Agent Terminal** to your Applications folder.
+3. First launch: right-click → Open (the app isn't notarised yet, so macOS Gatekeeper will warn — pre-alpha).
 
-### AI agent integration
-Agent Terminal detects when an AI coding agent is running inside a tab and surfaces agent-specific context automatically — no manual setup required.
+That's it. No config files, no daemons, no tmux setup.
 
-Supported agents:
+---
+
+## What you actually get
+
+### Projects and tabs that survive
+Group tabs under projects (`my-app`, `notes`, `infra`). Switch projects without losing your place — every tab remembers its working directory and reopens there.
+
+### Live status bar
+Always-on context for the focused tab — refreshed every couple of seconds, never gets stale:
+
+- Process name, PID, elapsed time, memory
+- Listening TCP ports (so you know when your dev server is up)
+- Git branch, dirty indicator, ahead/behind remote
+- Working directory (hover for full path)
+
+### Supported agents
 
 | Agent | Status |
-|-------|--------|
+|---|---|
 | [Claude Code](https://claude.ai/code) | ✅ Supported |
 | [Codex CLI](https://github.com/openai/codex) | ✅ Supported |
 | [Gemini CLI](https://github.com/google-gemini/gemini-cli) | 🔜 Planned |
 | [Cursor](https://www.cursor.com) | 🔜 Planned |
 | [Open Code](https://github.com/sst/opencode) | 🔜 Planned |
 
-Want support for another agent? [Request it on X →](https://x.com/dani_akash_)
+Want support for another agent? [Open an issue](https://github.com/DaniAkash/agent-terminal/issues/new) or [tell me on X](https://x.com/dani_akash_).
 
-### Live status bar
-The status bar shows real-time context for the active tab, updated every 2 seconds.
-
-**Left side** — workspace overview (global across all projects):
-- Active agents running · Active shell tasks · Failed tasks
-
-**Right side** — active tab context:
-- Process name · PID · ⏱ elapsed · 🧮 memory (RSS)
-- 🔌 Listening TCP ports (so you know when your dev server is up)
-- ✨ `--model` flag when an agent is running with a specific model
-- ⎇ Git branch · dirty indicator · commits ahead/behind remote
-- 📂 Current working directory (hover to see full path)
-
-### Agent glyph system
-Each agent tab shows a brand mark (Anthropic sunburst for Claude, OpenAI hex for Codex) in the tab bar and sidebar that reflects the session state. When an agent is running with full permissions (`--dangerously-skip-permissions` for Claude Code, `--yolo` for Codex), a danger badge appears next to the tab.
-
-### MOD system
-The intelligence layer is built on a Rust-native MOD system. Each MOD subscribes to PTY output and shell hook events, extracts structured data, and emits it to the frontend — without blocking the terminal or adding visible latency.
-
-| MOD | What it does |
-|-----|-------------|
-| `DirTrackerMod` | Tracks CWD via OSC 7 shell hooks |
-| `ProcessTrackerMod` | Tracks process state (running / done / error) via OSC 133 |
-| `ClaudeCodeMod` | Detects Claude Code sessions, extracts `--model` and permission flags |
-| `CodexMod` | Detects Codex sessions, extracts permission flags |
-| `ProcessInspectorMod` | Polls live process metrics: PID, RSS memory, elapsed time, TCP ports |
-| `GitMonitorMod` | Tracks git branch, dirty state, and remote sync status |
-
-### No tmux dependency
-Sessions use raw PTYs managed directly by Rust. No tmux, no daemon, no invisible infrastructure. The tradeoff: long-running processes need to be restarted when you reopen the app. In exchange, the app is simpler, faster to start, and has zero external dependencies.
+### Keyboard shortcuts
+- `Ctrl+T` — new tab in the active project
+- `Ctrl+W` — close the active tab
+- `Ctrl+Tab` / `Ctrl+Shift+Tab` — cycle tabs
+- `Ctrl+1` … `Ctrl+9` — jump to project N
 
 ---
 
-## Getting Started
+## Tested on
 
-### Prerequisites
+| Platform | Status |
+|---|---|
+| macOS 13+ (Apple Silicon / Intel) | ✅ Daily driver |
+| Zsh | ✅ Daily driver |
+| Bash | ⚠️ Should work, lightly tested |
+| Linux | 🚧 Untested — contributors wanted |
+| Windows | 🚧 Untested — contributors wanted |
 
-- macOS 13 or later
-- [Rust](https://rustup.rs) stable toolchain
-- [Bun](https://bun.sh) — `curl -fsSL https://bun.sh/install | bash`
-- Xcode Command Line Tools — `xcode-select --install`
+## 🙏 Looking for contributors
 
-### Run in development
+The most useful thing you can do right now is **help bring Agent Terminal to Windows and Linux**. The Tauri + portable-pty stack underneath supports both, but I don't run those platforms day-to-day, so the integration work isn't happening on its own.
 
-```sh
-git clone https://github.com/DaniAkash/agent-terminal.git
-cd agent-terminal
+Specifically helpful:
 
-bun install
-bun run tauri:dev
-```
+- **Linux testers** — try a dev build, file what's broken (rendering, shell integration, keyboard shortcuts, anything).
+- **Windows testers + developers** — Windows needs ConPTY-side adjustments and a separate shell-integration path; if you're up for Tauri/Rust work, this is the highest-leverage area to contribute.
+- **Other agent integrations** — adding Gemini CLI, Cursor, Open Code, etc. is a focused PR (see [CONTRIBUTING.md](./CONTRIBUTING.md) for the MOD system guide).
+- **Bug reports + feature ideas** — open an issue, even rough ones.
 
-The first run compiles the Rust backend — expect a few minutes. Subsequent runs are much faster thanks to incremental compilation.
-
-### Build for production
-
-```sh
-bun run tauri:build
-```
-
-Outputs a `.dmg` and `.app` in `src-tauri/target/release/bundle/`.
-
----
-
-## Tech Stack
-
-| Layer | Technology |
-|-------|-----------|
-| App framework | [Tauri v2](https://tauri.app) |
-| Terminal rendering | [xterm.js](https://xtermjs.org) (WebGL renderer) |
-| PTY backend | [portable-pty](https://github.com/wez/wezterm/tree/main/pty) (Rust) |
-| Frontend | React · TypeScript · Vite |
-| Styling | Tailwind CSS |
-| UI components | shadcn/ui (base-ui primitives) |
-| State management | [nanostores](https://github.com/nanostores/nanostores) |
-| Package manager | [Bun](https://bun.sh) |
-| Linter / formatter | [Biome](https://biomejs.dev) (JS) · Clippy (Rust) |
+If you're interested, [open an issue](https://github.com/DaniAkash/agent-terminal/issues/new) or [reach out on X](https://x.com/dani_akash_) — happy to pair / sync on direction.
 
 ---
 
 ## Roadmap
 
-Agent Terminal is early stage and under heavy active development.
+Already shipped:
+- ✅ Project-scoped workspaces with persistent tabs
+- ✅ Live status bar (process, git, cwd, ports, model)
+- ✅ Claude Code + Codex detection and agent badges
+- ✅ Agent turn detection (idle / in-progress / awaiting / done)
+- ✅ Keyboard shortcuts
+- ✅ Universal macOS binary (Apple Silicon + Intel)
 
-- [x] Project-scoped workspaces with persistent tabs
-- [x] xterm.js terminal with WebGL rendering
-- [x] CWD tracking and tab label from working directory
-- [x] OSC 133 shell integration (process state tracking)
-- [x] MOD system (Rust-native plugin architecture)
-- [x] Claude Code + Codex detection and agent glyphs
-- [x] Live status bar (process metrics, git, CWD, icons)
-- [x] Keyboard shortcuts (Ctrl+T, Ctrl+W, Ctrl+Tab, Ctrl+1–9, and more)
-- [ ] Theming support (light / dark / custom color schemes)
-- [ ] Gemini CLI, Cursor, Open Code agent support
-- [ ] Agent turn detection (know when an agent is actively working vs idle)
-- [ ] Universal binary (Apple Silicon + Intel in one download)
-- [ ] macOS App Store distribution
-- [ ] Windows support
+Coming next:
+- 🚧 Theming (light / dark / custom palettes)
+- 🚧 More agent integrations (Gemini CLI, Cursor, Open Code)
+- 🚧 Linux support
+- 🚧 Windows support
+- 🚧 macOS App Store distribution
 
 ---
 
 ## Contributing
 
-Contributions are welcome — see [CONTRIBUTING.md](./CONTRIBUTING.md) for setup instructions, code conventions, and how to add support for new agents via the MOD system.
+For development setup, project structure, code conventions, and the MOD-system guide for adding new agents:
+
+→ **[CONTRIBUTING.md](./CONTRIBUTING.md)**
 
 ---
 
@@ -151,4 +130,4 @@ Contributions are welcome — see [CONTRIBUTING.md](./CONTRIBUTING.md) for setup
 
 MIT — see [LICENSE](./LICENSE).
 
-Copyright © 2026 [Dani Akash](https://github.com/DaniAkash). If you use or build on this project, the copyright notice must be retained as required by the MIT License.
+Copyright © 2026 [Dani Akash](https://github.com/DaniAkash). If you build on this project, please retain the copyright notice as required by the MIT License.

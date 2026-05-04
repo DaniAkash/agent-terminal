@@ -81,6 +81,20 @@ pub static AGENT_HOOK_CONFIGS: &[AgentHookConfig] = &[
     },
 ];
 
+// ─── Registry lookup ──────────────────────────────────────────────────────────
+
+/// Looks up an `AgentHookConfig` by its `agent_id` (e.g. `"claude-code"`).
+///
+/// This is the canonical way for per-agent mods (and any other consumer) to
+/// resolve human-readable display names without re-declaring constants.
+/// `ClaudeCodeMod` and `CodexMod` both call this when emitting
+/// `tab_type_changed` so that the agent's display name on the wire stays
+/// in lock-step with the registry — adding a new agent means one new entry
+/// in `AGENT_HOOK_CONFIGS` and nothing else.
+pub fn config_for_agent_id(agent_id: &str) -> Option<&'static AgentHookConfig> {
+    AGENT_HOOK_CONFIGS.iter().find(|c| c.agent_id == agent_id)
+}
+
 // ─── Public entry point ───────────────────────────────────────────────────────
 
 /// Silently installs/verifies hooks for all registered agents.
@@ -95,7 +109,9 @@ pub async fn ensure_hooks_installed() {
             return;
         }
     };
-    let hooks_dir = home.join(".agent-terminal").join("hooks");
+    let hooks_dir = home
+        .join(format!(".{}", crate::identity::NAMESPACE))
+        .join("hooks");
     for config in AGENT_HOOK_CONFIGS {
         if let Err(e) = install_for_agent(config, &home, &hooks_dir).await {
             eprintln!(
@@ -156,11 +172,20 @@ pub(crate) async fn write_hook_script_to(
 
 /// Generates the hook shell script content for `agent_id`.
 ///
-/// The script reads the agent's JSON payload from stdin, prepends `agent` and
-/// `event` fields, and fires a curl POST to the hook server in a detached
-/// background subshell. The script exits in milliseconds regardless of what
-/// curl does — Claude Code (and any other agent) is never blocked waiting on
-/// the hook server.
+/// The script reads the agent's JSON payload from stdin, prepends `agent`,
+/// `event`, and (when set) `tab_id` fields, then fires a curl POST to the
+/// hook server in a detached background subshell. The script exits in
+/// milliseconds regardless of what curl does — Claude Code (and any other
+/// agent) is never blocked waiting on the hook server.
+///
+/// `tab_id` comes from `$AGENT_TERMINAL_TAB_ID`, which `pty_manager` injects
+/// into every shell it spawns. When the agent is running OUTSIDE
+/// agent-terminal (iTerm, Terminal.app, etc.), the env var is unset and the
+/// `tab_id` field is omitted entirely. Server-side that becomes
+/// `HookPayload::tab_id == None` and `AgentTurnMod` drops the event. This is
+/// the load-bearing piece of the cross-terminal-noise fix — without it, the
+/// only correlation signal was CWD prefix matching, which can't distinguish
+/// two terminals at the same path.
 ///
 /// Why detach instead of `--connect-timeout`/`--max-time`: ECONNREFUSED is
 /// instant on macOS, so a missing server doesn't hang. The hang we hit in
@@ -173,15 +198,16 @@ pub(crate) async fn write_hook_script_to(
 /// a ceiling on background curl lifetime so they don't accumulate as zombies
 /// if the server is hung and hooks fire repeatedly.
 ///
-/// Why `127.0.0.1` and not `localhost`: the server binds `127.0.0.1:47384`
-/// (IPv4 only). On macOS, `localhost` resolves to `::1` first, so curl tries
-/// IPv6 and gets ECONNREFUSED before falling back to IPv4 (Happy Eyeballs).
-/// The fallback works, but every hook eats the latency for nothing. Pinning
-/// the script to `127.0.0.1` matches the server's address family directly.
+/// Why `127.0.0.1` and not `localhost`: the server binds `127.0.0.1:<HOOK_PORT>`
+/// (IPv4 only — port is 47384 in prod, 47385 in dev, see `identity.rs`). On
+/// macOS, `localhost` resolves to `::1` first, so curl tries IPv6 and gets
+/// ECONNREFUSED before falling back to IPv4 (Happy Eyeballs). The fallback
+/// works, but every hook eats the latency for nothing. Pinning the script to
+/// `127.0.0.1` matches the server's address family directly.
 fn build_hook_script(agent_id: &str) -> String {
     // The sed command removes the leading `{` from the agent's JSON payload so
     // we can inject our own fields at the front. The result is a valid JSON object:
-    //   {"agent":"claude-code","event":"UserPromptSubmit","session_id":"...","cwd":"..."}
+    //   {"agent":"claude-code","event":"UserPromptSubmit","tab_id":"…","session_id":"…","cwd":"…"}
     //
     // CRITICAL: the inner echo uses bare "$INPUT" (shell-quoted), NOT \"$INPUT\".
     // The backslash-quote form prints LITERAL quote characters around the value,
@@ -189,6 +215,21 @@ fn build_hook_script(agent_id: &str) -> String {
     // That bug shipped originally and silently broke every hook delivery —
     // serde rejected the bad JSON, ps-fallback kept the UI working, nobody
     // noticed until the integration tests caught it.
+    //
+    // TAB_FIELD is built BEFORE PAYLOAD so the `tab_id` field is omitted
+    // entirely when AGENT_TERMINAL_TAB_ID is unset. Inserting an empty string
+    // would produce a `"tab_id":""` field; the server's gate explicitly
+    // rejects empty strings too, but emitting nothing is cleaner.
+    //
+    // Defense-in-depth: the env value is validated against a strict charset
+    // before going into the JSON. Today, tab ids are composite frontend
+    // identifiers (`<projectId>:<tabId>`) — never user-controllable — so a
+    // hostile value can't actually arrive. But the script interpolates the
+    // value raw into a JSON string, which would corrupt the payload (or
+    // inject extra fields) if a `"`, `\`, or newline ever slipped through.
+    // The case statement omits the field on any unexpected character, so a
+    // future change to the tab-id format that introduces unsafe chars
+    // degrades to "no correlation" rather than "malformed POST".
     format!(
         "#!/bin/sh\n\
 # Written by Agent Terminal. Do not edit — regenerated on each launch.\n\
@@ -196,12 +237,18 @@ fn build_hook_script(agent_id: &str) -> String {
 INPUT=$(cat)\n\
 EVENT=\"$1\"\n\
 STRIPPED=$(printf '%s' \"$INPUT\" | sed 's/^{{//')\n\
-PAYLOAD=\"{{\\\"agent\\\":\\\"{agent_id}\\\",\\\"event\\\":\\\"$EVENT\\\",$STRIPPED\"\n\
-{{ curl -sf --max-time 5 -X POST http://127.0.0.1:47384/hook \\\n\
+case \"$AGENT_TERMINAL_TAB_ID\" in\n\
+  '') TAB_FIELD=\"\" ;;\n\
+  *[!A-Za-z0-9:_-]*) TAB_FIELD=\"\" ;;\n\
+  *) TAB_FIELD=\"\\\"tab_id\\\":\\\"$AGENT_TERMINAL_TAB_ID\\\",\" ;;\n\
+esac\n\
+PAYLOAD=\"{{\\\"agent\\\":\\\"{agent_id}\\\",\\\"event\\\":\\\"$EVENT\\\",${{TAB_FIELD}}$STRIPPED\"\n\
+{{ curl -sf --max-time 5 -X POST http://127.0.0.1:{port}/hook \\\n\
     -H 'Content-Type: application/json' \\\n\
     -d \"$PAYLOAD\" \\\n\
     >/dev/null 2>&1 & }} 2>/dev/null\n\
 exit 0\n",
+        port = crate::identity::HOOK_PORT,
     )
 }
 
@@ -289,7 +336,20 @@ pub(crate) async fn merge_hook_config_at(
 
     // Atomic write: temp file → rename.
     let serialized = serde_json::to_string_pretty(&root)?;
-    let tmp_path = config_path.with_extension("agent-terminal.tmp");
+    // Per-PID temp filename so two instances writing the same config file
+    // concurrently don't corrupt each other's atomic writes.
+    //
+    // TODO(DaniAkash): atomic write protects the temp file from corruption
+    // but not the read-modify-write of the config file itself. If two
+    // instances read concurrently, the second rename's content overwrites
+    // the first instance's entry — self-heals on the loser's next launch
+    // (re-add path), but means hooks in the missing-entry window are
+    // dropped. Proper fix: advisory file lock around the load → merge →
+    // write_atomic block (fs4 crate's `FileExt::lock_exclusive`).
+    let tmp_path = config_path.with_extension(format!(
+        "agent-terminal-{}.tmp",
+        std::process::id()
+    ));
     tokio::fs::write(&tmp_path, format!("{serialized}\n")).await?;
     tokio::fs::rename(&tmp_path, config_path).await?;
 
@@ -827,7 +887,36 @@ mod tests {
         let content = fs::read_to_string(&script).unwrap();
         // 127.0.0.1 (not `localhost`) so the script's address family matches
         // the server's bind. See doc comment on `build_hook_script`.
-        assert!(content.contains("127.0.0.1:47384"), "script should be updated");
+        let expected = format!("127.0.0.1:{}", crate::identity::HOOK_PORT);
+        assert!(content.contains(&expected), "script should contain {expected}");
         assert!(!content.contains("echo old"), "old content should be replaced");
+    }
+
+    // ── S4: script forwards AGENT_TERMINAL_TAB_ID into payload ───────────────
+    /// The cross-terminal-noise fix lives in two halves: pty_manager injects
+    /// `AGENT_TERMINAL_TAB_ID` into every spawned shell, and this script
+    /// forwards it as a `tab_id` field in the POST body. If either half
+    /// regresses, hooks from sessions outside agent-terminal start firing
+    /// notifications again.
+    #[tokio::test]
+    async fn s4_script_forwards_tab_id_env_var() {
+        let dir = temp_dir("s4");
+        let script = dir.join("claude-hook");
+
+        write_hook_script_to(claude_config(), &script).await.unwrap();
+        let content = fs::read_to_string(&script).unwrap();
+
+        // The env var name must appear in the script — without it, no
+        // correlation signal reaches the server.
+        assert!(
+            content.contains("$AGENT_TERMINAL_TAB_ID"),
+            "script must reference $AGENT_TERMINAL_TAB_ID"
+        );
+        // The `tab_id` JSON key must also appear — proves we're emitting it
+        // into the payload, not just reading the env for some other purpose.
+        assert!(
+            content.contains("\\\"tab_id\\\":"),
+            "script must emit a tab_id JSON field"
+        );
     }
 }

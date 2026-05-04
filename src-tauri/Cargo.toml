@@ -1,6 +1,6 @@
 [package]
 name = "agent-terminal"
-version = "0.1.0"
+version = "0.1.2"
 description = "Agent Terminal — a mouse-first project-scoped terminal workspace"
 authors = ["DaniAkash"]
 edition = "2021"
@@ -11,6 +11,12 @@ edition = "2021"
 name = "agent_terminal_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+default = []
+# Switches the running instance to a separate "dev" namespace so a dev build
+# can coexist with a production install on the same machine. See src/identity.rs.
+dev-instance = []
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -18,6 +24,21 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
+# Ensures only one Agent Terminal instance runs at a time. Critical on macOS
+# for notification click routing: without it, clicking a notification can
+# launch a fresh .app process while the original one keeps running. With it,
+# Launch Services forwards the duplicate-launch attempt to the existing
+# process instead.
+tauri-plugin-single-instance = "2"
+# Dev-mode banner display only (debug_assertions = true). On macOS in dev this
+# attributes notifications to com.apple.Terminal, which is fine for visibility
+# but means clicks don't route back to us — see the focus-event heuristic.
+tauri-plugin-notification = "2"
+# Release-mode notifications (debug_assertions = false). Wraps the native
+# UNUserNotificationCenter on macOS so we get real per-notification click
+# callbacks via UNUserNotificationCenterDelegate. Mock mode falls back to
+# console logs (used in tests, never in shipped builds).
+user-notify = "0.4"
 portable-pty = "0.8"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

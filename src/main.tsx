@@ -3,6 +3,8 @@ import ReactDOM from 'react-dom/client'
 import { IPC } from '@/modules/ipc/commands'
 import { startCwdPersist } from '@/modules/mods/cwd-persist'
 import { startModListener } from '@/modules/mods/mod-listener'
+import { startNotificationsBridge } from '@/modules/notifications/notificationsBridge'
+import { syncNotificationsEnabledToBackend } from '@/modules/notifications/preferences'
 import { initNavigation } from '@/modules/stores/$navigation'
 import { $projects } from '@/modules/stores/$projects'
 import { WorkspaceLayout } from '@/screens/workspace/WorkspaceLayout'
@@ -27,6 +29,12 @@ async function bootstrap() {
   }
 
   initNavigation()
+
+  // Notification firing lives entirely in Rust. The bridge just pushes
+  // UI state (projects map, active tab, app focus) so the backend can
+  // make suppression decisions, plus listens for click events.
+  startNotificationsBridge()
+  syncNotificationsEnabledToBackend()
 
   ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
     <React.StrictMode>

@@ -1,10 +1,28 @@
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use super::context::{AgentSignal, AgentSignalKind, CwdUpdate, ModContext, ModEvent};
 use super::Mod;
 use crate::hook_server::HookPayload;
 use tauri::{AppHandle, Emitter, async_runtime};
 use tokio::sync::mpsc;
+
+/// Shared `tab_id → cwd` table, written by the engine task whenever
+/// `DirTrackerMod` parses an OSC 7 sequence and read by `pty_manager` when
+/// it needs to respawn a shell at the last known location.
+///
+/// TODO(respawn-cwd-staleness): the path from PTY read → engine task → this
+/// table is best-effort: `ModEngineHandle::on_output` uses `try_send` on a
+/// 512-bounded channel and `ctx.set_cwd` does the same. Under a heavy PTY
+/// burst, the chunk carrying the latest OSC 7 can be dropped or still
+/// queued when `pty_manager::respawn_in_place` reads the cwd, so the
+/// restarted shell may come back one `cd` behind. Mitigation would be to
+/// parse OSC 7 inline in pty_manager's reader thread and write straight
+/// into a dedicated cwd snapshot, decoupling respawn from the engine's
+/// queue. Deferred — practical impact is low (worst case = "respawn at
+/// one cd ago"), and the cleanest fix lives next to a future output-replay
+/// buffer rather than in this PR.
+pub type CwdTable = Arc<Mutex<HashMap<String, String>>>;
 
 pub(super) enum ModMessage {
     Open { tab_id: String, shell_pid: u32 },
@@ -90,6 +108,10 @@ impl ModEngineBuilder {
 /// `ModEngineHandle` for dispatching; the PTY read thread clones that handle.
 pub struct ModEngine {
     handle: ModEngineHandle,
+    /// Shared snapshot of the last CWD seen per tab. Lives outside the
+    /// engine task so the PTY layer can read it synchronously when a shell
+    /// self-exits and needs to respawn at the same location.
+    cwd_table: CwdTable,
     /// Keeps the hook channel alive for the engine's full lifetime. The
     /// dispatcher's `select!` arm calls `hook_rx.recv()`, which returns `None`
     /// when the last sender is dropped. If `start_hook_server()` fails to
@@ -113,6 +135,12 @@ impl ModEngine {
         self.handle.clone()
     }
 
+    /// Cheap clone of the shared CWD table. Hand to `pty_manager` so the
+    /// reader thread can look up the last-known CWD when respawning a shell.
+    pub fn cwd_table(&self) -> CwdTable {
+        self.cwd_table.clone()
+    }
+
     fn start(
         mods: Vec<Box<dyn Mod>>,
         hook_tx_keepalive: mpsc::UnboundedSender<HookPayload>,
@@ -130,46 +158,59 @@ impl ModEngine {
         // Agent lifecycle channel: unbounded so lifecycle signals are never dropped.
         let (agent_tx, mut agent_rx) = mpsc::unbounded_channel::<AgentSignal>();
 
+        let cwd_table: CwdTable = Arc::new(Mutex::new(HashMap::new()));
+        let cwd_table_task = cwd_table.clone();
+
         let event_tx_dispatch = event_tx.clone();
         async_runtime::spawn(async move {
             let mut mods = mods;
-            // Internal CWD table: tab_id → current cwd.
-            let mut cwd_table: HashMap<String, String> = HashMap::new();
-            // Shell PID table: tab_id → shell process PID.
+            // Shell PID table stays local — pty_manager doesn't need this
+            // and a single async task is the only writer/reader.
             let mut shell_pid_table: HashMap<String, u32> = HashMap::new();
 
-            // Macro to dispatch a ModMessage and drain CWD updates.
+            // Snapshot the shared cwd table for THIS dispatch round so the
+            // ModContext only carries an Option<String>, not a guard.
             macro_rules! handle_mod_msg {
                 ($msg:expr) => {{
                     match $msg {
                         ModMessage::Open { tab_id, shell_pid } => {
                             shell_pid_table.insert(tab_id.clone(), shell_pid);
-                            let current_cwd = cwd_table.get(&tab_id).cloned();
+                            let current_cwd = cwd_table_task.lock().unwrap().get(&tab_id).cloned();
                             let ctx = ModContext::new(&tab_id, &event_tx_dispatch, &cwd_tx, &agent_tx, current_cwd, shell_pid);
                             for m in &mut mods { m.on_open(&ctx); }
                         }
                         ModMessage::Close { tab_id } => {
-                            let current_cwd = cwd_table.get(&tab_id).cloned();
+                            let current_cwd = cwd_table_task.lock().unwrap().get(&tab_id).cloned();
                             let shell_pid = shell_pid_table.get(&tab_id).copied().unwrap_or(0);
                             let ctx = ModContext::new(&tab_id, &event_tx_dispatch, &cwd_tx, &agent_tx, current_cwd, shell_pid);
                             for m in &mut mods { m.on_close(&ctx); }
-                            cwd_table.remove(&tab_id);
+                            // Drop the cwd entry too. Respawn doesn't need
+                            // it preserved here — `respawn_in_place` reads
+                            // the cwd into a local variable BEFORE issuing
+                            // its own on_tab_close, so the close message
+                            // arrives with the cwd already captured.
+                            // Keeping closed-tab entries around would leak
+                            // for the app's lifetime AND let a 4-hex
+                            // randomSuffix() collision on a brand-new tab
+                            // inherit a stale cwd until the new shell's
+                            // first OSC 7.
+                            cwd_table_task.lock().unwrap().remove(&tab_id);
                             shell_pid_table.remove(&tab_id);
                         }
                         ModMessage::Output { tab_id, data } => {
-                            let current_cwd = cwd_table.get(&tab_id).cloned();
+                            let current_cwd = cwd_table_task.lock().unwrap().get(&tab_id).cloned();
                             let shell_pid = shell_pid_table.get(&tab_id).copied().unwrap_or(0);
                             let ctx = ModContext::new(&tab_id, &event_tx_dispatch, &cwd_tx, &agent_tx, current_cwd, shell_pid);
                             for m in &mut mods { m.on_output(&data, &ctx); }
                         }
                         ModMessage::Input { tab_id, data } => {
-                            let current_cwd = cwd_table.get(&tab_id).cloned();
+                            let current_cwd = cwd_table_task.lock().unwrap().get(&tab_id).cloned();
                             let shell_pid = shell_pid_table.get(&tab_id).copied().unwrap_or(0);
                             let ctx = ModContext::new(&tab_id, &event_tx_dispatch, &cwd_tx, &agent_tx, current_cwd, shell_pid);
                             for m in &mut mods { m.on_input(&data, &ctx); }
                         }
                         ModMessage::Resize { tab_id, cols, rows } => {
-                            let current_cwd = cwd_table.get(&tab_id).cloned();
+                            let current_cwd = cwd_table_task.lock().unwrap().get(&tab_id).cloned();
                             let shell_pid = shell_pid_table.get(&tab_id).copied().unwrap_or(0);
                             let ctx = ModContext::new(&tab_id, &event_tx_dispatch, &cwd_tx, &agent_tx, current_cwd, shell_pid);
                             for m in &mut mods { m.on_resize(cols, rows, &ctx); }
@@ -178,7 +219,7 @@ impl ModEngine {
                     // Drain CWD updates produced during this dispatch round.
                     let mut cwd_updates: Vec<(String, String)> = Vec::new();
                     while let Ok(upd) = cwd_rx.try_recv() {
-                        cwd_table.insert(upd.tab_id.clone(), upd.cwd.clone());
+                        cwd_table_task.lock().unwrap().insert(upd.tab_id.clone(), upd.cwd.clone());
                         cwd_updates.push((upd.tab_id, upd.cwd));
                     }
                     for (tab_id, cwd) in &cwd_updates {
@@ -205,7 +246,7 @@ impl ModEngine {
                     // state transitions when an agent starts or exits.
                     sig = agent_rx.recv() => {
                         let Some(sig) = sig else { break };
-                        let current_cwd = cwd_table.get(&sig.tab_id).cloned();
+                        let current_cwd = cwd_table_task.lock().unwrap().get(&sig.tab_id).cloned();
                         let shell_pid = shell_pid_table.get(&sig.tab_id).copied().unwrap_or(0);
                         let ctx = ModContext::new(&sig.tab_id, &event_tx_dispatch, &cwd_tx, &agent_tx, current_cwd, shell_pid);
                         match sig.kind {
@@ -243,6 +284,7 @@ impl ModEngine {
 
         Self {
             handle: ModEngineHandle { tx: msg_tx, lifecycle_tx },
+            cwd_table,
             _hook_tx_keepalive: hook_tx_keepalive,
         }
     }

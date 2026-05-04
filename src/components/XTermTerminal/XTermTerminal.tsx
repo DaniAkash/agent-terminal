@@ -1,129 +1,101 @@
+import { useStore } from '@nanostores/react'
 import { FitAddon } from '@xterm/addon-fit'
+import { SearchAddon } from '@xterm/addon-search'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { WebglAddon } from '@xterm/addon-webgl'
-import type { ITheme } from '@xterm/xterm'
 import { Terminal } from '@xterm/xterm'
 import React, { useEffect, useRef } from 'react'
+import { $activeSearch } from '@/modules/stores/$activeSearch'
+import { $fontSize } from '@/modules/stores/$fontSize'
 
 export type XTermHandle = {
   write: (data: string) => void
   focus: () => void
+  /** Clears the visible buffer + scrollback (xterm `term.clear()`). */
+  clear: () => void
+  /** Selects all text in the buffer. */
+  selectAll: () => void
+  /**
+   * Jumps to the next match for the current `$activeSearch` query.
+   * Pass `incremental: true` from typing-driven calls so the highlight
+   * stays on the current match while it still matches the growing query
+   * (xterm's addon-search expands the existing selection rather than
+   * advancing past it). Default `false` matches the explicit Cmd+G
+   * "next match" semantic.
+   */
+  searchNext: (opts?: { incremental?: boolean }) => void
+  /** Jumps to the previous match for the current `$activeSearch` query. */
+  searchPrevious: () => void
+  /**
+   * Writes data into the PTY as if the user typed it. Goes through the
+   * same `onData` channel xterm uses for keypresses, so it ends up at
+   * `IPC.writePty(tabKey, data)` via TerminalPane's `handleData`. Raw
+   * — no transformation. Use for flows that genuinely simulate typing
+   * (snippet expand, character-by-character autocomplete).
+   */
+  sendToPty: (data: string) => void
+  /**
+   * Writes data as a paste. If the running app has enabled bracketed
+   * paste mode (DECSET 2004 — Claude Code, Codex, modern shells all
+   * do), wraps the payload with `\x1b[200~` ... `\x1b[201~` so the
+   * app can distinguish paste from typed input. Without that, agents
+   * like Claude Code render dropped file paths as plain text instead
+   * of attaching them as `[image]`.
+   *
+   * If bracketed paste is off (e.g., raw `cat` waiting for input),
+   * sends unwrapped — otherwise the markers would appear as visible
+   * escape garbage.
+   */
+  pasteToPty: (data: string) => void
 }
 
 type Props = {
   onReady: (handle: XTermHandle) => void
   onData: (data: string) => void
   onResize: (cols: number, rows: number) => void
+  /**
+   * True when the pane's tab is currently running an AI agent
+   * (`$tabMeta[tabKey].type === 'agent'`). Drives the Shift+Enter /
+   * Option+Enter newline translation in the key handler — outside agent
+   * tabs those chords pass through unchanged.
+   */
+  isAgent: boolean
   className?: string
 }
 
-// VS Code Dark+ palette, sourced from VS Code's terminal defaults
-// (src/vs/workbench/contrib/terminal/browser/terminalConfiguration.ts, MIT).
-//
-// Deviations from upstream:
-//   - `background` is set to `#0e0f10` (upstream `#1e1e1e`) so the terminal
-//     pane matches the app's --terminal-background CSS variable and blends
-//     with the surrounding chrome.
-//   - `cursorAccent` follows the overridden background. cursorAccent is
-//     drawn behind a block-style cursor and must equal the terminal bg for
-//     the cursor character to invert cleanly; it's a derived value, not an
-//     independent palette choice.
-//
-// Every other slot (foreground, cursor, ANSI 16, selection) is upstream-faithful.
-//
-// `selectionForeground` is the load-bearing addition vs. the previous
-// hand-rolled palette: without it, xterm.js leaves the glyph colour
-// unchanged when a cell is selected, causing the WebGL renderer to
-// re-rasterise glyphs with shifted contrast and producing a visible
-// "font wobble" during selection.
-const DARK_THEME: ITheme = {
-  background: '#0e0f10', // matches --terminal-background (dark)
-  foreground: '#cccccc',
-  cursor: '#aeafad',
-  cursorAccent: '#0e0f10',
-  selectionBackground: '#264f78',
-  selectionForeground: '#ffffff',
-  selectionInactiveBackground: '#3a3d41',
-  black: '#000000',
-  red: '#cd3131',
-  green: '#0dbc79',
-  yellow: '#e5e510',
-  blue: '#2472c8',
-  magenta: '#bc3fbc',
-  cyan: '#11a8cd',
-  white: '#e5e5e5',
-  brightBlack: '#666666',
-  brightRed: '#f14c4c',
-  brightGreen: '#23d18b',
-  brightYellow: '#f5f543',
-  brightBlue: '#3b8eea',
-  brightMagenta: '#d670d6',
-  brightCyan: '#29b8db',
-  brightWhite: '#e5e5e5',
-}
-
-// VS Code Light+ palette, same source as Dark+ above.
-const LIGHT_THEME: ITheme = {
-  background: '#ffffff', // matches --terminal-background (light)
-  foreground: '#333333',
-  cursor: '#333333',
-  cursorAccent: '#ffffff',
-  selectionBackground: '#add6ff',
-  selectionForeground: '#000000',
-  selectionInactiveBackground: '#e5ebf1',
-  black: '#000000',
-  red: '#cd3131',
-  green: '#00bc00',
-  yellow: '#949800',
-  blue: '#0451a5',
-  magenta: '#bc05bc',
-  cyan: '#0598bc',
-  white: '#555555',
-  brightBlack: '#666666',
-  brightRed: '#cd3131',
-  brightGreen: '#14ce14',
-  brightYellow: '#b5ba00',
-  brightBlue: '#0451a5',
-  brightMagenta: '#bc05bc',
-  brightCyan: '#0598bc',
-  brightWhite: '#a5a5a5',
-}
-
-// Returns true when the key combo is claimed by the app's hotkey layer
-// (react-hotkeys-hook at document level). Returning false from xterm's
-// attachCustomKeyEventHandler skips xterm's own handler so the event bubbles.
-function isAppShortcut(e: KeyboardEvent): boolean {
-  if (!e.ctrlKey) return false
-  return (
-    e.key === 'Tab' || // Ctrl+Tab, Ctrl+Shift+Tab
-    e.key === 't' ||
-    e.key === 'T' || // Ctrl+T
-    e.key === 'w' ||
-    e.key === 'W' || // Ctrl+W
-    '123456789'.includes(e.key) // Ctrl+1–9
-  )
-}
+import { handleKeyEvent } from '@/components/XTermTerminal/xterm-terminal.keys'
+import {
+  DARK_THEME,
+  LIGHT_THEME,
+} from '@/components/XTermTerminal/xterm-terminal.themes'
 
 export const XTermTerminal = React.memo(function XTermTerminal({
   onReady,
   onData,
   onResize,
+  isAgent,
   className,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
+  const searchAddonRef = useRef<SearchAddon | null>(null)
+  const fontSize = useStore($fontSize)
 
-  // Keep callbacks in refs so the mount-once effect always calls the latest
-  // versions without needing to re-run when they change reference.
+  // Keep callbacks (and the agent flag) in refs so the mount-once effect
+  // always sees the latest versions without needing to re-run when they
+  // change reference. The custom key handler reads `isAgentRef.current`
+  // so toggling agent state mid-session reflects on the next keypress.
   const onReadyRef = useRef(onReady)
   const onDataRef = useRef(onData)
   const onResizeRef = useRef(onResize)
+  const isAgentRef = useRef(isAgent)
   useEffect(() => {
     onReadyRef.current = onReady
     onDataRef.current = onData
     onResizeRef.current = onResize
-  }, [onReady, onData, onResize])
+    isAgentRef.current = isAgent
+  }, [onReady, onData, onResize, isAgent])
 
   useEffect(() => {
     const container = containerRef.current
@@ -136,11 +108,13 @@ export const XTermTerminal = React.memo(function XTermTerminal({
     const darkMq = window.matchMedia('(prefers-color-scheme: dark)')
 
     // xterm is fully synchronous — no WASM init required.
+    // Read $fontSize.get() (not the closure-captured `fontSize`) so the
+    // mount-once effect picks up any persisted value at construction time.
     const term = new Terminal({
       allowProposedApi: true, // required by @xterm/addon-webgl
       theme: darkMq.matches ? DARK_THEME : LIGHT_THEME,
       fontFamily: '"Geist Mono", "Cascadia Code", "Fira Code", monospace',
-      fontSize: 13,
+      fontSize: $fontSize.get(),
       lineHeight: 1.2,
       cursorBlink: true,
       cursorStyle: 'block',
@@ -150,9 +124,11 @@ export const XTermTerminal = React.memo(function XTermTerminal({
 
     const fitAddon = new FitAddon()
     const unicode11Addon = new Unicode11Addon()
+    const searchAddon = new SearchAddon()
 
     term.loadAddon(fitAddon)
     term.loadAddon(unicode11Addon)
+    term.loadAddon(searchAddon)
     term.open(container)
 
     // Activate Unicode 11 after open() per addon docs.
@@ -160,11 +136,20 @@ export const XTermTerminal = React.memo(function XTermTerminal({
 
     termRef.current = term
     fitAddonRef.current = fitAddon
+    searchAddonRef.current = searchAddon
 
     // Pass app-level shortcuts through to document-level hotkey handlers.
     // xterm calls preventDefault on keys it processes; returning false here
     // short-circuits that so the events bubble up to react-hotkeys-hook.
-    term.attachCustomKeyEventHandler((e) => !isAppShortcut(e))
+    // Single dispatch — see `xterm-terminal.keys.ts` for the precedence
+    // rules between agent-newline / line-edit translation / app shortcut
+    // bubbling / xterm default.
+    term.attachCustomKeyEventHandler((e) =>
+      handleKeyEvent(e, {
+        isAgent: isAgentRef.current,
+        onData: onDataRef.current,
+      }),
+    )
 
     // WebGL renderer — falls back to xterm's built-in DOM renderer on context
     // loss. The canvas addon is not used: it is v5-only and was removed in v6.
@@ -214,6 +199,35 @@ export const XTermTerminal = React.memo(function XTermTerminal({
     onReadyRef.current({
       write: (data) => termRef.current?.write(data),
       focus: () => termRef.current?.focus(),
+      clear: () => termRef.current?.clear(),
+      selectAll: () => termRef.current?.selectAll(),
+      searchNext: (opts) => {
+        const s = $activeSearch.get()
+        if (!s?.query) return
+        searchAddonRef.current?.findNext(s.query, {
+          caseSensitive: s.matchCase,
+          wholeWord: s.wholeWord,
+          regex: s.regex,
+          incremental: opts?.incremental ?? false,
+        })
+      },
+      searchPrevious: () => {
+        const s = $activeSearch.get()
+        if (!s?.query) return
+        searchAddonRef.current?.findPrevious(s.query, {
+          caseSensitive: s.matchCase,
+          wholeWord: s.wholeWord,
+          regex: s.regex,
+        })
+      },
+      sendToPty: (data) => onDataRef.current(data),
+      pasteToPty: (data) => {
+        const term = termRef.current
+        if (!term) return
+        const wrap = term.modes.bracketedPasteMode
+        const payload = wrap ? `\x1b[200~${data}\x1b[201~` : data
+        onDataRef.current(payload)
+      },
     })
 
     return () => {
@@ -224,13 +238,25 @@ export const XTermTerminal = React.memo(function XTermTerminal({
       dataDisposable.dispose()
       resizeDisposable.dispose()
       webglAddon?.dispose()
+      searchAddon.dispose()
       fitAddon.dispose()
       unicode11Addon.dispose()
       term.dispose()
       termRef.current = null
       fitAddonRef.current = null
+      searchAddonRef.current = null
     }
   }, []) // mount once — callbacks are accessed via stable refs
+
+  // React to font-size changes globally. Defer fit() so the canvas
+  // re-rasterizes glyphs at the new size before recomputing cols/rows.
+  useEffect(() => {
+    const term = termRef.current
+    const fit = fitAddonRef.current
+    if (!term || !fit) return
+    term.options.fontSize = fontSize
+    requestAnimationFrame(() => fit.fit())
+  }, [fontSize])
 
   return (
     <div ref={containerRef} className={className ?? 'h-full min-h-0 w-full'} />

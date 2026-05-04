@@ -26,16 +26,14 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/context-menu'
 import { cn } from '@/lib/utils'
-import { $ctrlHeld } from '@/modules/stores/$keyboard'
+import { $metaHeld } from '@/modules/stores/$keyboard'
 import {
   $activeProjectId,
-  $activeTabId,
   navigateToProject,
-  navigateToTab,
+  openNewTabInProject,
 } from '@/modules/stores/$navigation'
 import {
   $projects,
-  addTab,
   removeProject,
   renameProject,
   reorderTabs,
@@ -49,10 +47,10 @@ import type { Project } from '@/screens/workspace/workspace.types'
 export function SidebarProjectRow({ project }: { project: Project }) {
   // undefined means the project pre-dates this field → treat as expanded
   const isOpen = project.isExpanded !== false
-  const ctrlHeld = useStore($ctrlHeld)
+  const metaHeld = useStore($metaHeld)
   const allProjects = useStore($projects)
 
-  // 1-based position in sidebar display order (pinned first) — matches Ctrl+N shortcut.
+  // 1-based position in sidebar display order (pinned first) — matches Cmd+N shortcut.
   // Only projects 1–9 show a badge; beyond that there is no keyboard shortcut.
   const orderedProjects = [
     ...allProjects.filter((p) => p.pinned),
@@ -104,15 +102,7 @@ export function SidebarProjectRow({ project }: { project: Project }) {
   }
 
   function handleAddTab() {
-    const tabId = $activeTabId.get()[project.id]
-    const cwd = tabId
-      ? ($tabMeta.get()[makeTabKey(project.id, tabId)]?.cwd ?? '')
-      : ''
-    const newTab = addTab(project.id, cwd || undefined)
-    if (newTab) {
-      navigateToProject(project.id)
-      navigateToTab(project.id, newTab.id)
-    }
+    openNewTabInProject(project.id)
   }
 
   return (
@@ -181,7 +171,7 @@ export function SidebarProjectRow({ project }: { project: Project }) {
                 if (!renaming) setRenaming(true)
               }}
             >
-              {/* Folder icon with Ctrl+N badge overlay */}
+              {/* Folder icon with Cmd+N badge overlay */}
               <span className="relative flex shrink-0 items-center justify-center">
                 <Folder
                   size={13}
@@ -191,7 +181,7 @@ export function SidebarProjectRow({ project }: { project: Project }) {
                       : 'var(--sidebar-foreground)',
                   }}
                 />
-                {ctrlHeld && projectNumber >= 1 && projectNumber <= 9 && (
+                {metaHeld && projectNumber >= 1 && projectNumber <= 9 && (
                   <span className="absolute -top-1.5 -right-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-primary font-bold text-[8px] text-primary-foreground leading-none">
                     {projectNumber}
                   </span>

@@ -50,8 +50,20 @@ export type TabMeta = {
   git?: GitInfo
   /** Non-zero exit code when status is "error". */
   exitCode?: number
-  /** Agent binary name: "claude-code" | "codex" — set when type is "agent". */
-  agentName?: string
+  /**
+   * Machine-readable agent identifier — `"claude-code"`, `"codex"`, etc.
+   * Use this for routing / lookups, never for display.
+   * Set when type is "agent" by the per-agent mod (ClaudeCodeMod / CodexMod / …).
+   */
+  agentId?: string
+  /**
+   * Human-readable agent name for UI — `"Claude Code"`, `"Codex CLI"`, etc.
+   * Comes from the `AGENT_HOOK_CONFIGS` registry on the Rust side; flows
+   * directly on the `tab_type_changed` event so consumers (badges, OS
+   * notifications, status bar widgets) never need their own
+   * `agent_id → name` lookup table — they read this field as-is.
+   */
+  agentDisplayName?: string
   /** Full command used to launch the agent — set by ClaudeCodeMod / CodexMod. */
   agentCmd?: string
   /**

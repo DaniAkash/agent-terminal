@@ -47,22 +47,32 @@ function dispatch({
       break
     }
     case 'tab_type_changed': {
-      const { type, agent, cmd } = data as {
+      const {
+        type,
+        agent_id: agentId,
+        display_name: agentDisplayName,
+        cmd,
+      } = data as {
         type: TabType
-        agent?: string
+        agent_id?: string
+        display_name?: string
         cmd?: string
       }
       if (type === 'shell') {
         updateTabMeta(tabId, {
           type,
-          agentName: undefined,
+          agentId: undefined,
+          agentDisplayName: undefined,
           agentCmd: undefined,
           // Clear hook-driven state when the agent process exits.
           agentState: undefined,
           agentMessage: undefined,
         })
       } else {
-        updateTabMeta(tabId, { type, agentName: agent, agentCmd: cmd })
+        // agentDisplayName comes from the per-agent mod (which sources it
+        // from AGENT_HOOK_CONFIGS). We never look it up consumer-side —
+        // adding a new agent must work with zero changes here.
+        updateTabMeta(tabId, { type, agentId, agentDisplayName, agentCmd: cmd })
       }
       break
     }

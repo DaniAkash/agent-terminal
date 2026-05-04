@@ -1,0 +1,159 @@
+# Tag-triggered signed + notarized macOS release.
+#
+# Push a `v*` tag (e.g. `v0.1.0`, `v0.2.0-rc.1`) → this workflow builds a
+# universal (Apple Silicon + Intel) signed + notarized .dmg, creates a
+# DRAFT GitHub Release for that tag, and attaches the .dmg.
+#
+# The release stays in DRAFT state. Review it in the GitHub UI and click
+# Publish when ready — never auto-published.
+#
+# How to cut a release:
+#   1. Bump version in package.json + src-tauri/tauri.conf.json + src-tauri/Cargo.toml
+#   2. Commit ("chore(release): vX.Y.Z") — the `chore(release)` scope is
+#      filtered out by cliff.toml so the version-bump commit doesn't show
+#      up in the next release's changelog.
+#   3. git tag vX.Y.Z && git push origin main --tags
+#   4. Wait ~10 min, then publish the draft from the Releases page
+#
+# Required repo secrets (settings → Secrets and variables → Actions):
+#   APPLE_CERTIFICATE           — base64-encoded Developer ID .p12
+#   APPLE_CERTIFICATE_PASSWORD  — password for the .p12
+#   APPLE_SIGNING_IDENTITY      — full Developer ID Application identity string
+#   APPLE_ID                    — Apple ID email
+#   APPLE_PASSWORD              — app-specific password for notarytool
+#   APPLE_TEAM_ID               — Apple Developer team identifier
+#   KEYCHAIN_PASSWORD           — throwaway, unlocks the temp runner keychain
+#
+# All values stored in repo Settings → Secrets and variables → Actions.
+# Never inline any of them here, even as examples.
+
+name: Release (signed + notarized universal macOS build)
+
+on:
+  push:
+    tags:
+      # Only semver-style tags trigger releases — `v0.1.0`, `v1.2.3-rc.1`,
+      # etc. Loose patterns like `v*` would also match `vnext`, `vendor-fix`,
+      # or typo'd tags and silently kick off a notarized build.
+      - 'v[0-9]*'
+
+# `contents: write` is required for softprops/action-gh-release to create
+# the draft release. Everything else stays at default-deny.
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build + draft release (universal macOS, signed + notarized)
+    # Pinned runner (not `macos-latest`) so the build environment is stable
+    # across GitHub's runner rollouts. Bump deliberately when needed.
+    runs-on: macos-15
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Full history is required so git-cliff (and `git describe`) can
+          # walk back to the previous tag and compute the changelog range.
+          fetch-depth: 0
+
+      - name: Install Bun
+        # Reads the version from the checked-in `.bun-version` file —
+        # bumping Bun is a one-line change to that file, reviewed like any
+        # other source change.
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install Rust toolchain (universal targets)
+        # Both targets are required so cargo can produce two binaries that
+        # tauri-action then `lipo`s into a single universal binary.
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Cache Cargo registry + build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          # Cache key carries runner.arch + the target triple so caches are
+          # never reused across architectures or build targets. Different
+          # target triple from the manual workflow → first run of this
+          # workflow will cold-build, which is intentional.
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-universal-apple-darwin-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-cargo-universal-apple-darwin-
+
+      - name: Install frontend dependencies
+        run: bun install
+
+      - name: Determine previous tag (for changelog range)
+        id: previous_tag
+        run: |
+          # `git describe --tags --abbrev=0 --match 'v[0-9]*' <tag>^`
+          # returns the most recent release-style tag *before* <tag>. The
+          # `--match` filter ensures only semver-style `v…` tags count, so
+          # any non-release tags that ever land on the branch can't hijack
+          # the changelog range. For the very first release this errors
+          # (no ancestor release tag exists) — we treat that as the
+          # "first release" case and short-circuit changelog generation.
+          set +e
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 --match 'v[0-9]*' "${GITHUB_REF_NAME}^" 2>/dev/null)
+          set -e
+          if [ -z "$PREVIOUS_TAG" ]; then
+            echo "first_release=true" >> "$GITHUB_OUTPUT"
+            echo "No previous tag found — this is the first release."
+          else
+            echo "first_release=false" >> "$GITHUB_OUTPUT"
+            echo "previous_tag=$PREVIOUS_TAG" >> "$GITHUB_OUTPUT"
+            echo "Previous tag: $PREVIOUS_TAG"
+          fi
+
+      - name: Generate changelog (subsequent releases only)
+        if: steps.previous_tag.outputs.first_release == 'false'
+        id: changelog
+        # git-cliff parses conventional-commit messages between the previous
+        # tag and the new tag, groups them by type per cliff.toml, and
+        # exposes the rendered markdown as `steps.changelog.outputs.content`.
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          args: --strip header ${{ steps.previous_tag.outputs.previous_tag }}..${{ github.ref_name }}
+
+      - name: Tauri build (universal, signed + notarized)
+        # tauri-action handles: cert decode + temp keychain import +
+        # `bun tauri build` + `lipo` of the two arch binaries + signing +
+        # notarization + stapling. Skipping `tagName` means the action does
+        # NOT create a release itself — softprops/action-gh-release does
+        # that in the next step.
+        uses: tauri-apps/tauri-action@v0
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          # Universal binary — single .dmg runs on both Apple Silicon and
+          # Intel Macs. Doubles cold-build time vs arm64-only, but ships a
+          # single artifact users can download regardless of hardware.
+          args: --target universal-apple-darwin
+
+      - name: Create draft release with .dmg attached
+        uses: softprops/action-gh-release@v2
+        with:
+          # DRAFT — never auto-publish. The user reviews the body, edits if
+          # needed, and clicks Publish in the GitHub UI.
+          draft: true
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          # First release → literal "first release" body. Otherwise → the
+          # git-cliff-rendered changelog. The `||` fallback fires when the
+          # changelog step was skipped (its output is empty in that case).
+          body: ${{ steps.changelog.outputs.content || 'first release' }}
+          files: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+          fail_on_unmatched_files: true

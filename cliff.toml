@@ -1,0 +1,50 @@
+# git-cliff configuration — used by the release workflow to turn the
+# conventional-commit history between two tags into grouped release notes.
+#
+# Local use:
+#   git-cliff --config cliff.toml v0.1.0..v0.2.0
+#
+# CI use: see .github/workflows/release.yml — the workflow runs git-cliff
+# automatically for every tag after the first one.
+
+[changelog]
+header = ""
+body = """
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group | upper_first }}
+{% for commit in commits %}
+- {{ commit.message | upper_first }} ({{ commit.id | truncate(length=7, end="") }})
+{% endfor %}
+{% endfor %}
+"""
+trim = true
+footer = ""
+
+[git]
+# Parse commit messages as conventional commits and skip anything that
+# isn't conventional — keeps the release notes free of stray "wip" /
+# "stuff" commits.
+conventional_commits = true
+filter_unconventional = true
+filter_commits = true
+
+# Tag pattern for git-cliff to recognize releases. Matches v0.1.0,
+# v1.2.3-rc.1, etc.
+tag_pattern = "v[0-9].*"
+
+# How each conventional-commit prefix maps to a section in the changelog.
+# Order matters — first match wins.
+commit_parsers = [
+  { message = "^feat", group = "Features" },
+  { message = "^fix", group = "Bug Fixes" },
+  { message = "^perf", group = "Performance" },
+  { message = "^refactor", group = "Refactor" },
+  { message = "^doc", group = "Documentation" },
+  { message = "^style", group = "Styling" },
+  { message = "^test", group = "Tests" },
+  { message = "^chore\\(release\\)", skip = true },
+  { message = "^chore\\(deps\\)", group = "Dependencies" },
+  { message = "^chore", group = "Miscellaneous" },
+  { message = "^ci", group = "CI" },
+  { message = "^revert", group = "Reverts" },
+]

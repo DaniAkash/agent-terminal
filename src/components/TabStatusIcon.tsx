@@ -96,7 +96,7 @@ export function TabStatusIcon({ tabId, active = false }: Props) {
   if (type === 'agent') {
     return (
       <AgentGlyph
-        agent={meta?.agentName ?? ''}
+        agent={meta?.agentId ?? ''}
         state={deriveAgentState(meta)}
         size={14}
         active={active}

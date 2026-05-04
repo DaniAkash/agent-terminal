@@ -1,17 +1,35 @@
 import { useStore } from '@nanostores/react'
+import { getCurrentWebview } from '@tauri-apps/api/webview'
 import { useEffect, useState } from 'react'
 import { useHotkeys } from 'react-hotkeys-hook'
 import { Sidebar } from '@/components/Sidebar/Sidebar'
 import { StatusBar } from '@/components/StatusBar/StatusBar'
-import { $ctrlHeld } from '@/modules/stores/$keyboard'
+import { TerminalSearchBar } from '@/components/TerminalSearchBar/TerminalSearchBar'
+import { formatDropPayload } from '@/modules/dragDrop/dropPayload'
+import { Keys, Mod } from '@/modules/keymap/keys'
+import { $activeSearch, openSearch } from '@/modules/stores/$activeSearch'
+import { $activeTerminalHandle } from '@/modules/stores/$activeTerminal'
+import { popClosedTab } from '@/modules/stores/$closedTabs'
+import {
+  decreaseFontSize,
+  increaseFontSize,
+  resetFontSize,
+} from '@/modules/stores/$fontSize'
+import { $metaHeld } from '@/modules/stores/$keyboard'
 import {
   $activeProjectId,
   $activeTabId,
   navigateToProject,
   navigateToTab,
   onTabRemoved,
+  openNewTabInProject,
 } from '@/modules/stores/$navigation'
-import { $projects, addTab, removeTab } from '@/modules/stores/$projects'
+import {
+  $projects,
+  addTab,
+  removeTab,
+  restoreTabLabel,
+} from '@/modules/stores/$projects'
 import { WorkspaceView } from '@/screens/workspace/WorkspaceView'
 
 /* ---------------------------------------------------------------------------
@@ -45,18 +63,18 @@ export function WorkspaceLayout() {
     }
   }, [projects, activeProjectId])
 
-  // Track whether Ctrl is physically held so the sidebar can show project-number
+  // Track whether Cmd is physically held so the sidebar can show project-number
   // badges. The blur listener resets the flag if the window loses focus while
-  // Ctrl is held — prevents the overlay from getting stuck.
+  // Cmd is held — prevents the overlay from getting stuck.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Control') $ctrlHeld.set(true)
+      if (e.key === 'Meta') $metaHeld.set(true)
     }
     function onKeyUp(e: KeyboardEvent) {
-      if (e.key === 'Control') $ctrlHeld.set(false)
+      if (e.key === 'Meta') $metaHeld.set(false)
     }
     function onBlur() {
-      $ctrlHeld.set(false)
+      $metaHeld.set(false)
     }
 
     window.addEventListener('keydown', onKeyDown)
@@ -69,25 +87,45 @@ export function WorkspaceLayout() {
     }
   }, [])
 
+  // File drag-drop — Tauri 2 captures the OS drop at the window level
+  // (default `dragDropEnabled: true`) and emits a JS event. On `drop` we
+  // shell-quote the paths and paste them into the active terminal's PTY.
+  //
+  // `pasteToPty` (not `sendToPty`) wraps the payload in bracketed paste
+  // markers if the running app enabled them — Claude Code / Codex use
+  // that signal to distinguish paste from typed input and auto-attach
+  // image paths as [image] instead of inserting them as raw text.
+  useEffect(() => {
+    const unlistenPromise = getCurrentWebview().onDragDropEvent((event) => {
+      if (event.payload.type !== 'drop') return
+      const payload = formatDropPayload(event.payload.paths)
+      if (!payload) return
+      // No active terminal (e.g. no projects open yet) — drop silently.
+      // Same posture as the other global handlers.
+      $activeTerminalHandle.get()?.pasteToPty(payload)
+    })
+    return () => {
+      unlistenPromise.then((fn) => fn()).catch(() => {})
+    }
+  }, [])
+
   // enableOnFormTags is required because xterm uses a hidden <textarea> to
   // capture keyboard input. Without it react-hotkeys-hook silently ignores
   // all key events while the terminal has focus.
   const hotkeyOpts = { preventDefault: true, enableOnFormTags: true } as const
 
-  // Ctrl+T — new tab in the active project
+  // ⌘T — new tab in the active project
   useHotkeys(
-    'ctrl+t',
+    `${Mod.Meta}+${Keys.T}`,
     () => {
-      const projectId = $activeProjectId.get()
-      const newTab = addTab(projectId)
-      if (newTab) navigateToTab(projectId, newTab.id)
+      openNewTabInProject($activeProjectId.get())
     },
     hotkeyOpts,
   )
 
-  // Ctrl+W — close the active tab (pinned tabs are protected)
+  // ⌘W — close the active tab (pinned tabs are protected)
   useHotkeys(
-    'ctrl+w',
+    `${Mod.Meta}+${Keys.W}`,
     () => {
       const projectId = $activeProjectId.get()
       const tabId = $activeTabId.get()[projectId] ?? ''
@@ -101,9 +139,15 @@ export function WorkspaceLayout() {
     hotkeyOpts,
   )
 
-  // Ctrl+Tab — cycle to the next tab in the active project (wraps around)
+  // ⌘⇧] / Ctrl+Tab — next tab. Both bound: ⌘⇧] is the macOS browser/iTerm
+  // consensus; Ctrl+Tab is the muscle-memory alias (Apple Terminal default,
+  // VS Code, Chrome). Safe to keep on Ctrl because `Ctrl+Tab` has no
+  // readline binding — `Tab` itself is shell-bound but `Ctrl+Tab` isn't.
   useHotkeys(
-    'ctrl+tab',
+    [
+      `${Mod.Meta}+${Mod.Shift}+${Keys.BracketRight}`,
+      `${Mod.Ctrl}+${Keys.Tab}`,
+    ],
     () => {
       const projectId = $activeProjectId.get()
       const project = $projects.get().find((p) => p.id === projectId)
@@ -116,9 +160,12 @@ export function WorkspaceLayout() {
     hotkeyOpts,
   )
 
-  // Ctrl+Shift+Tab — cycle to the previous tab in the active project (wraps around)
+  // ⌘⇧[ / Ctrl+Shift+Tab — previous tab. Symmetric with next-tab above.
   useHotkeys(
-    'ctrl+shift+tab',
+    [
+      `${Mod.Meta}+${Mod.Shift}+${Keys.BracketLeft}`,
+      `${Mod.Ctrl}+${Mod.Shift}+${Keys.Tab}`,
+    ],
     () => {
       const projectId = $activeProjectId.get()
       const project = $projects.get().find((p) => p.id === projectId)
@@ -132,19 +179,21 @@ export function WorkspaceLayout() {
     hotkeyOpts,
   )
 
-  // Ctrl+1–9 — switch to project N in sidebar display order (pinned first).
-  // Projects beyond 9 have no shortcut.
+  // ⌘1–9 — switch to project N in sidebar display order (pinned first).
+  // Diverges from iTerm2/Ghostty (which use Cmd+1..9 for tab N) — agent-terminal
+  // is project-centric so number-jump operates at the project layer; tab nav
+  // is via Cmd+Shift+]/[ cycling. Projects beyond 9 have no shortcut.
   useHotkeys(
     [
-      'ctrl+1',
-      'ctrl+2',
-      'ctrl+3',
-      'ctrl+4',
-      'ctrl+5',
-      'ctrl+6',
-      'ctrl+7',
-      'ctrl+8',
-      'ctrl+9',
+      `${Mod.Meta}+${Keys.Digit1}`,
+      `${Mod.Meta}+${Keys.Digit2}`,
+      `${Mod.Meta}+${Keys.Digit3}`,
+      `${Mod.Meta}+${Keys.Digit4}`,
+      `${Mod.Meta}+${Keys.Digit5}`,
+      `${Mod.Meta}+${Keys.Digit6}`,
+      `${Mod.Meta}+${Keys.Digit7}`,
+      `${Mod.Meta}+${Keys.Digit8}`,
+      `${Mod.Meta}+${Keys.Digit9}`,
     ],
     (e) => {
       const n = Number.parseInt(e.key, 10) - 1
@@ -155,6 +204,82 @@ export function WorkspaceLayout() {
       ]
       const target = ordered[n]
       if (target) navigateToProject(target.id)
+    },
+    hotkeyOpts,
+  )
+
+  // ⌘= / ⌘+ — increase font size. Bound twice: bare `Equal` for ⌘= and
+  // shifted `Equal` for ⌘+ (which is Shift+= on US keyboards). Both
+  // presses use the same physical key (event.code "Equal") and only
+  // differ by the shift modifier.
+  useHotkeys(
+    [`${Mod.Meta}+${Keys.Equal}`, `${Mod.Meta}+${Mod.Shift}+${Keys.Equal}`],
+    () => increaseFontSize(),
+    hotkeyOpts,
+  )
+  // ⌘- — decrease font size
+  useHotkeys(`${Mod.Meta}+${Keys.Minus}`, () => decreaseFontSize(), hotkeyOpts)
+  // ⌘0 — reset font size to default
+  useHotkeys(`${Mod.Meta}+${Keys.Digit0}`, () => resetFontSize(), hotkeyOpts)
+
+  // ⌘K — clear screen + scrollback in the active terminal
+  useHotkeys(
+    `${Mod.Meta}+${Keys.K}`,
+    () => $activeTerminalHandle.get()?.clear(),
+    hotkeyOpts,
+  )
+
+  // ⌘A — select all in the active terminal
+  useHotkeys(
+    `${Mod.Meta}+${Keys.A}`,
+    () => $activeTerminalHandle.get()?.selectAll(),
+    hotkeyOpts,
+  )
+
+  // ⌘⇧T — reopen the last closed tab in its original project
+  useHotkeys(
+    `${Mod.Meta}+${Mod.Shift}+${Keys.T}`,
+    () => {
+      const closed = popClosedTab()
+      if (!closed) return
+      const project = $projects.get().find((p) => p.id === closed.projectId)
+      if (!project) return // project itself was deleted; drop silently
+      const newTab = addTab(closed.projectId, closed.cwd)
+      if (!newTab) return
+      // addTab generates a fresh dedupe-safe label; restore the original
+      // via restoreTabLabel so the change persists across app restart.
+      // restoreTabLabel (vs renameTab) avoids setting userRenamed since
+      // we're replaying the tab's prior label, not making a user edit.
+      restoreTabLabel(closed.projectId, newTab.id, closed.label)
+      navigateToTab(closed.projectId, newTab.id)
+    },
+    hotkeyOpts,
+  )
+
+  // ⌘F — open the find overlay over the active terminal
+  useHotkeys(
+    `${Mod.Meta}+${Keys.F}`,
+    () => {
+      const projectId = $activeProjectId.get()
+      const tabId = $activeTabId.get()[projectId] ?? ''
+      if (!tabId) return
+      openSearch(`${projectId}:${tabId}`)
+    },
+    hotkeyOpts,
+  )
+
+  // ⌘G / ⌘⇧G — find next / previous (only meaningful while bar is open)
+  useHotkeys(
+    `${Mod.Meta}+${Keys.G}`,
+    () => {
+      if ($activeSearch.get()) $activeTerminalHandle.get()?.searchNext()
+    },
+    hotkeyOpts,
+  )
+  useHotkeys(
+    `${Mod.Meta}+${Mod.Shift}+${Keys.G}`,
+    () => {
+      if ($activeSearch.get()) $activeTerminalHandle.get()?.searchPrevious()
     },
     hotkeyOpts,
   )
@@ -178,6 +303,9 @@ export function WorkspaceLayout() {
               </div>
             )
           })}
+          {/* Find-in-scrollback overlay floats over the active terminal,
+              regardless of which project/tab is visible. */}
+          <TerminalSearchBar />
         </div>
       </div>
       <StatusBar />
