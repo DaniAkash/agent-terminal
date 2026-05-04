@@ -5,7 +5,7 @@
 
   **A terminal workspace built around AI coding agents.**
 
-  [![Download](https://img.shields.io/github/v/release/DaniAkash/agent-terminal?include_prereleases&label=Download%20DMG&color=blue)](https://github.com/DaniAkash/agent-terminal/releases/download/v0.1.2/Agent.Terminal_0.1.2_universal.dmg)
+  [![Download](https://img.shields.io/github/v/release/DaniAkash/agent-terminal?include_prereleases&label=Download%20DMG&color=blue)](https://github.com/DaniAkash/agent-terminal/releases/download/v0.1.3/Agent.Terminal_0.1.3_universal.dmg)
   [![Status](https://img.shields.io/badge/status-pre--alpha-orange)](#status)
   [![Platform](https://img.shields.io/badge/platform-macOS-lightgrey)](#download)
 </div>
