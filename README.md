@@ -3,7 +3,6 @@
 
   # Agent Terminal
 
-**⚠️ Early stage — under heavy active development. APIs and UI will change.**
   **A terminal workspace built around AI coding agents.**
 
   [![Download](https://img.shields.io/github/v/release/DaniAkash/agent-terminal?include_prereleases&label=Download%20DMG&color=blue)](https://github.com/DaniAkash/agent-terminal/releases/latest)
@@ -11,9 +10,9 @@
   [![Platform](https://img.shields.io/badge/platform-macOS-lightgrey)](#download)
 </div>
 
-<a href="https://www.producthunt.com/products/agent-terminal?embed=true&utm_source=badge-featured&utm_medium=badge&utm_campaign=badge-agent-terminal" target="_blank"><img src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1136595&theme=light&t=1777623264721" alt="Agent terminal - One terminal. Every agent. Total clarity. | Product Hunt" width="250" height="54" /></a>
-
-
+<p align="center">
+  <a href="https://www.producthunt.com/products/agent-terminal?embed=true&utm_source=badge-featured&utm_medium=badge&utm_campaign=badge-agent-terminal" target="_blank"><img src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1136595&theme=light&t=1777623264721" alt="Agent terminal - One terminal. Every agent. Total clarity. | Product Hunt" width="250" height="54" /></a>
+</p>
 
 ---
 
