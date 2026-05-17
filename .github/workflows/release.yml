@@ -207,7 +207,51 @@ jobs:
           # the final `files:` glob doesn't need a level of indirection.
           merge-multiple: true
 
-      - name: Create draft release with .dmgs + updater bundles attached
+      - name: Generate latest.json manifest
+        # Discovers asset filenames from the downloaded artifacts so the
+        # script doesn't have to predict Tauri's productName-to-filename
+        # sanitisation (current bundler converts "Agent Terminal" →
+        # "Agent.Terminal" in DMGs; .app.tar.gz follows the same shape).
+        # The URLs embedded in the manifest use the basenames of the
+        # discovered files, which is what GitHub serves as
+        # /releases/download/<tag>/<basename>.
+        run: |
+          set -euo pipefail
+          mkdir -p manifest
+          VERSION="${GITHUB_REF_NAME#v}"
+
+          AARCH64_TAR=$(ls artifacts/*aarch64*.app.tar.gz | head -n 1)
+          X64_TAR=$(ls artifacts/*x64*.app.tar.gz | head -n 1)
+          AARCH64_BASENAME=$(basename "${AARCH64_TAR}")
+          X64_BASENAME=$(basename "${X64_TAR}")
+          AARCH64_SIG=$(cat "${AARCH64_TAR}.sig")
+          X64_SIG=$(cat "${X64_TAR}.sig")
+          PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+          jq -n \
+            --arg version "${VERSION}" \
+            --arg notes "${RELEASE_NOTES}" \
+            --arg pub_date "${PUB_DATE}" \
+            --arg aarch64_sig "${AARCH64_SIG}" \
+            --arg aarch64_url "https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/${AARCH64_BASENAME}" \
+            --arg x64_sig "${X64_SIG}" \
+            --arg x64_url "https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/${X64_BASENAME}" \
+            '{
+              version: $version,
+              notes: $notes,
+              pub_date: $pub_date,
+              platforms: {
+                "darwin-aarch64": { signature: $aarch64_sig, url: $aarch64_url },
+                "darwin-x86_64":  { signature: $x64_sig,     url: $x64_url     }
+              }
+            }' > manifest/latest.json
+
+          echo "Generated latest.json:"
+          cat manifest/latest.json
+        env:
+          RELEASE_NOTES: ${{ needs.changelog.outputs.content }}
+
+      - name: Create draft release with .dmgs + updater bundles + manifest
         uses: softprops/action-gh-release@v2
         with:
           # DRAFT — never auto-publish. The user reviews the body, edits
@@ -216,13 +260,32 @@ jobs:
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
           body: ${{ needs.changelog.outputs.content }}
-          # Attach .dmg (installs), .app.tar.gz (updater payload), and
-          # .app.tar.gz.sig (minisign signature consumed by the updater
-          # plugin to verify the payload before installing). The manifest
-          # that points at the .app.tar.gz URLs is produced in a follow-up
-          # workflow change.
+          # Attach .dmg (installs), .app.tar.gz (updater payload),
+          # .app.tar.gz.sig (minisign signature), and latest.json (the
+          # manifest — duplicated here as an audit copy of what was
+          # published to the release-manifest branch).
           files: |
             artifacts/*.dmg
             artifacts/*.app.tar.gz
             artifacts/*.app.tar.gz.sig
+            manifest/latest.json
           fail_on_unmatched_files: true
+
+      - name: Publish manifest to release-manifest branch
+        # Sidesteps GitHub's /releases/latest/download/ redirect (which
+        # excludes pre-releases). The manifest is served at:
+        #
+        #   https://raw.githubusercontent.com/${{ github.repository }}/release-manifest/latest.json
+        #
+        # raw.githubusercontent.com caches for ~5 min — installed apps
+        # see new releases within that window. The release-manifest
+        # branch must exist as an empty orphan branch before the first
+        # run; creating it from main would carry the codebase into the
+        # manifest branch (handled in the bootstrap step documented
+        # alongside this change).
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: release-manifest
+          publish_dir: ./manifest
+          commit_message: "release: ${{ github.ref_name }} manifest"
