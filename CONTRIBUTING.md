@@ -13,6 +13,7 @@ Thank you for your interest in contributing. Agent Terminal is in early active d
 - [Adding a new agent (MOD system guide)](#adding-a-new-agent-mod-system-guide)
 - [Reporting bugs](#reporting-bugs)
 - [Requesting features](#requesting-features)
+- [Releasing](#releasing)
 
 ---
 
@@ -288,6 +289,28 @@ Open an issue on GitHub with:
 
 - **New agent support:** [request on X →](https://x.com/dani_akash_)
 - **Other features:** open a GitHub issue with the `enhancement` label and describe your use case
+
+---
+
+## Releasing
+
+Releases are tag-triggered. Pushing a `vX.Y.Z` (or `vX.Y.Z-rc.N`) tag fires the workflow, which builds, signs, and notarizes per-arch `.dmg`s in parallel, attaches them plus the updater bundles to a draft GitHub release, and publishes the updater manifest to the `release-manifest` branch.
+
+```sh
+# Bump version in three places so the tag matches the bundle metadata
+# (package.json, src-tauri/tauri.conf.json, src-tauri/Cargo.toml)
+git commit -m "chore(release): vX.Y.Z"   # `chore(release)` is filtered out of the next changelog
+git tag vX.Y.Z
+git push origin main --tags
+```
+
+The workflow takes ~15 min. When it finishes:
+
+1. Review the draft on the [releases page](https://github.com/DaniAkash/agent-terminal/releases). Both per-arch `.dmg`s, both `.app.tar.gz`s, both `.sig`s, and `latest.json` should be attached.
+2. Verify `https://raw.githubusercontent.com/DaniAkash/agent-terminal/release-manifest/latest.json` reflects the new version (cached ~5 min by raw.githubusercontent.com).
+3. Click **Publish**. Installed apps see the update on their next launch (or immediately via **Check for Updates…**).
+
+Pre-releases work the same way — tick the "pre-release" box when publishing. The manifest endpoint isn't gated by the "Latest" flag, so installed apps still see pre-releases.
 
 ---
 

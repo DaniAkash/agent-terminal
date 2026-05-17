@@ -46,6 +46,12 @@ Not sure which? Click the Apple menu → About This Mac. "Chip: Apple M…" mean
 
 That's it. No config files, no daemons, no tmux setup.
 
+### Updates
+
+Agent Terminal checks for new versions on launch and via the app menu (**Agent Terminal → Check for Updates…**). When an update is available, a small banner offers to install it; clicking through downloads, verifies, and restarts into the new version.
+
+Versions older than the first release with built-in updates can't auto-update — install the latest `.dmg` manually one last time and future releases will arrive in-app.
+
 ---
 
 ## What you actually get
