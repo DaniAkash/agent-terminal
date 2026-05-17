@@ -16,13 +16,15 @@
 #   4. Wait ~15 min, then publish the draft from the Releases page
 #
 # Required repo secrets (settings → Secrets and variables → Actions):
-#   APPLE_CERTIFICATE           — base64-encoded Developer ID .p12
-#   APPLE_CERTIFICATE_PASSWORD  — password for the .p12
-#   APPLE_SIGNING_IDENTITY      — full Developer ID Application identity string
-#   APPLE_ID                    — Apple ID email
-#   APPLE_PASSWORD              — app-specific password for notarytool
-#   APPLE_TEAM_ID               — Apple Developer team identifier
-#   KEYCHAIN_PASSWORD           — throwaway, unlocks the temp runner keychain
+#   APPLE_CERTIFICATE                    — base64-encoded Developer ID .p12
+#   APPLE_CERTIFICATE_PASSWORD           — password for the .p12
+#   APPLE_SIGNING_IDENTITY               — full Developer ID Application identity string
+#   APPLE_ID                             — Apple ID email
+#   APPLE_PASSWORD                       — app-specific password for notarytool
+#   APPLE_TEAM_ID                        — Apple Developer team identifier
+#   KEYCHAIN_PASSWORD                    — throwaway, unlocks the temp runner keychain
+#   TAURI_SIGNING_PRIVATE_KEY            — minisign private key for updater bundles
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD   — password for the minisign key
 #
 # All values stored in repo Settings → Secrets and variables → Actions.
 # Never inline any of them here, even as examples.
@@ -161,19 +163,28 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Updater bundle signing (minisign). Without these set, the
+          # "app" target in tauri.conf.json bundle.targets refuses to
+          # produce .app.tar.gz + .sig — set both secrets before cutting
+          # the first tag after this lands.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           args: --target ${{ matrix.target }}
 
-      - name: Upload .dmg as workflow artifact
-        # Hands the bundle off to the `release` job (which runs on Linux,
-        # so it can't reach into this macOS runner's filesystem directly).
-        # Short retention because the .dmg also lands on the GitHub
-        # Release within minutes — this is a job-to-job carrier, not a
-        # long-term archive.
+      - name: Upload .dmg + updater bundle as workflow artifact
+        # Hands every release artifact for this arch off to the `release`
+        # job (Linux runner, can't reach into this macOS runner's
+        # filesystem directly). Short retention because everything also
+        # lands on the GitHub Release within minutes — workflow artifacts
+        # are a job-to-job carrier, not a long-term archive.
         uses: actions/upload-artifact@v4
         with:
-          name: dmg-${{ matrix.target }}
-          path: src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+          name: bundles-${{ matrix.target }}
+          path: |
+            src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+            src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz
+            src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz.sig
           if-no-files-found: error
           retention-days: 7
 
@@ -190,13 +201,13 @@ jobs:
       - name: Download all build artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: dmg-*
+          pattern: bundles-*
           path: artifacts
           # `merge-multiple` flattens the per-matrix subdirectories so
           # the final `files:` glob doesn't need a level of indirection.
           merge-multiple: true
 
-      - name: Create draft release with .dmgs attached
+      - name: Create draft release with .dmgs + updater bundles attached
         uses: softprops/action-gh-release@v2
         with:
           # DRAFT — never auto-publish. The user reviews the body, edits
@@ -205,5 +216,13 @@ jobs:
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
           body: ${{ needs.changelog.outputs.content }}
-          files: artifacts/*.dmg
+          # Attach .dmg (installs), .app.tar.gz (updater payload), and
+          # .app.tar.gz.sig (minisign signature consumed by the updater
+          # plugin to verify the payload before installing). The manifest
+          # that points at the .app.tar.gz URLs is produced in a follow-up
+          # workflow change.
+          files: |
+            artifacts/*.dmg
+            artifacts/*.app.tar.gz
+            artifacts/*.app.tar.gz.sig
           fail_on_unmatched_files: true

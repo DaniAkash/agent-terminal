@@ -38,7 +38,7 @@ use std::sync::{Arc, Mutex};
 pub fn run() {
     let pty_map: PtyMap = Arc::new(Mutex::new(HashMap::new()));
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         // Single-instance MUST be the first plugin so duplicate launches
         // (notification clicks routing to a fresh .app, double-clicking the
         // dock icon, etc.) get intercepted before any other plugin tries to
@@ -53,7 +53,17 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_notification::init());
+
+    // Self-update — only the prod-namespaced build registers the plugin.
+    // The dev bundle id (com.daniakash.agent-terminal-dev) cannot be the
+    // legitimate target of a manifest signed for the prod app, so
+    // dev-instance builds skip the plugin entirely rather than risk an
+    // update attempt that overlays a foreign bundle.
+    #[cfg(not(feature = "dev-instance"))]
+    let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+
+    builder
         .setup(|app| {
             // Custom macOS menu — omits the default items whose shortcuts
             // conflict with our keyboard handlers:

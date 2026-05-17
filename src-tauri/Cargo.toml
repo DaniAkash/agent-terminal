@@ -34,6 +34,11 @@ tauri-plugin-single-instance = "2"
 # attributes notifications to com.apple.Terminal, which is fine for visibility
 # but means clicks don't route back to us — see the focus-event heuristic.
 tauri-plugin-notification = "2"
+# Self-update via signed Tauri update bundles. Disabled at build time in
+# the `dev-instance` feature (dev builds share the prod manifest endpoint
+# only by accident; letting them auto-update would overlay the prod .app
+# onto the dev bundle id).
+tauri-plugin-updater = "2"
 # Release-mode notifications (debug_assertions = false). Wraps the native
 # UNUserNotificationCenter on macOS so we get real per-notification click
 # callbacks via UNUserNotificationCenterDelegate. Mock mode falls back to

@@ -27,7 +27,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["dmg", "app"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -39,6 +39,14 @@
       "minimumSystemVersion": "10.15",
       "hardenedRuntime": true,
       "entitlements": "macos/entitlements.plist"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://raw.githubusercontent.com/DaniAkash/agent-terminal/release-manifest/latest.json"
+      ],
+      "pubkey": "REPLACE_BEFORE_MERGE_SEE_PR_DESCRIPTION"
     }
   }
 }
