@@ -5,6 +5,7 @@ import { useHotkeys } from 'react-hotkeys-hook'
 import { Sidebar } from '@/components/Sidebar/Sidebar'
 import { StatusBar } from '@/components/StatusBar/StatusBar'
 import { TerminalSearchBar } from '@/components/TerminalSearchBar/TerminalSearchBar'
+import { UpdateBanner } from '@/components/UpdateBanner/UpdateBanner'
 import { formatDropPayload } from '@/modules/dragDrop/dropPayload'
 import { Keys, Mod } from '@/modules/keymap/keys'
 import { $activeSearch, openSearch } from '@/modules/stores/$activeSearch'
@@ -15,7 +16,6 @@ import {
   increaseFontSize,
   resetFontSize,
 } from '@/modules/stores/$fontSize'
-import { $metaHeld } from '@/modules/stores/$keyboard'
 import {
   $activeProjectId,
   $activeTabId,
@@ -30,11 +30,9 @@ import {
   removeTab,
   restoreTabLabel,
 } from '@/modules/stores/$projects'
+import { useMetaHeldTracker } from '@/modules/stores/useMetaHeldTracker'
+import { useUpdaterWiring } from '@/modules/updater/useUpdaterWiring'
 import { WorkspaceView } from '@/screens/workspace/WorkspaceView'
-
-/* ---------------------------------------------------------------------------
- * WorkspaceLayout
- * -------------------------------------------------------------------------*/
 
 export function WorkspaceLayout() {
   const projects = useStore($projects)
@@ -63,29 +61,7 @@ export function WorkspaceLayout() {
     }
   }, [projects, activeProjectId])
 
-  // Track whether Cmd is physically held so the sidebar can show project-number
-  // badges. The blur listener resets the flag if the window loses focus while
-  // Cmd is held — prevents the overlay from getting stuck.
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Meta') $metaHeld.set(true)
-    }
-    function onKeyUp(e: KeyboardEvent) {
-      if (e.key === 'Meta') $metaHeld.set(false)
-    }
-    function onBlur() {
-      $metaHeld.set(false)
-    }
-
-    window.addEventListener('keydown', onKeyDown)
-    window.addEventListener('keyup', onKeyUp)
-    window.addEventListener('blur', onBlur)
-    return () => {
-      window.removeEventListener('keydown', onKeyDown)
-      window.removeEventListener('keyup', onKeyUp)
-      window.removeEventListener('blur', onBlur)
-    }
-  }, [])
+  useMetaHeldTracker()
 
   // File drag-drop — Tauri 2 captures the OS drop at the window level
   // (default `dragDropEnabled: true`) and emits a JS event. On `drop` we
@@ -108,6 +84,8 @@ export function WorkspaceLayout() {
       unlistenPromise.then((fn) => fn()).catch(() => {})
     }
   }, [])
+
+  useUpdaterWiring()
 
   // enableOnFormTags is required because xterm uses a hidden <textarea> to
   // capture keyboard input. Without it react-hotkeys-hook silently ignores
@@ -309,6 +287,7 @@ export function WorkspaceLayout() {
         </div>
       </div>
       <StatusBar />
+      <UpdateBanner />
     </div>
   )
 }
