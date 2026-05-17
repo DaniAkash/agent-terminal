@@ -5,7 +5,7 @@
 
   **A terminal workspace built around AI coding agents.**
 
-  [![Download](https://img.shields.io/github/v/release/DaniAkash/agent-terminal?include_prereleases&label=Download%20DMG&color=blue)](https://github.com/DaniAkash/agent-terminal/releases/download/v0.1.3/Agent.Terminal_0.1.3_universal.dmg)
+  [![Latest release](https://img.shields.io/github/v/release/DaniAkash/agent-terminal?include_prereleases&label=latest&color=blue)](https://github.com/DaniAkash/agent-terminal/releases)
   [![Status](https://img.shields.io/badge/status-pre--alpha-orange)](#status)
   [![Platform](https://img.shields.io/badge/platform-macOS-lightgrey)](#download)
 </div>
@@ -32,9 +32,17 @@ Agent Terminal is a terminal that knows the difference between a shell and an ag
 
 ## Download
 
-1. Grab the latest `.dmg` (universal binary — Apple Silicon + Intel) from the [releases page](https://github.com/DaniAkash/agent-terminal/releases).
+Pick the `.dmg` that matches your Mac on the [releases page](https://github.com/DaniAkash/agent-terminal/releases):
+
+| Apple Silicon (M1 / M2 / M3 / M4) | Intel |
+| --- | --- |
+| `agent-terminal_<version>_aarch64.dmg` | `agent-terminal_<version>_x64.dmg` |
+
+Not sure which? Click the Apple menu → About This Mac. "Chip: Apple M…" means Apple Silicon; "Processor: Intel…" means Intel.
+
+1. Download the matching `.dmg`.
 2. Open it, drag **Agent Terminal** to your Applications folder.
-3. First launch: right-click → Open (the app isn't notarised yet, so macOS Gatekeeper will warn — pre-alpha).
+3. Launch.
 
 That's it. No config files, no daemons, no tmux setup.
 

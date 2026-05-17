@@ -1,8 +1,8 @@
 # Tag-triggered signed + notarized macOS release.
 #
-# Push a `v*` tag (e.g. `v0.1.0`, `v0.2.0-rc.1`) → this workflow builds a
-# universal (Apple Silicon + Intel) signed + notarized .dmg, creates a
-# DRAFT GitHub Release for that tag, and attaches the .dmg.
+# Push a `v*` tag (e.g. `v0.1.0`, `v0.2.0-rc.1`) → this workflow builds
+# both per-arch signed + notarized .dmgs in parallel, creates a DRAFT
+# GitHub Release for that tag, and attaches both .dmgs.
 #
 # The release stays in DRAFT state. Review it in the GitHub UI and click
 # Publish when ready — never auto-published.
@@ -13,7 +13,7 @@
 #      filtered out by cliff.toml so the version-bump commit doesn't show
 #      up in the next release's changelog.
 #   3. git tag vX.Y.Z && git push origin main --tags
-#   4. Wait ~10 min, then publish the draft from the Releases page
+#   4. Wait ~15 min, then publish the draft from the Releases page
 #
 # Required repo secrets (settings → Secrets and variables → Actions):
 #   APPLE_CERTIFICATE           — base64-encoded Developer ID .p12
@@ -27,7 +27,7 @@
 # All values stored in repo Settings → Secrets and variables → Actions.
 # Never inline any of them here, even as examples.
 
-name: Release (signed + notarized universal macOS build)
+name: Release (signed + notarized per-arch macOS builds)
 
 on:
   push:
@@ -43,13 +43,18 @@ permissions:
   contents: write
 
 jobs:
-  release:
-    name: Build + draft release (universal macOS, signed + notarized)
-    # Pinned runner (not `macos-latest`) so the build environment is stable
-    # across GitHub's runner rollouts. Bump deliberately when needed.
-    runs-on: macos-15
-    timeout-minutes: 90
-
+  # Job 1: figure out the changelog ONCE, on a free Linux runner, and
+  # pass it to the macOS build matrix + final release step via job
+  # outputs. Doing it in each matrix entry would duplicate the work and
+  # risk cliff drift between them.
+  changelog:
+    name: Compute changelog
+    runs-on: ubuntu-latest
+    outputs:
+      first_release: ${{ steps.previous_tag.outputs.first_release }}
+      # Fallback to the literal "first release" string when changelog
+      # step was skipped (very first tag has no ancestor to diff against).
+      content: ${{ steps.changelog.outputs.content || 'first release' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -57,37 +62,6 @@ jobs:
           # Full history is required so git-cliff (and `git describe`) can
           # walk back to the previous tag and compute the changelog range.
           fetch-depth: 0
-
-      - name: Install Bun
-        # Reads the version from the checked-in `.bun-version` file —
-        # bumping Bun is a one-line change to that file, reviewed like any
-        # other source change.
-        uses: oven-sh/setup-bun@v2
-
-      - name: Install Rust toolchain (universal targets)
-        # Both targets are required so cargo can produce two binaries that
-        # tauri-action then `lipo`s into a single universal binary.
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
-
-      - name: Cache Cargo registry + build artifacts
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            src-tauri/target
-          # Cache key carries runner.arch + the target triple so caches are
-          # never reused across architectures or build targets. Different
-          # target triple from the manual workflow → first run of this
-          # workflow will cold-build, which is intentional.
-          key: ${{ runner.os }}-${{ runner.arch }}-cargo-universal-apple-darwin-${{ hashFiles('src-tauri/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-cargo-universal-apple-darwin-
-
-      - name: Install frontend dependencies
-        run: bun install
 
       - name: Determine previous tag (for changelog range)
         id: previous_tag
@@ -122,12 +96,62 @@ jobs:
           config: cliff.toml
           args: --strip header ${{ steps.previous_tag.outputs.previous_tag }}..${{ github.ref_name }}
 
-      - name: Tauri build (universal, signed + notarized)
+  # Job 2: build + sign + notarize each macOS arch in parallel. Each
+  # matrix entry produces ONE per-arch .dmg; the matching .dmg name
+  # contains the arch suffix (Tauri bundler default — `_aarch64` /
+  # `_x64`). `fail-fast: false` so a flake on one arch doesn't cancel
+  # the other; the `release` job's `needs:` will simply not be
+  # satisfied and no draft is created — re-run the failing entry.
+  build:
+    name: Build ${{ matrix.target }}
+    needs: [changelog]
+    runs-on: macos-15
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - aarch64-apple-darwin
+          - x86_64-apple-darwin
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Bun
+        # Reads the version from the checked-in `.bun-version` file —
+        # bumping Bun is a one-line change to that file, reviewed like any
+        # other source change.
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Cargo registry + build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          # Cache key carries the target triple so the two matrix entries
+          # keep separate caches. Different triples = different compiled
+          # artifacts; sharing the cache would just cause misses every time.
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ matrix.target }}-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-cargo-${{ matrix.target }}-
+
+      - name: Install frontend dependencies
+        run: bun install
+
+      - name: Tauri build (signed + notarized)
         # tauri-action handles: cert decode + temp keychain import +
-        # `bun tauri build` + `lipo` of the two arch binaries + signing +
-        # notarization + stapling. Skipping `tagName` means the action does
-        # NOT create a release itself — softprops/action-gh-release does
-        # that in the next step.
+        # `bun tauri build` + signing + notarization + stapling. Skipping
+        # `tagName` means the action does NOT create a release itself —
+        # the dedicated `release` job below does that, once both matrix
+        # entries succeed.
         uses: tauri-apps/tauri-action@v0
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -138,22 +162,48 @@ jobs:
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
-          # Universal binary — single .dmg runs on both Apple Silicon and
-          # Intel Macs. Doubles cold-build time vs arm64-only, but ships a
-          # single artifact users can download regardless of hardware.
-          args: --target universal-apple-darwin
+          args: --target ${{ matrix.target }}
 
-      - name: Create draft release with .dmg attached
+      - name: Upload .dmg as workflow artifact
+        # Hands the bundle off to the `release` job (which runs on Linux,
+        # so it can't reach into this macOS runner's filesystem directly).
+        # Short retention because the .dmg also lands on the GitHub
+        # Release within minutes — this is a job-to-job carrier, not a
+        # long-term archive.
+        uses: actions/upload-artifact@v4
+        with:
+          name: dmg-${{ matrix.target }}
+          path: src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+          retention-days: 7
+
+  # Job 3: create the draft release with BOTH .dmgs attached. Lives
+  # outside the matrix because softprops/action-gh-release running inside
+  # the matrix would create two separate releases (one per matrix entry)
+  # and the second would 422 because the tag already has a release.
+  # Linux runner — this job just downloads artifacts + POSTs to the API.
+  release:
+    name: Create draft release
+    needs: [changelog, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: dmg-*
+          path: artifacts
+          # `merge-multiple` flattens the per-matrix subdirectories so
+          # the final `files:` glob doesn't need a level of indirection.
+          merge-multiple: true
+
+      - name: Create draft release with .dmgs attached
         uses: softprops/action-gh-release@v2
         with:
-          # DRAFT — never auto-publish. The user reviews the body, edits if
-          # needed, and clicks Publish in the GitHub UI.
+          # DRAFT — never auto-publish. The user reviews the body, edits
+          # if needed, and clicks Publish in the GitHub UI.
           draft: true
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
-          # First release → literal "first release" body. Otherwise → the
-          # git-cliff-rendered changelog. The `||` fallback fires when the
-          # changelog step was skipped (its output is empty in that case).
-          body: ${{ steps.changelog.outputs.content || 'first release' }}
-          files: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+          body: ${{ needs.changelog.outputs.content }}
+          files: artifacts/*.dmg
           fail_on_unmatched_files: true
