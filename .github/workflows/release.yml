@@ -172,6 +172,30 @@ jobs:
         with:
           args: --target ${{ matrix.target }}
 
+      - name: Suffix updater bundle with arch
+        # Tauri appends `_aarch64` / `_x64` to DMG filenames automatically
+        # but does NOT do the same for `.app.tar.gz` — both matrix entries
+        # produce `<ProductName>.app.tar.gz`. Two consequences:
+        #   1. GitHub Releases reject a second asset with a duplicate name,
+        #      so only one tarball would attach to the draft release.
+        #   2. The manifest script can't tell the arches apart by filename.
+        # Rename here so downstream steps (upload, release attach, manifest
+        # generation) can all rely on a stable arch suffix.
+        run: |
+          set -euo pipefail
+          cd src-tauri/target/${{ matrix.target }}/release/bundle/macos
+          case "${{ matrix.target }}" in
+            aarch64-apple-darwin) ARCH=aarch64 ;;
+            x86_64-apple-darwin)  ARCH=x64 ;;
+            *) echo "Unknown target ${{ matrix.target }}"; exit 1 ;;
+          esac
+          for f in *.app.tar.gz; do
+            base="${f%.app.tar.gz}"
+            mv -- "$f"     "${base}_${ARCH}.app.tar.gz"
+            mv -- "$f.sig" "${base}_${ARCH}.app.tar.gz.sig"
+          done
+          ls -la
+
       - name: Upload .dmg + updater bundle as workflow artifact
         # Hands every release artifact for this arch off to the `release`
         # job (Linux runner, can't reach into this macOS runner's
