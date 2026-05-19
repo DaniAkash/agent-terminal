@@ -215,13 +215,18 @@ jobs:
         # The URLs embedded in the manifest use the basenames of the
         # discovered files, which is what GitHub serves as
         # /releases/download/<tag>/<basename>.
+        #
+        # `find` (not a flat ls) because upload-artifact@v4 strips only the
+        # longest common parent of the uploaded paths — here that's
+        # `release/bundle/`, so files land under `artifacts/dmg/...` and
+        # `artifacts/macos/...` after download, not flat in `artifacts/`.
         run: |
           set -euo pipefail
           mkdir -p manifest
           VERSION="${GITHUB_REF_NAME#v}"
 
-          AARCH64_TAR=$(ls artifacts/*aarch64*.app.tar.gz | head -n 1)
-          X64_TAR=$(ls artifacts/*x64*.app.tar.gz | head -n 1)
+          AARCH64_TAR=$(find artifacts -type f -name '*aarch64*.app.tar.gz' | head -n 1)
+          X64_TAR=$(find artifacts -type f -name '*x64*.app.tar.gz' | head -n 1)
           AARCH64_BASENAME=$(basename "${AARCH64_TAR}")
           X64_BASENAME=$(basename "${X64_TAR}")
           AARCH64_SIG=$(cat "${AARCH64_TAR}.sig")
@@ -264,10 +269,14 @@ jobs:
           # .app.tar.gz.sig (minisign signature), and latest.json (the
           # manifest — duplicated here as an audit copy of what was
           # published to the release-manifest branch).
+          #
+          # `artifacts/**/*` because upload-artifact@v4 preserves the
+          # per-arch `dmg/` and `macos/` subdirectories (longest common
+          # parent of the uploaded paths is `release/bundle/`).
           files: |
-            artifacts/*.dmg
-            artifacts/*.app.tar.gz
-            artifacts/*.app.tar.gz.sig
+            artifacts/**/*.dmg
+            artifacts/**/*.app.tar.gz
+            artifacts/**/*.app.tar.gz.sig
             manifest/latest.json
           fail_on_unmatched_files: true
 

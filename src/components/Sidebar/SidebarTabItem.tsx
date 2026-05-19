@@ -1,7 +1,6 @@
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { useStore } from '@nanostores/react'
-import { openUrl } from '@tauri-apps/plugin-opener'
 import { Pin } from 'lucide-react'
 import type React from 'react'
 import { useEffect, useRef, useState } from 'react'
@@ -42,8 +41,8 @@ export function SidebarTabItem({
   const allTabMeta = useStore($tabMeta)
   const isActive =
     activeProjectId === projectId && activeTabsByProject[projectId] === tab.id
-  const tabMeta = allTabMeta[makeTabKey(projectId, tab.id)]
-  const prUrl = tabMeta?.git?.pr?.url
+  const tabKey = makeTabKey(projectId, tab.id)
+  const tabMeta = allTabMeta[tabKey]
   const [renaming, setRenaming] = useState(false)
 
   const {
@@ -142,36 +141,18 @@ export function SidebarTabItem({
 
             {/*
              * Right-side indicators, left to right:
-             *   PR link → DangerBadge → StatusIcon
+             *   DangerBadge → StatusIcon
              *
-             * DangerBadge sits immediately left of the status icon so it reads
-             * as "this agent is running hot" rather than a separate entity.
-             * PR link comes before danger so it groups with the label content.
+             * Recency information (which tabs the user was just in) is
+             * now exclusively a Cmd+P concern. Earlier we surfaced 1..10
+             * rank digits here for ambient awareness; daily-use feedback
+             * found them distracting more than helpful. The header pill
+             * advertises the Cmd+P chord; the palette does the recall.
              */}
-            {!renaming && tabMeta?.git?.pr && prUrl && (
-              <a
-                href={prUrl}
-                className="shrink-0 rounded px-1 text-[9.5px] text-accent opacity-70 hover:opacity-100"
-                style={{ fontFamily: MONO_FONT }}
-                onPointerDown={(e) => e.stopPropagation()}
-                onClick={(e) => {
-                  e.preventDefault()
-                  e.stopPropagation()
-                  openUrl(prUrl).catch(() => {})
-                }}
-              >
-                #{tabMeta.git.pr.number}
-              </a>
-            )}
             {!renaming &&
               tabMeta?.type === 'agent' &&
               hasDangerFlag(tabMeta.agentCmd) && <DangerBadge size={11} />}
-            {!renaming && (
-              <TabStatusIcon
-                tabId={makeTabKey(projectId, tab.id)}
-                active={isActive}
-              />
-            )}
+            {!renaming && <TabStatusIcon tabId={tabKey} active={isActive} />}
           </button>
         </div>
       </ContextMenuTrigger>

@@ -61,6 +61,9 @@ Always-on context for the focused tab — refreshed every couple of seconds, nev
 - Git branch, dirty indicator, ahead/behind remote
 - Working directory (hover for full path)
 
+### Theme-aware workspace
+ Switch between light, dark, and system themes from the status bar. The chosen theme now applies across the whole application and the active terminal, so agent sessions stay readable in both light and dark modes.
+
 ### Supported agents
 
 | Agent | Status |
@@ -73,11 +76,15 @@ Always-on context for the focused tab — refreshed every couple of seconds, nev
 
 Want support for another agent? [Open an issue](https://github.com/DaniAkash/agent-terminal/issues/new) or [tell me on X](https://x.com/dani_akash_).
 
+### Find your way back
+`Cmd+P` opens a switcher for your recently used tabs — type a few letters, hit Enter, you're there.
+
 ### Keyboard shortcuts
 - `Ctrl+T` — new tab in the active project
 - `Ctrl+W` — close the active tab
 - `Ctrl+Tab` / `Ctrl+Shift+Tab` — cycle tabs
 - `Ctrl+1` … `Ctrl+9` — jump to project N
+- `Cmd+P` — open the recent-tabs quick-switcher
 
 ---
 
@@ -115,9 +122,9 @@ Already shipped:
 - ✅ Agent turn detection (idle / in-progress / awaiting / done)
 - ✅ Keyboard shortcuts
 - ✅ Universal macOS binary (Apple Silicon + Intel)
+- ✅ Theme toggle with light / dark / system support
 
 Coming next:
-- 🚧 Theming (light / dark / custom palettes)
 - 🚧 More agent integrations (Gemini CLI, Cursor, Open Code)
 - 🚧 Linux support
 - 🚧 Windows support

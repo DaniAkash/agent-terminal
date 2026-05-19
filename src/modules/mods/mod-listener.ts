@@ -9,6 +9,36 @@ import {
   updateTabMeta,
 } from '@/modules/stores/$tabMeta'
 
+/* ---------------------------------------------------------------------------
+ * done-linger timers
+ *
+ * When status flips to 'done' we stamp `doneAt` in the store and schedule a
+ * single per-tab timer that clears it after 10s. Every TabStatusIcon then
+ * derives its visual from `doneAt` directly, so the sidebar and the Cmd+P
+ * palette can never disagree on whether the green dot is lit (the previous
+ * per-instance setTimeout was the source of the bug).
+ * -------------------------------------------------------------------------*/
+
+const DONE_LINGER_MS = 10_000
+const doneLingerTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+function cancelDoneLinger(tabId: string): void {
+  const t = doneLingerTimers.get(tabId)
+  if (t) {
+    clearTimeout(t)
+    doneLingerTimers.delete(tabId)
+  }
+}
+
+function scheduleDoneLinger(tabId: string): void {
+  cancelDoneLinger(tabId)
+  const t = setTimeout(() => {
+    doneLingerTimers.delete(tabId)
+    updateTabMeta(tabId, { doneAt: undefined })
+  }, DONE_LINGER_MS)
+  doneLingerTimers.set(tabId, t)
+}
+
 type ModEventPayload = {
   tabId: string
   modId: string
@@ -43,7 +73,15 @@ function dispatch({
         status: TabStatus
         exitCode?: number
       }
-      updateTabMeta(tabId, { status, exitCode })
+      if (status === 'done') {
+        updateTabMeta(tabId, { status, exitCode, doneAt: Date.now() })
+        scheduleDoneLinger(tabId)
+      } else {
+        // Any other transition (running, error, idle) cancels the linger
+        // and clears the timestamp so the dot reflects the new status.
+        cancelDoneLinger(tabId)
+        updateTabMeta(tabId, { status, exitCode, doneAt: undefined })
+      }
       break
     }
     case 'tab_type_changed': {
@@ -112,6 +150,7 @@ function dispatch({
     }
     case 'closed': {
       // EchoMod fires this — used to GC stale tabMeta entries on tab close.
+      cancelDoneLinger(tabId)
       clearTabMeta(tabId)
       break
     }

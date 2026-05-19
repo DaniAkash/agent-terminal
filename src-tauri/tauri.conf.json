@@ -46,7 +46,7 @@
       "endpoints": [
         "https://raw.githubusercontent.com/DaniAkash/agent-terminal/release-manifest/latest.json"
       ],
-      "pubkey": "REPLACE_BEFORE_MERGE_SEE_PR_DESCRIPTION"
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDc2NkFGNDczRTQwOTJCOUMKUldTY0t3bmtjL1JxZGxvb3lzVlhRUWQ1TkNxR29JQ0FsaS9qTldzeFRzQzI4TzdLNkUrYWpTREEK"
     }
   }
 }
