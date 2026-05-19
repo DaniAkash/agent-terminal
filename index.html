@@ -5,6 +5,30 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Agent Terminal</title>
+    <script>
+      (() => {
+        var KEY, raw, legacy, theme
+        try {
+          KEY = 'agent-terminal:theme'
+          raw = localStorage.getItem(KEY)
+          if (raw === null) {
+            legacy = localStorage.getItem('theme')
+            if (legacy === 'light' || legacy === 'dark') {
+              raw = legacy
+              localStorage.setItem(KEY, legacy)
+              localStorage.removeItem('theme')
+            }
+          }
+          theme =
+            raw === 'light' || raw === 'dark'
+              ? raw
+              : window.matchMedia('(prefers-color-scheme: dark)').matches
+                ? 'dark'
+                : 'light'
+          document.documentElement.setAttribute('data-theme', theme)
+        } catch (_e) {}
+      })()
+    </script>
   </head>
 
   <body>

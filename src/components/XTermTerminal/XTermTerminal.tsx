@@ -71,6 +71,22 @@ import {
   LIGHT_THEME,
 } from '@/components/XTermTerminal/xterm-terminal.themes'
 
+// The IIFE in `index.html` always sets `data-theme` to the resolved
+// preference, so we read it as the source of truth and fall back to the
+// OS media query only as a defensive belt-and-braces (e.g. if the IIFE
+// silently failed).
+function getTerminalTheme(docTheme: string | null, prefersDark: boolean) {
+  const useDark =
+    docTheme === 'dark' ? true : docTheme === 'light' ? false : prefersDark
+  return useDark ? DARK_THEME : LIGHT_THEME
+}
+
+function applyTerminalTheme(term: Terminal, darkMq: MediaQueryList) {
+  const docTheme = document.documentElement.getAttribute('data-theme')
+  term.options.theme = getTerminalTheme(docTheme, darkMq.matches)
+  if (term.rows > 0) term.refresh(0, term.rows - 1)
+}
+
 export const XTermTerminal = React.memo(function XTermTerminal({
   onReady,
   onData,
@@ -109,12 +125,12 @@ export const XTermTerminal = React.memo(function XTermTerminal({
 
     const darkMq = window.matchMedia('(prefers-color-scheme: dark)')
 
-    // xterm is fully synchronous — no WASM init required.
-    // Read $fontSize.get() (not the closure-captured `fontSize`) so the
-    // mount-once effect picks up any persisted value at construction time.
     const term = new Terminal({
       allowProposedApi: true, // required by @xterm/addon-webgl
-      theme: darkMq.matches ? DARK_THEME : LIGHT_THEME,
+      theme: getTerminalTheme(
+        document.documentElement.getAttribute('data-theme'),
+        darkMq.matches,
+      ),
       fontFamily: '"Geist Mono", "Cascadia Code", "Fira Code", monospace',
       fontSize: $fontSize.get(),
       lineHeight: 1.2,
@@ -175,11 +191,21 @@ export const XTermTerminal = React.memo(function XTermTerminal({
       webglAddon = null
     }
 
-    // Swap theme instantly when the OS colour scheme changes.
-    const onColorSchemeChange = (e: MediaQueryListEvent) => {
-      if (!disposed) term.options.theme = e.matches ? DARK_THEME : LIGHT_THEME
-    }
-    darkMq.addEventListener('change', onColorSchemeChange)
+    // Single source of theme updates: the MutationObserver watches
+    // `data-theme` on <html>. Both flows route through it —
+    //   1. User flips the toggle → $theme.setTheme → applyThemeToDocument
+    //      → setAttribute → MutationObserver fires here.
+    //   2. OS preference changes while in 'system' → $theme's matchMedia
+    //      subscription → applyThemeToDocument → same chain.
+    // The previous per-pane matchMedia listener was redundant with the
+    // OS-change path above and caused a double refresh per change.
+    const mo = new MutationObserver(() => {
+      if (!disposed) applyTerminalTheme(term, darkMq)
+    })
+    mo.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme'],
+    })
 
     // Drive fit() via ResizeObserver — fires after layout, no debounce needed.
     // term.onResize notifies the PTY of the new cols/rows via the onResize prop.
@@ -241,7 +267,7 @@ export const XTermTerminal = React.memo(function XTermTerminal({
 
     return () => {
       disposed = true
-      darkMq.removeEventListener('change', onColorSchemeChange)
+      mo.disconnect()
       if (fitTimer !== null) clearTimeout(fitTimer)
       resizeObserver?.disconnect()
       dataDisposable.dispose()

@@ -66,6 +66,16 @@
       }
     },
     {
+      "includes": ["src/index.css"],
+      "linter": {
+        "rules": {
+          "nursery": {
+            "noExcessiveLinesPerFile": "off"
+          }
+        }
+      }
+    },
+    {
       "includes": ["src/components/ui/**"],
       "linter": {
         "rules": {

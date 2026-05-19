@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import type React from 'react'
 import { parseModelFlag } from '@/components/agent.helpers'
+import { PrItem } from '@/components/StatusBar/PrItem'
 import {
   Tooltip,
   TooltipContent,
@@ -42,16 +43,23 @@ import {
  *
  * Tab with live process data (currently agent tabs only):
  *
- *   name · pid · ⏱ elapsed · 🧮 memory · 🔌 :port1 :port2 · ✨ model · ⎇ branch [●] [↑N] [↓N] · 📂 /cwd
- *   │      │                                                              │                              │
- *   │      │                                                              │                              └── FolderOpen + CWD basename (tooltip = full path)
- *   │      │                                                              └─────────────────────────────── GitBranch + name; ● if dirty; Upload N if ahead; Download N if behind
- *   │      └──────────────────────────────────────────────────────────────────────────────────────────── process PID (no icon — self-describing number)
- *   └─────────────────────────────────────────────────────────────────────────────────────────────────── process name (no icon — agent name is already a label)
+ *   name · pid · ⏱ elapsed · 🧮 mem · 🔌 :p1 · ✨ model · ⎇ branch [●] [↑N] [↓N] · [●] ⊟ #123 title · 📂 /cwd
+ *   │      │                                                                       │   │              │
+ *   │      │                                                                       │   │              └── FolderOpen + CWD basename (tooltip = full path)
+ *   │      │                                                                       │   └────────────── PrItem: state icon + #num + truncated title (tooltip: full title + state + ahead/behind + checks)
+ *   │      │                                                                       └────────────────── checks dot (red/yellow/green; hidden when no checks)
+ *   │      └──────────────────────────────────────────────────────────────────────────────────────── process PID
+ *   └─────────────────────────────────────────────────────────────────────────────────────────────── process name
+ *
+ * The PR pill sits between git and cwd so the eye reads "branch → its PR →
+ * where I am on disk" — matches the existing left-to-right grouping logic.
+ * Pill is omitted when no PR is associated with the branch.
  *
  * Tab with no process data (shell tabs, or agent tabs before first poll):
  *
- *   status · ⎇ branch [●] [↑N] [↓N] · 📂 /cwd   (status hidden when idle)
+ *   status · ⎇ branch [●] [↑N] [↓N] · [●] ⊟ #123 title · 📂 /cwd
+ *   (status hidden when idle; PR pill omitted when the branch has no PR;
+ *    checks dot hidden when no checks have reported yet)
  *
  * Icon sizing: size=10, strokeWidth=1.5 — visually balanced against 11px mono text.
  * Icon opacity: matches the opacity of the adjacent text item.
@@ -277,9 +285,16 @@ export function StatusBarRight() {
     }
   }
 
-  // ── Git branch — always shown when available (second from right) ─────────
+  // ── Git branch — always shown when available ─────────────────────────────
   if (git?.branch) {
     items.push(<GitItem key="git" git={git} />)
+  }
+
+  // ── PR — between git and cwd when the branch has an associated PR ────────
+  // PrItem handles its own "no pr" guard, but we gate here too to avoid
+  // adding an empty item that would render a stray dot separator.
+  if (git?.pr) {
+    items.push(<PrItem key="pr" git={git} />)
   }
 
   // ── CWD — always shown when available (rightmost), full path on hover ────

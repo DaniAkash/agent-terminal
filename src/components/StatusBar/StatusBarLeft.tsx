@@ -1,6 +1,7 @@
 import { useStore } from '@nanostores/react'
 import type React from 'react'
 import { RunningDot } from '@/components/RunningDot'
+import { ThemeToggle } from '@/components/ThemeToggle/ThemeToggle'
 import { $projects } from '@/modules/stores/$projects'
 import { $tabMeta, type TabMeta } from '@/modules/stores/$tabMeta'
 import { MONO_FONT, makeTabKey } from '@/screens/workspace/workspace.helpers'
@@ -9,16 +10,17 @@ import type { Project } from '@/screens/workspace/workspace.types'
 /* ---------------------------------------------------------------------------
  * StatusBarLeft — workspace overview
  *
- * Shows aggregate counts across every tab in every project. Renders nothing
- * when all counts are zero (left side intentionally empty on idle workspaces).
+ * Always renders the <ThemeToggle> so users can reach it even on idle
+ * workspaces. Aggregate metric items only appear when non-zero.
  *
- * Layout (items only rendered when non-zero):
+ * Layout:
  *
- *   ● N active agents  ·  ● X active tasks  ·  Y failed tasks
- *   │                      │                    │
- *   │                      │                    └── tabs in error state (any type)
- *   │                      └───────────────────── shell tabs currently running
- *   └──────────────────────────────────────────── claude + codex sessions running
+ *   🌓  ● N active agents  ·  ● X active tasks  ·  Y failed tasks
+ *   │   │                      │                    │
+ *   │   │                      │                    └── tabs in error state
+ *   │   │                      └───────────────────── shell tabs running
+ *   │   └──────────────────────────────────────────── claude + codex running
+ *   └── ThemeToggle (always visible)
  *
  * Items are separated by a dim mid-dot (·).
  * -------------------------------------------------------------------------*/
@@ -29,14 +31,6 @@ type WorkspaceCounts = {
   tasksFailed: number
 }
 
-/**
- * Scans all tabs across all projects and returns aggregate running counts.
- * Uses flatMap + filter to keep cyclomatic complexity low.
- *
- *   agentsRunning — agent tabs (claude, codex) with status "running"
- *   tasksRunning  — shell tabs with status "running"
- *   tasksFailed   — any tab with status "error" (across all types)
- */
 function computeWorkspaceCounts(
   projects: Project[],
   allTabMeta: Record<string, TabMeta>,
@@ -56,7 +50,6 @@ function computeWorkspaceCounts(
   }
 }
 
-/** Thin separator dot between status bar items. */
 function Dot() {
   return (
     <span aria-hidden="true" style={{ opacity: 0.3 }}>
@@ -109,17 +102,21 @@ export function StatusBarLeft() {
     )
   }
 
-  if (items.length === 0) return null
-
   return (
-    <div className="mr-auto flex min-w-0 items-center gap-1.5 overflow-hidden">
-      {items.map((item, i) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: static order, no reordering
-        <span key={i} className="flex items-center gap-1.5">
-          {i > 0 && <Dot />}
-          {item}
-        </span>
-      ))}
+    <div className="mr-auto flex min-h-6 min-w-0 items-center gap-1.5 overflow-hidden">
+      <ThemeToggle />
+      {items.length > 0 && (
+        <>
+          <Dot />
+          {items.map((item, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: static order, no reordering
+            <span key={i} className="flex items-center gap-1.5">
+              {i > 0 && <Dot />}
+              {item}
+            </span>
+          ))}
+        </>
+      )}
     </div>
   )
 }

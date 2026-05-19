@@ -2,6 +2,7 @@ import { atom } from 'nanostores'
 import { IPC } from '@/modules/ipc/commands'
 import { pushClosedTab } from '@/modules/stores/$closedTabs'
 import { $tabMeta } from '@/modules/stores/$tabMeta'
+import { forgetTabRecency } from '@/modules/stores/$tabRecency'
 import {
   dedupeLabel,
   makeTabKey,
@@ -89,7 +90,14 @@ export function removeProject(projectId: string): void {
   const project = projects.find((p) => p.id === projectId)
   if (project) {
     for (const tab of project.tabs) {
-      IPC.closeTab(makeTabKey(projectId, tab.id)).catch(() => {})
+      const tabKey = makeTabKey(projectId, tab.id)
+      IPC.closeTab(tabKey).catch(() => {})
+      // Symmetric with removeTab — otherwise the project's tabKeys
+      // linger in $tabRecency / localStorage as ghosts. They'd be
+      // filtered out of the palette's render but the surviving rows
+      // would still see their idx-based rank shifted up (rank 1 live
+      // tab appearing as rank 7 with 6 ghosts ahead of it).
+      forgetTabRecency(tabKey)
     }
   }
   const updated = projects.filter((p) => p.id !== projectId)
@@ -115,6 +123,10 @@ export function removeTab(projectId: string, tabId: string): void {
   }
 
   IPC.closeTab(makeTabKey(projectId, tabId)).catch(() => {})
+  // Clear recency at the source so the sidebar / palette never reference
+  // a dead tabKey. The palette also defensively filters orphan entries,
+  // but cleaning here keeps localStorage bounded and ranks accurate.
+  forgetTabRecency(makeTabKey(projectId, tabId))
   const updated = $projects
     .get()
     .map((p) =>
