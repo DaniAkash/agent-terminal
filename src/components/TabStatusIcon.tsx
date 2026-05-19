@@ -1,9 +1,9 @@
 import { useStore } from '@nanostores/react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect } from 'react'
 import { AgentGlyph } from '@/components/AgentGlyph'
 import { deriveAgentState } from '@/components/agent.helpers'
 import { RunningDot } from '@/components/RunningDot'
-import { $tabMeta } from '@/modules/stores/$tabMeta'
+import { $tabMeta, updateTabMeta } from '@/modules/stores/$tabMeta'
 
 type Props = {
   tabId: string
@@ -49,49 +49,22 @@ type Props = {
  *   AgentTurnMod will unlock them when it writes agentState to TabMeta.
  */
 
-/** How long (ms) the green "done" dot stays visible before fading to idle. */
-const DONE_LINGER_MS = 10_000
-
 export function TabStatusIcon({ tabId, active = false }: Props) {
   const allMeta = useStore($tabMeta)
   const meta = allMeta[tabId]
   const status = meta?.status ?? 'idle'
   const type = meta?.type ?? 'shell'
+  // showDone derived from the store — every instance of this component for
+  // the same tab agrees on the visual. The 10s linger is enforced by a
+  // single per-tab setTimeout in mod-listener that clears `doneAt` directly.
+  const showDone = meta?.doneAt !== undefined
 
-  // Controls whether the transient green "done" dot is currently visible.
-  // Kept in local state rather than the store because it is purely a display
-  // concern — the underlying status remains 'done' until the next command runs.
-  const [showDone, setShowDone] = useState(false)
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  // Start or cancel the linger timer whenever status changes.
+  // Navigating to the tab counts as acknowledgement — clear the done stamp
+  // immediately so the green dot disappears across every surface (sidebar,
+  // tab bar, palette) in the same tick.
   useEffect(() => {
-    if (status === 'done') {
-      setShowDone(true)
-      timerRef.current = setTimeout(() => setShowDone(false), DONE_LINGER_MS)
-    } else {
-      // running / error / idle all cancel any in-flight timer immediately.
-      setShowDone(false)
-      if (timerRef.current) {
-        clearTimeout(timerRef.current)
-        timerRef.current = null
-      }
-    }
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current)
-    }
-  }, [status])
-
-  // Navigating to the tab counts as "acknowledged" — clear the done dot right away.
-  useEffect(() => {
-    if (active && showDone) {
-      setShowDone(false)
-      if (timerRef.current) {
-        clearTimeout(timerRef.current)
-        timerRef.current = null
-      }
-    }
-  }, [active, showDone])
+    if (active && showDone) updateTabMeta(tabId, { doneAt: undefined })
+  }, [active, showDone, tabId])
 
   if (type === 'agent') {
     return (

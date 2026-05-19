@@ -13,6 +13,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { useStore } from '@nanostores/react'
+import { CommandShortcut } from '@/components/ui/command'
 import {
   $activeProjectId,
   $activeTabId,
@@ -64,7 +65,7 @@ export function Sidebar() {
   }
 
   return (
-    <div className="flex h-full w-[232px] min-w-[232px] flex-col border-sidebar-border border-r bg-sidebar">
+    <div className="flex h-full w-[var(--sidebar-width)] min-w-[var(--sidebar-width)] flex-col border-sidebar-border border-r bg-sidebar">
       {/* Header — drag region, reserves traffic-light space */}
       <div
         data-tauri-drag-region
@@ -76,6 +77,16 @@ export function Sidebar() {
         >
           Workspaces
         </span>
+        {/* Ambient ⌘P hint — advertises the tab switcher. Persistent and
+            dim so the eye stops registering it once learned, but visible
+            enough that a new user discovers the chord without holding any
+            modifier. */}
+        <CommandShortcut
+          className="ml-auto opacity-50"
+          title="Open the tab switcher (⌘P)"
+        >
+          ⌘P
+        </CommandShortcut>
       </div>
 
       {/* Project tree — scrolls vertically; scrollbar hidden, bottom shadow

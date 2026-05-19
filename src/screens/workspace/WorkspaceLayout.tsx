@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useHotkeys } from 'react-hotkeys-hook'
 import { Sidebar } from '@/components/Sidebar/Sidebar'
 import { StatusBar } from '@/components/StatusBar/StatusBar'
+import { TabSwitcher } from '@/components/TabSwitcher/TabSwitcher'
 import { TerminalSearchBar } from '@/components/TerminalSearchBar/TerminalSearchBar'
 import { formatDropPayload } from '@/modules/dragDrop/dropPayload'
 import { Keys, Mod } from '@/modules/keymap/keys'
@@ -309,6 +310,8 @@ export function WorkspaceLayout() {
         </div>
       </div>
       <StatusBar />
+      {/* Self-contained: owns its open state + Cmd+P hotkey. */}
+      <TabSwitcher />
     </div>
   )
 }
