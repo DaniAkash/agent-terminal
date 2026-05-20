@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="./src-tauri/icons/icon.png" width="128" alt="Agent Terminal" />
+  <img src="./docs/assets/glass-terminal-transparent.png" width="128" alt="Agent Terminal" />
 
   # Agent Terminal
 
