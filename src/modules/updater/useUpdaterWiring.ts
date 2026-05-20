@@ -15,7 +15,11 @@ export function useUpdaterWiring(): void {
     // Defer past the launch sequence so PTY spawn / mod init isn't
     // sharing the event loop with a network round-trip.
     const t = setTimeout(() => {
-      checkForUpdate({ silentOnFailure: true })
+      // Both flags silent: the cold-launch check should be invisible
+      // unless there's an actionable result. Without `silentOnUpToDate`,
+      // every launch with no update available would surface a "You're
+      // up to date" toast — the common case on most launches.
+      checkForUpdate({ silentOnFailure: true, silentOnUpToDate: true })
     }, 3000)
     return () => clearTimeout(t)
   }, [])

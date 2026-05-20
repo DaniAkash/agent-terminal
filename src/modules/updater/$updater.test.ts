@@ -154,4 +154,23 @@ describe('checkForUpdate()', () => {
 
     expect($updater.get()).toEqual({ kind: 'error', message: 'boom' })
   })
+
+  test('12: silentOnUpToDate=true keeps store idle when no update is available', async () => {
+    mockCheck.mockResolvedValue(null)
+
+    await checkForUpdate({ silentOnUpToDate: true })
+
+    expect($updater.get()).toEqual({ kind: 'idle' })
+  })
+
+  test('13: silentOnUpToDate=false still surfaces up-to-date (default)', async () => {
+    mockCheck.mockResolvedValue(null)
+
+    await checkForUpdate({ silentOnUpToDate: false })
+
+    expect($updater.get()).toEqual({
+      kind: 'up-to-date',
+      currentVersion: '0.1.3',
+    })
+  })
 })

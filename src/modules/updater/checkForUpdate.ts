@@ -5,18 +5,31 @@ import { $updater } from '@/modules/updater/$updater'
 /**
  * Hit the updater endpoint and feed the result into `$updater`.
  *
- * `silentOnFailure` controls the failure behaviour: silent on the
- * startup auto-check (so an offline user doesn't see a useless toast),
- * loud on manual menu-triggered checks (so the user knows their
- * intentional action did something).
+ * Two independent suppression flags shape the startup-vs-manual UX:
+ *
+ * - `silentOnFailure` — startup check stays quiet when offline / endpoint
+ *   down; manual check surfaces the error so the user knows their click
+ *   did something.
+ * - `silentOnUpToDate` — startup check stays quiet when there's nothing
+ *   to install (the common case on every cold launch); manual check
+ *   surfaces a "You're up to date (vX.Y.Z)" confirmation so the click
+ *   has visible feedback.
+ *
+ * Both flags default to `false` so explicit/manual callers get loud
+ * behaviour for both outcomes.
  */
 export async function checkForUpdate(opts?: {
   silentOnFailure?: boolean
+  silentOnUpToDate?: boolean
 }): Promise<void> {
   $updater.set({ kind: 'checking' })
   try {
     const update = await check()
     if (!update) {
+      if (opts?.silentOnUpToDate) {
+        $updater.set({ kind: 'idle' })
+        return
+      }
       // Surface the currently-installed version so the menu-triggered
       // "you're up to date" toast can show what the user is on.
       const currentVersion = await getVersion()
