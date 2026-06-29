@@ -212,6 +212,15 @@ jobs:
           esac
           for f in *.app.tar.gz; do
             base="${f%.app.tar.gz}"
+            # Tauri's bundler uses productName verbatim — e.g. for
+            # "Agent Terminal" it produces "Agent Terminal.app.tar.gz" with
+            # a literal space. GitHub Releases stores the asset fine but
+            # silently rewrites spaces to dots in the served URL path
+            # (`Agent.Terminal_…app.tar.gz`), so a manifest URL built from
+            # the spaced on-disk name 404s when the updater fetches it.
+            # Normalize here so the on-disk filename, the uploaded asset,
+            # and the manifest URL all agree on dotted form.
+            base="${base// /.}"
             mv -- "$f"     "${base}_${ARCH}.app.tar.gz"
             mv -- "$f.sig" "${base}_${ARCH}.app.tar.gz.sig"
           done
