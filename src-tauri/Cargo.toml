@@ -119,8 +119,10 @@ local-ip-address = "0.6.13"
 tempfile = "3"
 # WebSocket client for the wss_server integration tests. Version pinned
 # to match what axum 0.8's `ws` feature pulls in transitively — avoids
-# two tungstenite stacks in the build.
-tokio-tungstenite = "0.26"
+# two tungstenite stacks in the build. The rustls feature exposes
+# `Connector::Rustls`; the wss_tls_integration test brings its own root
+# store, so webpki-roots vs native-roots doesn't matter here.
+tokio-tungstenite = { version = "0.26", features = ["rustls-tls-webpki-roots"] }
 # Stream/Sink extension traits needed for tokio-tungstenite's split
 # WebSocket handles.
 futures-util = "0.3"
