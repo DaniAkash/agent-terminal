@@ -12,6 +12,7 @@
     "@xterm/addon-web-links": "^0.12.0",
     "@xterm/xterm": "^6.0.0",
     "expo": "~56.0.12",
+    "expo-build-properties": "^57.0.3",
     "expo-constants": "~56.0.20",
     "expo-linking": "~56.0.15",
     "expo-router": "~56.2.13",

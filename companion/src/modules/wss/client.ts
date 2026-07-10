@@ -54,10 +54,30 @@ const state: ConnectionState = {
 const HEARTBEAT_INTERVAL_MS = 15_000
 const PONG_TIMEOUT_MS = 30_000
 
+/**
+ * Normalise the URL so we always attempt `wss://` (TLS) in the current
+ * phase. If the caller passes `ws://`, we transparently upgrade to
+ * `wss://`. Rationale: Phase 2A ships full server-side TLS with the
+ * mobile-side trust exceptions in `app.json` (iOS
+ * `NSAllowsLocalNetworking` + Android `network-security-config.xml`),
+ * so `wss://` succeeds even against a self-signed cert. We keep the
+ * upgrade behind a helper (rather than editing every persisted URL) so
+ * legacy stored URLs from a pre-TLS build continue to work after the
+ * companion updates.
+ */
+function normalizeWssUrl(url: string): string {
+  if (url.startsWith('ws://')) return `wss://${url.slice('ws://'.length)}`
+  return url
+}
+
 export function connect(url: string, token: string): void {
-  console.log('[wss.client] connect()', { url, tokenLen: token.length })
+  const normalized = normalizeWssUrl(url)
+  console.log('[wss.client] connect()', {
+    url: normalized,
+    tokenLen: token.length,
+  })
   clearTimers()
-  state.url = url
+  state.url = normalized
   state.token = token
   state.intentionallyDisconnected = false
   state.reconnectAttempts = 0
