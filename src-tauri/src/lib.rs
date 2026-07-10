@@ -124,6 +124,39 @@ async fn try_spawn_sidecar() -> Option<SidecarClient> {
     }
 }
 
+/// Build the SAN list for the WSS server's self-signed cert. Always
+/// includes `localhost` + `127.0.0.1` plus every RFC 1918 IPv4 the
+/// machine is currently bound to. The mobile client reaches the desktop
+/// via `wss://<lan-ip>:47823` so the cert must claim that IP in a SAN
+/// or the client's TLS verification fails, regardless of whether the
+/// cert is trusted. If interface enumeration fails we fall back to the
+/// localhost-only set — the WSS server still serves, but the mobile
+/// client will need the plain-`ws://` escape hatch or a Phase 2B pinned
+/// cert to connect over the LAN.
+///
+/// Caveat: the cert is regenerated only at first launch; users who
+/// move to a new subnet after that get a cert whose SANs no longer
+/// match. The workaround is to delete `<config_dir>/tls/` so the next
+/// launch generates a fresh pair. Automated regeneration on SAN drift
+/// lands with the dev-client migration.
+fn build_tls_sans() -> Vec<String> {
+    let mut sans = vec!["localhost".to_string(), "127.0.0.1".to_string()];
+    let Ok(ifaces) = local_ip_address::list_afinet_netifas() else {
+        return sans;
+    };
+    for (_, ip) in ifaces {
+        if let std::net::IpAddr::V4(v4) = ip {
+            if v4.is_private() {
+                let s = v4.to_string();
+                if !sans.contains(&s) {
+                    sans.push(s);
+                }
+            }
+        }
+    }
+    sans
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let pty_map: PtyMap = Arc::new(Mutex::new(HashMap::new()));
@@ -302,8 +335,8 @@ pub fn run() {
                         // can embed it in the QR.
                         let tls_material_result = if auth.tls_enabled {
                             let tls_dir = dir.join("tls");
-                            let sans =
-                                vec!["localhost".to_string(), "127.0.0.1".to_string()];
+                            let sans = build_tls_sans();
+                            eprintln!("[wss] TLS SANs: {sans:?}");
                             tls::TlsMaterial::load_or_generate(&tls_dir, sans)
                                 .map_err(|e| e.to_string())
                         } else {
