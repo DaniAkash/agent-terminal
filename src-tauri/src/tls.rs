@@ -13,8 +13,6 @@
 //     the mobile dev client migration lands.
 
 use anyhow::{anyhow, Context, Result};
-use base64::Engine;
-use base64::engine::general_purpose::STANDARD as B64;
 use rcgen::{generate_simple_self_signed, CertifiedKey};
 use rustls_pemfile::{certs, pkcs8_private_keys};
 use sha2::{Digest, Sha256};
@@ -68,6 +66,17 @@ impl TlsMaterial {
                 .with_context(|| format!("write {}", cert_path.display()))?;
             fs::write(&key_path, &key_pem)
                 .with_context(|| format!("write {}", key_path.display()))?;
+            // Restrict the private key to the owner. Default umask on
+            // most POSIX systems leaves fs::write at 0644 (world-
+            // readable), which is not what we want for long-lived TLS
+            // material. Windows ACLs work differently and would need a
+            // separate path; skip there for now.
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                fs::set_permissions(&key_path, fs::Permissions::from_mode(0o600))
+                    .with_context(|| format!("chmod 600 {}", key_path.display()))?;
+            }
             (cert_pem, key_pem)
         };
 
@@ -111,16 +120,16 @@ impl TlsMaterial {
 
 /// SHA-256 of the DER-encoded cert bytes, formatted as uppercase hex
 /// pairs separated by colons. Matches `openssl x509 -fingerprint -sha256`
-/// output shape.
+/// output shape. Uses `rustls_pemfile::certs` to parse the first cert
+/// out of the PEM so multi-block chains and stray non-base64 lines don't
+/// break the fingerprint the way a hand-rolled strip-and-decode would.
 fn fingerprint_from_pem(cert_pem: &str) -> Result<String> {
-    // PEM body is base64 of the DER. Strip header/footer lines and any
-    // whitespace, then decode.
-    let der_b64: String = cert_pem
-        .lines()
-        .filter(|l| !l.starts_with("-----"))
-        .collect();
-    let der = B64.decode(der_b64.as_bytes()).context("base64 decode PEM body")?;
-    let hash = Sha256::digest(&der);
+    let mut reader = cert_pem.as_bytes();
+    let first: CertificateDer<'static> = certs(&mut reader)
+        .next()
+        .ok_or_else(|| anyhow!("no certificate in PEM"))?
+        .context("parse cert PEM")?;
+    let hash = Sha256::digest(first.as_ref());
     let hex = hash
         .iter()
         .map(|b| format!("{b:02X}"))
@@ -188,6 +197,25 @@ mod tests {
                 "unexpected char {c:?} in fingerprint"
             );
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn key_file_is_owner_only_on_unix() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        let _ = TlsMaterial::load_or_generate(
+            tmp.path(),
+            vec!["localhost".into()],
+        )
+        .unwrap();
+        let meta = fs::metadata(tmp.path().join("key.pem")).unwrap();
+        // Mask off the file-type bits; keep the low 9 permission bits.
+        assert_eq!(
+            meta.permissions().mode() & 0o777,
+            0o600,
+            "private key must be readable only by owner"
+        );
     }
 
     #[test]

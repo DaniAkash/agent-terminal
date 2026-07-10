@@ -40,10 +40,12 @@ struct ConfigFile {
     token: String,
     device_name: String,
     bind_addr: String,
-    /// Serve `wss://` instead of `ws://`. Defaults to true so a fresh
-    /// install is TLS-on out of the box; existing config files that
-    /// pre-date this field get `false` from serde's default and can be
-    /// flipped manually. Phase 2B removes this flag entirely.
+    /// Serve `wss://` instead of `ws://`. `#[serde(default = "default_true")]`
+    /// means both a fresh install AND existing config files that pre-date
+    /// this field deserialise as TLS-on. Users on an older machine who
+    /// want the plain-`ws://` escape hatch while debugging can flip this
+    /// to `false` in the config file by hand. This flag goes away once
+    /// automated cert pinning lands on the mobile side.
     #[serde(default = "default_true")]
     tls_enabled: bool,
 }

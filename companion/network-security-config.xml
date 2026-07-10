@@ -3,13 +3,19 @@
   Android network security config for Agent Terminal companion.
 
   Purpose: let Android accept the desktop's self-signed TLS certificate
-  on local-network destinations. iOS parallels this via
-  NSAllowsLocalNetworking in app.json's infoPlist. Neither entry pins a
-  specific cert; both accept any cert on the listed subnets. The trust
-  root in Phase 2A is the user's visual fingerprint check during
-  pairing. Phase 2B (dev client) adds automated pinning and this file
-  can be tightened to specific pinned SHA-256 digests instead of the
-  broad user + system trust anchors.
+  when the user manually installs it in the OS trust store. iOS
+  parallels this via NSAllowsLocalNetworking in app.json's infoPlist.
+  Neither entry pins a specific cert; both accept any user-trusted
+  cert. The trust root is the user's visual fingerprint check during
+  pairing. The next security milestone (dev-client migration) replaces
+  the broad user trust anchor with a specific pinned SHA-256 digest.
+
+  Note on scoping: earlier drafts of this file tried to scope the trust
+  anchors to RFC 1918 CIDRs via <domain-config>. Android's
+  network-security-config only matches DNS hostnames in <domain>, not
+  IPs or CIDR ranges, so those entries were silently ignored. The
+  base-config below applies to all destinations; scoping the trust
+  anchor further requires switching to the pinned-cert model.
 -->
 <network-security-config>
   <base-config cleartextTrafficPermitted="false">
@@ -18,16 +24,4 @@
       <certificates src="user"/>
     </trust-anchors>
   </base-config>
-  <domain-config cleartextTrafficPermitted="false">
-    <!-- RFC 1918 private IPv4 ranges, covers every typical home LAN
-         and most office deployments. Add more ranges if the desktop
-         lives on a non-standard subnet. -->
-    <domain includeSubdomains="true">192.168.0.0/16</domain>
-    <domain includeSubdomains="true">10.0.0.0/8</domain>
-    <domain includeSubdomains="true">172.16.0.0/12</domain>
-    <trust-anchors>
-      <certificates src="system"/>
-      <certificates src="user"/>
-    </trust-anchors>
-  </domain-config>
 </network-security-config>
