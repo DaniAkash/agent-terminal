@@ -35,6 +35,15 @@ pub mod auth_stub;
 // one at startup and hands it to per-connection tasks.
 pub mod projects_cache;
 pub mod tls;
+// pub for direct test coverage (PairedTokens round-trip, PairingWindow
+// lifecycle) and so the wss_server dispatch path can name the types.
+pub mod pairing;
+// pub for direct test coverage. Net helpers are shared between the
+// pairing QR builder and the WSS server bootstrap (hostname resolution,
+// port trio bind fallback, LAN IP enumeration).
+pub mod net;
+// pub for direct test coverage of the mDNS registration + Drop.
+pub mod mdns;
 // pub so integration tests can drive the server directly (spin up on
 // 127.0.0.1:0 with an in-process client).
 pub mod wss_server;
