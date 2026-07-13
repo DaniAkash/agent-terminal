@@ -84,14 +84,45 @@ constant_time_eq = "0.3"
 # Random token generation for the initial dev config file. v4 UUIDs give
 # ~122 bits of entropy which is plenty for a Phase-1 bearer token.
 uuid = { version = "1", features = ["v4"] }
+# Self-signed TLS cert generation for the WSS server. First launch creates
+# a cert + key pair; subsequent launches reload from disk. Mobile clients
+# pin the SHA-256 fingerprint (embedded in the pairing QR).
+rcgen = "0.14"
+# TLS termination for the WSS server. axum-server wraps axum::serve so the
+# WebSocket upgrade path takes rustls without a rewrite; tokio-rustls
+# provides the underlying TLS runtime.
+axum-server = { version = "0.7", features = ["tls-rustls"] }
+# `ring` (over `aws-lc-rs`) as the crypto backend so rustls doesn't panic
+# with "Could not automatically determine the process-level CryptoProvider"
+# on first use. `ring` is the historical rustls default; smaller binary,
+# no C compiler at build time on macOS.
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "logging", "tls12"] }
+# PEM parsing for the cert + key loaded from disk into rustls types.
+rustls-pemfile = "2"
+# SHA-256 of the cert's DER bytes, formatted uppercase-hex colon-separated
+# to match `openssl x509 -fingerprint -sha256`. This value is what the
+# mobile client pins.
+sha2 = "0.10"
+# Structured error type used by the tls module. anyhow gives us `?` chains
+# without hand-rolling Display/source on every variant.
+anyhow = "1"
+# Enumerate the machine's network interfaces so the self-signed TLS
+# cert can include the actual LAN IPs the mobile client will reach via
+# `wss://<lan-ip>:47823`. Without matching IP SANs the client-side TLS
+# verification fails even when the cert itself is trusted; on iOS this
+# was accidentally masked by NSAllowsLocalNetworking bypassing the
+# validation entirely on local destinations.
+local-ip-address = "0.6.13"
 
 [dev-dependencies]
 # Isolated temp directories for auth_stub round-trip tests.
 tempfile = "3"
 # WebSocket client for the wss_server integration tests. Version pinned
 # to match what axum 0.8's `ws` feature pulls in transitively — avoids
-# two tungstenite stacks in the build.
-tokio-tungstenite = "0.26"
+# two tungstenite stacks in the build. The rustls feature exposes
+# `Connector::Rustls`; the wss_tls_integration test brings its own root
+# store, so webpki-roots vs native-roots doesn't matter here.
+tokio-tungstenite = { version = "0.26", features = ["rustls-tls-webpki-roots"] }
 # Stream/Sink extension traits needed for tokio-tungstenite's split
 # WebSocket handles.
 futures-util = "0.3"

@@ -15,7 +15,10 @@
   // react-native-web is required by expo/dom's `.web.tsx` files that
   // Metro pulls in when bundling `'use dom'` components. No source
   // file directly imports it; the bundler wires it transparently.
-  "ignoreDependencies": ["react-native-web"],
+  // expo-build-properties is loaded as a config plugin in app.json
+  // (referenced by string name). Fallow only scans TS/JS imports and
+  // doesn't parse the app.json config-plugin array.
+  "ignoreDependencies": ["react-native-web", "expo-build-properties"],
   "rules": {
     // `expo` is the Expo SDK runtime. It's imported transitively by
     // expo-router and directly by metro.config.js (build tooling). Fallow's

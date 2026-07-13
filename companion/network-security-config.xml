@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android network security config for Agent Terminal companion.
+
+  Purpose: let Android accept the desktop's self-signed TLS certificate
+  when the user manually installs it in the OS trust store. iOS
+  parallels this via NSAllowsLocalNetworking in app.json's infoPlist.
+  Neither entry pins a specific cert; both accept any user-trusted
+  cert. The trust root is the user's visual fingerprint check during
+  pairing. The next security milestone (dev-client migration) replaces
+  the broad user trust anchor with a specific pinned SHA-256 digest.
+
+  Note on scoping: earlier drafts of this file tried to scope the trust
+  anchors to RFC 1918 CIDRs via <domain-config>. Android's
+  network-security-config only matches DNS hostnames in <domain>, not
+  IPs or CIDR ranges, so those entries were silently ignored. The
+  base-config below applies to all destinations; scoping the trust
+  anchor further requires switching to the pinned-cert model.
+-->
+<network-security-config>
+  <base-config cleartextTrafficPermitted="false">
+    <trust-anchors>
+      <certificates src="system"/>
+      <certificates src="user"/>
+    </trust-anchors>
+  </base-config>
+</network-security-config>

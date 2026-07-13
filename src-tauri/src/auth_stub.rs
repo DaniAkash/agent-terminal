@@ -40,6 +40,18 @@ struct ConfigFile {
     token: String,
     device_name: String,
     bind_addr: String,
+    /// Serve `wss://` instead of `ws://`. `#[serde(default = "default_true")]`
+    /// means both a fresh install AND existing config files that pre-date
+    /// this field deserialise as TLS-on. Users on an older machine who
+    /// want the plain-`ws://` escape hatch while debugging can flip this
+    /// to `false` in the config file by hand. This flag goes away once
+    /// automated cert pinning lands on the mobile side.
+    #[serde(default = "default_true")]
+    tls_enabled: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 /// Loaded, ready-to-use auth state. Held as `Arc<AuthStub>` by the WSS
@@ -49,18 +61,27 @@ pub struct AuthStub {
     token: String,
     pub device_name: String,
     pub bind_addr: SocketAddr,
+    /// Whether to run the WSS listener with TLS (`wss://`) or plain
+    /// WebSocket. Comes from the config file. See `default_true` above
+    /// for the transition rationale.
+    pub tls_enabled: bool,
 }
 
 impl AuthStub {
     /// Test-only direct constructor. Skips the config file so integration
     /// tests can pick a known token + ephemeral bind port. `#[doc(hidden)]`
     /// keeps it out of the rustdoc surface.
+    ///
+    /// Defaults `tls_enabled: false` so the existing integration test
+    /// suite (which drives axum::serve over plain TCP) keeps working
+    /// without an in-process TLS handshake.
     #[doc(hidden)]
     pub fn new_for_tests(token: String, device_name: String, bind_addr: SocketAddr) -> Self {
         Self {
             token,
             device_name,
             bind_addr,
+            tls_enabled: false,
         }
     }
 
@@ -76,6 +97,7 @@ impl AuthStub {
                 token: Uuid::new_v4().to_string(),
                 device_name: DEFAULT_DEVICE_NAME.to_string(),
                 bind_addr: DEFAULT_BIND_ADDR.to_string(),
+                tls_enabled: true,
             };
             let body = serde_json::to_string_pretty(&fresh)
                 .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
@@ -97,6 +119,7 @@ impl AuthStub {
                 token: parsed.token,
                 device_name: parsed.device_name,
                 bind_addr,
+                tls_enabled: parsed.tls_enabled,
             },
             path,
         ))

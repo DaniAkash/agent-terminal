@@ -34,6 +34,7 @@ pub mod auth_stub;
 // pub for direct test coverage. The WSS server (next commit) constructs
 // one at startup and hands it to per-connection tasks.
 pub mod projects_cache;
+pub mod tls;
 // pub so integration tests can drive the server directly (spin up on
 // 127.0.0.1:0 with an in-process client).
 pub mod wss_server;
@@ -121,6 +122,39 @@ async fn try_spawn_sidecar() -> Option<SidecarClient> {
             None
         }
     }
+}
+
+/// Build the SAN list for the WSS server's self-signed cert. Always
+/// includes `localhost` + `127.0.0.1` plus every RFC 1918 IPv4 the
+/// machine is currently bound to. The mobile client reaches the desktop
+/// via `wss://<lan-ip>:47823` so the cert must claim that IP in a SAN
+/// or the client's TLS verification fails, regardless of whether the
+/// cert is trusted. If interface enumeration fails we fall back to the
+/// localhost-only set — the WSS server still serves, but the mobile
+/// client will need the plain-`ws://` escape hatch or a Phase 2B pinned
+/// cert to connect over the LAN.
+///
+/// Caveat: the cert is regenerated only at first launch; users who
+/// move to a new subnet after that get a cert whose SANs no longer
+/// match. The workaround is to delete `<config_dir>/tls/` so the next
+/// launch generates a fresh pair. Automated regeneration on SAN drift
+/// lands with the dev-client migration.
+fn build_tls_sans() -> Vec<String> {
+    let mut sans = vec!["localhost".to_string(), "127.0.0.1".to_string()];
+    let Ok(ifaces) = local_ip_address::list_afinet_netifas() else {
+        return sans;
+    };
+    for (_, ip) in ifaces {
+        if let std::net::IpAddr::V4(v4) = ip {
+            if v4.is_private() {
+                let s = v4.to_string();
+                if !sans.contains(&s) {
+                    sans.push(s);
+                }
+            }
+        }
+    }
+    sans
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -280,9 +314,10 @@ pub fn run() {
             app.manage(Arc::clone(&mobile_op_inboxes));
 
             // WSS server. AuthStub reads (or auto-generates) the dev
-            // config file — its bind_addr comes from there. Spawn as a
-            // tokio task; bind failure logs but doesn't block startup so
-            // a broken WSS never keeps the desktop from launching.
+            // config file — its bind_addr + tls_enabled come from there.
+            // Spawn as a tokio task; bind failure logs but doesn't block
+            // startup so a broken WSS never keeps the desktop from
+            // launching.
             let config_dir = dirs::home_dir()
                 .map(|h| h.join(".config").join(identity::NAMESPACE));
             if let Some(dir) = config_dir {
@@ -293,6 +328,32 @@ pub fn run() {
                             "[wss] dev config: {} (token inside — copy into companion client)",
                             path.display()
                         );
+                        // Load or generate the TLS material once at
+                        // startup. Stored under `<config_dir>/tls/`.
+                        // Fingerprint is exposed via the Tauri command
+                        // `get_tls_fingerprint` so the pairing UI (PR B)
+                        // can embed it in the QR.
+                        let tls_material_result = if auth.tls_enabled {
+                            let tls_dir = dir.join("tls");
+                            let sans = build_tls_sans();
+                            eprintln!("[wss] TLS SANs: {sans:?}");
+                            tls::TlsMaterial::load_or_generate(&tls_dir, sans)
+                                .map_err(|e| e.to_string())
+                        } else {
+                            Err(String::from("tls_enabled=false in config"))
+                        };
+                        let tls_bundle = tls_material_result.and_then(|mat| {
+                            let server_cfg = mat.to_server_config().map_err(|e| e.to_string())?;
+                            let rustls_cfg = Arc::new(
+                                axum_server::tls_rustls::RustlsConfig::from_config(Arc::new(server_cfg)),
+                            );
+                            Ok((mat.sha256_fingerprint.clone(), rustls_cfg))
+                        });
+                        let tls_fingerprint = tls_bundle
+                            .as_ref()
+                            .ok()
+                            .map(|(fp, _)| fp.clone());
+                        app.manage(commands::TlsFingerprint(tls_fingerprint));
                         let server_state = Arc::new(ServerState {
                             hub: hub_for_wss,
                             auth: Arc::clone(&auth),
@@ -304,11 +365,26 @@ pub fn run() {
                             mobile_op_inboxes: mobile_op_inboxes_for_wss,
                         });
                         let bind_addr = auth.bind_addr;
+                        let tls_enabled = auth.tls_enabled;
                         app.manage(auth);
                         tauri::async_runtime::spawn(async move {
-                            if let Err(e) =
+                            let result = if tls_enabled {
+                                match tls_bundle {
+                                    Ok((_, rustls_cfg)) => {
+                                        wss_server::run_with_tls(bind_addr, server_state, rustls_cfg)
+                                            .await
+                                    }
+                                    Err(e) => {
+                                        eprintln!(
+                                            "[wss] TLS enabled in config but material load failed: {e}. Falling back to plain ws://"
+                                        );
+                                        wss_server::run(bind_addr, server_state).await
+                                    }
+                                }
+                            } else {
                                 wss_server::run(bind_addr, server_state).await
-                            {
+                            };
+                            if let Err(e) = result {
                                 eprintln!("[wss] server crashed: {e}");
                             }
                         });
@@ -350,6 +426,7 @@ pub fn run() {
             commands::sync_projects_to_wss,
             commands::report_mobile_op_error,
             commands::report_mobile_op_ok,
+            commands::get_tls_fingerprint,
             notifications::notif_set_projects,
             notifications::notif_set_active_tab,
             notifications::notif_set_app_focus,

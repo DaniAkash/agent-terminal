@@ -250,6 +250,29 @@ pub async fn report_mobile_op_ok(
     Ok(())
 }
 
+/// Wrapper struct so Tauri managed-state resolution can distinguish
+/// `Option<String>` from other Options in the app state map. Holds the
+/// SHA-256 fingerprint of the WSS server's self-signed cert, formatted
+/// as `openssl x509 -fingerprint -sha256` output (colon-separated
+/// uppercase hex). None when tls_enabled=false or when cert generation
+/// failed at startup.
+pub struct TlsFingerprint(pub Option<String>);
+
+/// Return the fingerprint the mobile client should verify against.
+/// PR B's pairing UI embeds this in the QR alongside the WSS URL and
+/// the pairing token. Returns an error when TLS is disabled so the
+/// caller can surface a clear message instead of pretending pairing is
+/// possible.
+#[tauri::command]
+pub async fn get_tls_fingerprint(
+    state: tauri::State<'_, TlsFingerprint>,
+) -> Result<String, String> {
+    state
+        .0
+        .clone()
+        .ok_or_else(|| "TLS is disabled or cert generation failed at startup".to_string())
+}
+
 #[tauri::command]
 pub async fn list_projects() -> Result<serde_json::Value, String> {
     let path = projects_config_path()?;

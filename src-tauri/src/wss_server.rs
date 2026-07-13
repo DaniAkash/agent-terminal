@@ -159,10 +159,12 @@ pub async fn run_with_listener(
         .local_addr()
         .unwrap_or_else(|_| SocketAddr::from(([0, 0, 0, 0], 0)));
     // Loud dev-only warning so anyone reading the terminal knows this
-    // server is exposed to the LAN with no TLS. Phase 2 introduces the
-    // TOFU-pinned self-signed cert.
+    // server is exposed to the LAN over plain WebSocket. TLS is served
+    // separately via `run_with_tls`; this plain path stays available for
+    // integration tests and for a dev-only escape hatch when TLS makes
+    // debugging harder.
     eprintln!(
-        "[wss] listening on {addr} — LAN-exposed, dev only, no TLS. \
+        "[wss] listening on ws://{addr} — LAN-exposed, dev only, no TLS. \
          Token in the companion-dev.json config file"
     );
 
@@ -170,6 +172,53 @@ pub async fn run_with_listener(
         .route("/stream", get(handle_stream_upgrade))
         .with_state(state);
     axum::serve(listener, app).await?;
+    Ok(())
+}
+
+/// Serve the WSS router over TLS using axum-server + tokio-rustls.
+/// Called from lib.rs::run when `auth.tls_enabled` is true. Mobile
+/// clients connect via `wss://` and their TLS stack accepts the
+/// self-signed cert either through user trust (dev client) or through
+/// platform local-network exceptions
+/// (`NSAllowsLocalNetworking` on iOS, network security config on
+/// Android). Production callers bind their addr here; integration tests
+/// bind an ephemeral port themselves and hand it to
+/// `run_with_tls_from_listener` — same drop-then-rebind-race avoidance
+/// as the plain-TCP `run_with_listener`.
+pub async fn run_with_tls(
+    addr: SocketAddr,
+    state: Arc<ServerState>,
+    tls_config: Arc<axum_server::tls_rustls::RustlsConfig>,
+) -> Result<(), WssError> {
+    let listener = std::net::TcpListener::bind(addr)
+        .map_err(|source| WssError::Bind { addr, source })?;
+    run_with_tls_from_listener(listener, state, tls_config).await
+}
+
+/// TLS variant of `run_with_listener`: serve on an already-bound
+/// blocking `std::net::TcpListener`. axum-server's `from_tcp_rustls`
+/// takes ownership and converts it to non-blocking internally. Public
+/// so integration tests can drive the TLS path without racing on port
+/// allocation.
+pub async fn run_with_tls_from_listener(
+    listener: std::net::TcpListener,
+    state: Arc<ServerState>,
+    tls_config: Arc<axum_server::tls_rustls::RustlsConfig>,
+) -> Result<(), WssError> {
+    let addr = listener
+        .local_addr()
+        .unwrap_or_else(|_| SocketAddr::from(([0, 0, 0, 0], 0)));
+    eprintln!(
+        "[wss] listening on wss://{addr} — LAN-exposed with self-signed \
+         TLS. Fingerprint reachable via get_tls_fingerprint Tauri command"
+    );
+    let app = Router::new()
+        .route("/stream", get(handle_stream_upgrade))
+        .with_state(state);
+    axum_server::from_tcp_rustls(listener, (*tls_config).clone())
+        .serve(app.into_make_service())
+        .await
+        .map_err(WssError::Serve)?;
     Ok(())
 }
 

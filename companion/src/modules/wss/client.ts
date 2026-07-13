@@ -55,7 +55,14 @@ const HEARTBEAT_INTERVAL_MS = 15_000
 const PONG_TIMEOUT_MS = 30_000
 
 export function connect(url: string, token: string): void {
-  console.log('[wss.client] connect()', { url, tokenLen: token.length })
+  // Scheme is caller-owned. The desktop ships TLS-on by default so the
+  // paired URL is `wss://`; a user who deliberately disabled TLS on the
+  // desktop for debugging pastes a `ws://` URL and we honour it. Silent
+  // scheme rewriting here would defeat that escape hatch.
+  console.log('[wss.client] connect()', {
+    url,
+    tokenLen: token.length,
+  })
   clearTimers()
   state.url = url
   state.token = token
