@@ -203,9 +203,14 @@ jobs:
 
   # Companion Expo / React Native app. Own bun lockfile, own biome (2.5.1
   # for its `preset` rules key which the root's 2.4.x biome refuses to
-  # load), own tsconfig, own fallow config. `bun run check` fans out to
-  # biome format + biome lint + tsc + fallow via `concurrently --group`
-  # so every check runs in one job and the log stays grouped by check.
+  # load), own tsconfig, own fallow config.
+  #
+  # Split into one step per check (mirroring js-checks / rust-checks)
+  # rather than running the local `bun run check` script as a single
+  # step. `if: !cancelled()` on every check means a fmt failure does
+  # not skip lint / typecheck / fallow — the whole job surfaces every
+  # issue on the first run, and each check gets its own collapsible
+  # section in the GHA UI so failure attribution is one click.
   companion-checks:
     name: Companion (Expo)
     needs: approve
@@ -219,7 +224,20 @@ jobs:
       - name: Install companion deps
         working-directory: companion
         run: bun install --frozen-lockfile
-      - name: bun run check
+
+      - name: Biome format
         if: ${{ !cancelled() }}
         working-directory: companion
-        run: bun run check
+        run: bun run fmt
+      - name: Biome lint
+        if: ${{ !cancelled() }}
+        working-directory: companion
+        run: bun run lint
+      - name: tsc --noEmit
+        if: ${{ !cancelled() }}
+        working-directory: companion
+        run: bun run typecheck
+      - name: fallow
+        if: ${{ !cancelled() }}
+        working-directory: companion
+        run: bun run fallow
