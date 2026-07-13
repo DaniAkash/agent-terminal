@@ -87,13 +87,19 @@ export async function autoConnect(
 ): Promise<void> {
   const { resolveWssCandidates } = await import('./resolver')
   const candidates = resolveWssCandidates(device)
+  // Log a count + the desktop hint but never the actual candidate
+  // URLs. LAN IPs + `.local` names are private network topology
+  // that ends up attached to shared bug reports otherwise.
   console.log('[wss.client] autoConnect ladder', {
-    candidates,
+    rungs: candidates.length,
     hint: device.deviceHint,
   })
-  for (const candidate of candidates) {
+  for (let i = 0; i < candidates.length; i++) {
+    const candidate = candidates[i]
+    if (candidate === undefined) continue
     const reachable = await probeSocket(candidate, 2000)
     if (reachable) {
+      console.log('[wss.client] autoConnect rung hit', { rung: i + 1 })
       connect(candidate, device.token)
       return
     }

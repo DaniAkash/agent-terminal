@@ -128,7 +128,20 @@ export function CompanionDialog() {
                 if (target === null) return
                 try {
                   await revokeDevice(target)
-                } catch (_e) {}
+                  // Clear any prior error surface on success so a
+                  // stale message from a previous action does not
+                  // linger in the dialog.
+                  $companion.setKey('error', null)
+                } catch (e) {
+                  // Surface the failure inline via the existing
+                  // $companion.error field so the user sees a real
+                  // "revoke failed" instead of the confirm dialog
+                  // just disappearing silently.
+                  $companion.setKey(
+                    'error',
+                    `Revoke failed: ${e instanceof Error ? e.message : String(e)}`,
+                  )
+                }
               }}
             >
               Revoke
