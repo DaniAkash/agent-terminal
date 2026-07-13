@@ -18,13 +18,22 @@ function UnpairedHome() {
           Pair with a desktop to view and drive its tabs from here.
         </Text>
       </View>
-      <Link href="/connect" asChild>
-        <Pressable className="items-center rounded-md bg-accent px-6 py-3">
-          <Text className="font-semibold text-accent-foreground text-base">
-            Pair with desktop
-          </Text>
-        </Pressable>
-      </Link>
+      <View className="w-full gap-3">
+        <Link href="/pair" asChild>
+          <Pressable className="items-center rounded-md bg-accent px-6 py-3">
+            <Text className="font-semibold text-accent-foreground text-base">
+              Scan QR to pair
+            </Text>
+          </Pressable>
+        </Link>
+        <Link href="/connect" asChild>
+          <Pressable className="items-center rounded-md border border-border px-6 py-3">
+            <Text className="text-base text-foreground">
+              Use manual token (advanced)
+            </Text>
+          </Pressable>
+        </Link>
+      </View>
     </View>
   )
 }
