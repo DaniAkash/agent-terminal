@@ -205,12 +205,13 @@ jobs:
   # for its `preset` rules key which the root's 2.4.x biome refuses to
   # load), own tsconfig, own fallow config.
   #
-  # Split into one step per check (mirroring js-checks / rust-checks)
-  # rather than running the local `bun run check` script as a single
-  # step. `if: !cancelled()` on every check means a fmt failure does
-  # not skip lint / typecheck / fallow — the whole job surfaces every
-  # issue on the first run, and each check gets its own collapsible
-  # section in the GHA UI so failure attribution is one click.
+  # Runs `bun run check` as a single step by design. The script fans
+  # biome format + biome lint + tsc + fallow through `concurrently
+  # --group` with no `-k` / `--kill-others-on-fail` flag, so every check
+  # runs to completion regardless of what any other check does. One
+  # workflow run surfaces every failure across every check on the first
+  # pass, with `--group` prefixing each line by which check produced it
+  # so the log reads cleanly.
   companion-checks:
     name: Companion (Expo)
     needs: approve
@@ -224,20 +225,7 @@ jobs:
       - name: Install companion deps
         working-directory: companion
         run: bun install --frozen-lockfile
-
-      - name: Biome format
+      - name: bun run check
         if: ${{ !cancelled() }}
         working-directory: companion
-        run: bun run fmt
-      - name: Biome lint
-        if: ${{ !cancelled() }}
-        working-directory: companion
-        run: bun run lint
-      - name: tsc --noEmit
-        if: ${{ !cancelled() }}
-        working-directory: companion
-        run: bun run typecheck
-      - name: fallow
-        if: ${{ !cancelled() }}
-        working-directory: companion
-        run: bun run fallow
+        run: bun run check
