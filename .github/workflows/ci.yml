@@ -17,8 +17,6 @@ on:
     branches:
       - main
       - feat/desktop-sidecar-substrate
-    paths-ignore:
-      - 'companion/**'
   workflow_dispatch:
 
 concurrency:
@@ -202,3 +200,32 @@ jobs:
         if: ${{ !cancelled() }}
         working-directory: src-tauri
         run: cargo test --test hook_integration -- --test-threads=1
+
+  # Companion Expo / React Native app. Own bun lockfile, own biome (2.5.1
+  # for its `preset` rules key which the root's 2.4.x biome refuses to
+  # load), own tsconfig, own fallow config.
+  #
+  # Runs `bun run check` as a single step by design. The script fans
+  # biome format + biome lint + tsc + fallow through `concurrently
+  # --group` with no `-k` / `--kill-others-on-fail` flag, so every check
+  # runs to completion regardless of what any other check does. One
+  # workflow run surfaces every failure across every check on the first
+  # pass, with `--group` prefixing each line by which check produced it
+  # so the log reads cleanly.
+  companion-checks:
+    name: Companion (Expo)
+    needs: approve
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install companion deps
+        working-directory: companion
+        run: bun install --frozen-lockfile
+      - name: bun run check
+        if: ${{ !cancelled() }}
+        working-directory: companion
+        run: bun run check
