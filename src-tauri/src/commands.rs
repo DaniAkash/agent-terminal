@@ -369,8 +369,10 @@ pub async fn close_pairing_window(
 /// Snapshot the pairing QR payload without opening a fresh session.
 /// Used when the desktop UI re-mounts and wants to redisplay whatever
 /// pairing token is currently live server-side (e.g. React strict-mode
-/// double-mount). Returns None on the payload's `pairing_token` field
-/// if no session is currently open.
+/// double-mount). Returns `Ok(None)` when no session is currently
+/// open, TLS is disabled, or the WSS bind failed at startup; the
+/// caller should treat that as "nothing to display, tell the user to
+/// open a new pairing session".
 #[tauri::command]
 pub async fn get_pairing_qr_payload(
     fingerprint: State<'_, TlsFingerprint>,

@@ -94,7 +94,12 @@ export function CompanionDialog() {
           </div>
 
           <DialogFooter>
-            <Button variant="secondary" onClick={() => closeCompanionDialog()}>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                void closeCompanionDialog()
+              }}
+            >
               Done
             </Button>
           </DialogFooter>
