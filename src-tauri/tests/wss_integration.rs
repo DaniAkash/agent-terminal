@@ -72,6 +72,9 @@ async fn spawn_server(token: &str) -> (SocketAddr, Arc<ServerState>) {
         // no PtyHandle exists, matching pre-Phase-A-part-2 behaviour).
         app_handle: None,
         mobile_op_inboxes: Arc::new(wss_server::MobileOpInboxes::new()),
+        paired_tokens: Arc::new(agent_terminal_lib::pairing::PairedTokens::new_ephemeral()),
+        pairing_window: Arc::new(agent_terminal_lib::pairing::PairingWindow::new()),
+        paired_conns: Arc::new(wss_server::PairedConnMap::new()),
     });
 
     let state_for_task = Arc::clone(&state);
