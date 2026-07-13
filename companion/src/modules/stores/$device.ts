@@ -1,39 +1,16 @@
 import * as SecureStore from 'expo-secure-store'
 import { map } from 'nanostores'
+import { isDeviceRecord } from './$device.helpers'
+import type { DeviceRecord } from './$device.types'
 
 /**
  * Persisted device credentials from the QR pairing handshake. The
- * token is the long-lived per-device token minted by the desktop;
- * everything else supports the self-healing resolver ladder in
- * `wss/resolver.ts`.
- *
- * Serialised as a single JSON blob under one secure-store key so the
- * six-field write is atomic (`SecureStore.setItemAsync`).
+ * type declaration lives in `$device.types.ts` and the runtime shape
+ * guard in `$device.helpers.ts` so tests can exercise the pure
+ * predicate without transitively loading react-native. Re-exported
+ * here so callers keep their existing single import path.
  */
-export interface DeviceRecord {
-  /** Long-lived token; `wss://.../stream` Auth frame token field. */
-  token: string
-  /** Stable server-side id, used for future revocation UX. */
-  deviceId: string
-  /** `.local` hostname; falls back if absent. */
-  host?: string
-  /** LAN IPv4s the desktop advertised at pairing time. */
-  ips: string[]
-  /** Currently-bound WSS port; resolver ladder iterates the trio on
-   *  failure. */
-  port: number
-  /** SHA-256 fingerprint the desktop displayed for the visual match. */
-  fingerprint: string
-  /** Human hint from the QR, so the UI can display "connected to
-   *  Dani's MacBook Pro" instead of an IP. */
-  deviceHint: string
-  /** Last IP that successfully resolved a connection. Prefilled from
-   *  `ips[0]` at pair time; updated by the resolver on every
-   *  successful handshake. */
-  lastIp: string | null
-  /** Last port that successfully resolved. Same pattern as `lastIp`. */
-  lastPort: number | null
-}
+export type { DeviceRecord } from './$device.types'
 
 const STORE_KEY = 'agent-terminal.device.v1'
 
@@ -61,8 +38,16 @@ export async function loadDeviceFromSecureStore(): Promise<void> {
       $device.set({ loaded: true, record: null })
       return
     }
-    const record: DeviceRecord = JSON.parse(raw)
-    $device.set({ loaded: true, record })
+    const parsed: unknown = JSON.parse(raw)
+    if (!isDeviceRecord(parsed)) {
+      // Partial-corrupt blob (valid JSON, wrong shape). Treat like
+      // "no record" so the user re-pairs; carrying half a record
+      // forward would silently break resolveWssCandidates
+      // downstream (e.g. `ips[0]` undefined, `port` a string).
+      $device.set({ loaded: true, record: null })
+      return
+    }
+    $device.set({ loaded: true, record: parsed })
   } catch {
     $device.set({ loaded: true, record: null })
   }

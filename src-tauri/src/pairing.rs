@@ -139,14 +139,26 @@ impl PairedTokens {
     /// Constant-time check: does `token` match any stored device? Returns
     /// the matching `PairedDevice` (cloned) on success. `None` on
     /// mismatch. Also touches `last_seen` and `last_ip` on match.
+    ///
+    /// The loop runs to completion regardless of match position so
+    /// total runtime is independent of which device_id happens to
+    /// match. Each comparison is byte-level constant-time via
+    /// `constant_time_eq`; the outer iteration would otherwise leak
+    /// insertion order via timing.
     pub fn check_and_touch(&self, token: &str, source_ip: Option<String>) -> Option<PairedDevice> {
         let candidate_hash = sha256_hex(token);
         let mut map = self.inner.lock().expect("paired_tokens lock poisoned");
         let mut hit: Option<String> = None;
         for (id, device) in map.iter() {
-            if constant_time_eq(device.token_hash.as_bytes(), candidate_hash.as_bytes()) {
+            let is_match =
+                constant_time_eq(device.token_hash.as_bytes(), candidate_hash.as_bytes());
+            // Assign only on first match; a token hash appears at
+            // most once in the map so subsequent iterations are pure
+            // timing-padding. Keep the shape symmetric across match
+            // and non-match branches so the compiler is less likely
+            // to introduce a branch we did not write.
+            if is_match && hit.is_none() {
                 hit = Some(id.clone());
-                break;
             }
         }
         let id = hit?;

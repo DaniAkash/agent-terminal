@@ -568,10 +568,14 @@ async fn pairing_flow(mut socket: WebSocket, state: &Arc<ServerState>, pairing_t
             return;
         }
         Err(_) => {
+            // Reason string carries "timeout" verbatim so the mobile
+            // client's `mapPairErrorFromException` substring match
+            // routes to its dedicated timeout UI state instead of the
+            // generic connection-failed fallback.
             let _ = send_frame(
                 &mut socket,
                 &ServerFrame::AuthFail {
-                    reason: "pairing_start not received within 60s".to_string(),
+                    reason: "pairing_start timeout: not received within 60s".to_string(),
                 },
             )
             .await;
