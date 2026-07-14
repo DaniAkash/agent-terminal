@@ -88,7 +88,6 @@ export async function updateLastEndpoint(
  * Wipe the persisted record and reset the store. Called by the future
  * "Unpair from desktop" Settings row (lands in the follow-up PR).
  */
-// fallow-ignore-next-line unused-export
 export async function clearDevice(): Promise<void> {
   try {
     await SecureStore.deleteItemAsync(STORE_KEY)

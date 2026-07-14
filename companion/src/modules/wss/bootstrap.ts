@@ -1,6 +1,10 @@
-import { $device, loadDeviceFromSecureStore } from '@/modules/stores/$device'
+import {
+  $device,
+  clearDevice,
+  loadDeviceFromSecureStore,
+} from '@/modules/stores/$device'
 import { $session } from '@/modules/stores/$session'
-import { autoConnect } from './client'
+import { autoConnect, disconnect } from './client'
 
 /**
  * WSS boot-time wiring. Idempotent; safe to call multiple times but
@@ -26,7 +30,23 @@ import { autoConnect } from './client'
  */
 
 let initialized = false
-let unsubscribe: (() => void) | null = null
+let unsubscribeDevice: (() => void) | null = null
+let unsubscribeSession: (() => void) | null = null
+
+/**
+ * Reasons the desktop returns in `ServerFrame::AuthFail` that mean
+ * "your device_token is no longer valid" — either the desktop
+ * revoked us (Companion dialog → Revoke) or the token itself is
+ * gone (Keychain wiped, dev config reset). Substring match keeps us
+ * resilient to small wording drift on the desktop side.
+ */
+const REVOKED_REASONS = ['revoked', 'bad token'] as const
+
+function isRevokedAuthFail(reason: string | null): boolean {
+  if (!reason) return false
+  const lower = reason.toLowerCase()
+  return REVOKED_REASONS.some((r) => lower.includes(r))
+}
 
 export async function initWssBootstrap(): Promise<void> {
   if (initialized) return
@@ -37,7 +57,7 @@ export async function initWssBootstrap(): Promise<void> {
   // fires immediately with the current value (`{ loaded: false,
   // record: null }`), which is a no-op here — the real work happens
   // when `loaded` flips true.
-  unsubscribe = $device.subscribe((state) => {
+  unsubscribeDevice = $device.subscribe((state) => {
     if (!state.loaded) return
     if (!state.record) return
     // Don't stack redundant autoConnect calls: skip if the client is
@@ -47,16 +67,37 @@ export async function initWssBootstrap(): Promise<void> {
     void autoConnect(state.record)
   })
 
-  // Cold-start read. Fires the subscriber above as a side effect of
-  // `$device.set(...)` inside; if the phone was previously paired,
-  // that immediately kicks the resolver ladder.
+  // Server-side revoke recovery. When the desktop closes our
+  // connection with AuthFail("revoked") or refuses reconnect with
+  // AuthFail("bad token"), the token in secure-store is dead. Clear
+  // the local $device record so the UI falls back to the unpaired
+  // CTA instead of retry-looping through the ladder with the same
+  // dead token. `disconnect()` first stops any timers + resets
+  // $session to a clean 'disconnected' state, then `clearDevice()`
+  // wipes the record (secure-store + in-memory) which also prevents
+  // the $device subscriber above from re-firing autoConnect.
+  unsubscribeSession = $session.subscribe((state) => {
+    if (state.status !== 'auth_failed') return
+    if (!isRevokedAuthFail(state.lastError)) return
+    console.log(
+      `[wss] auth_failed "${state.lastError}"; unpairing locally (desktop revoked / token invalid)`,
+    )
+    disconnect()
+    void clearDevice()
+  })
+
+  // Cold-start read. Fires the device subscriber above as a side
+  // effect of `$device.set(...)` inside; if the phone was previously
+  // paired, that immediately kicks the resolver ladder.
   await loadDeviceFromSecureStore()
 }
 
-/** Test / hot-reload seam: tears down the subscription. */
+/** Test / hot-reload seam: tears down both subscriptions. */
 // fallow-ignore-next-line unused-export
 export function resetWssBootstrap(): void {
-  unsubscribe?.()
-  unsubscribe = null
+  unsubscribeDevice?.()
+  unsubscribeSession?.()
+  unsubscribeDevice = null
+  unsubscribeSession = null
   initialized = false
 }
