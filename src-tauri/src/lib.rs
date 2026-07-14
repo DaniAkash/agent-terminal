@@ -49,7 +49,7 @@ use mod_engine::{
     ModEngine,
     mods::{
         AgentIdentityMod,
-        AgentTurnMod,
+        AgentStateMod,
         DirTrackerMod,
         GitMonitorMod,
         ProcessTrackerMod,
@@ -254,7 +254,7 @@ pub fn run() {
                 .with_mod(AgentIdentityMod::new())
                 .with_mod(ShellProcessMod::new())
                 .with_mod(GitMonitorMod::new())
-                .with_mod(AgentTurnMod::new().with_notifications(notification_service.clone()));
+                .with_mod(AgentStateMod::new().with_notifications(notification_service.clone()));
 
             // Start the hook HTTP server, wired to the engine's hook channel.
             let hook_tx = engine_builder.hook_sender();
