@@ -1,3 +1,7 @@
+// `pub` so integration tests can enumerate the agent registry and resolve
+// per-agent profiles. This is the single source of truth for which agents are
+// supported and how each is identified, hooked, and detected.
+pub mod agents;
 mod commands;
 // `pub` so integration tests in `tests/` can call `ensure_hooks_installed()` and
 // build payloads against `HookPayload`. Internal API otherwise — the app uses these
