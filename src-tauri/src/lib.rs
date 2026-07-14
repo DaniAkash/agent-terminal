@@ -514,16 +514,12 @@ pub fn run() {
                                         eprintln!(
                                             "[wss] TLS enabled in config but material load failed: {e}. Falling back to plain ws://"
                                         );
-                                        // Tokio 1.48+ rejects blocking
-                                        // std listeners passed to
-                                        // `from_std`; the axum-server
-                                        // path converts internally, but
-                                        // the tokio-native path needs
-                                        // it explicit.
-                                        if let Err(e2) = bound_std_listener.set_nonblocking(true) {
-                                            eprintln!("[wss] set_nonblocking failed: {e2}");
-                                            return;
-                                        }
+                                        // `bind_first_available`
+                                        // returns a non-blocking
+                                        // listener per its contract, so
+                                        // `TcpListener::from_std` (which
+                                        // requires non-blocking mode per
+                                        // tokio docs) is safe here.
                                         match tokio::net::TcpListener::from_std(bound_std_listener) {
                                             Ok(l) => wss_server::run_with_listener(l, server_state).await,
                                             Err(e2) => {
@@ -534,12 +530,9 @@ pub fn run() {
                                     }
                                 }
                             } else {
-                                // Same non-blocking requirement as the
+                                // Same non-blocking guarantee from
+                                // `bind_first_available` as the
                                 // TLS-fallback branch above.
-                                if let Err(e) = bound_std_listener.set_nonblocking(true) {
-                                    eprintln!("[wss] set_nonblocking failed: {e}");
-                                    return;
-                                }
                                 match tokio::net::TcpListener::from_std(bound_std_listener) {
                                     Ok(l) => wss_server::run_with_listener(l, server_state).await,
                                     Err(e) => {

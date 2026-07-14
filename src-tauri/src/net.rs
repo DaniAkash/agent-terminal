@@ -60,9 +60,21 @@ pub fn lan_ipv4s() -> Vec<Ipv4Addr> {
 
 /// Try to bind each port in `ports` in order against `bind_host`.
 /// Returns the first `(listener, port)` pair that binds successfully.
-/// The listener is returned still-bound and non-blocking-mode
-/// unmodified so the caller (production `run_with_tls` or a test) can
-/// convert it however it likes.
+///
+/// The returned listener is switched to non-blocking mode before the
+/// caller sees it, per tokio's documented `TcpListener::from_std`
+/// contract:
+///
+/// > The caller is responsible for ensuring that the listener is in
+/// > non-blocking mode. Otherwise all I/O operations on the listener
+/// > will block the thread, which will cause unexpected behavior.
+///
+/// axum-server's `from_tcp_rustls` also calls `set_nonblocking(true)`
+/// internally on the listener it receives (`server.rs:250` in 0.7.3);
+/// the syscall is idempotent, so setting it here does not conflict.
+/// Doing it once at bind time means every consumer (plain
+/// `tokio::net::TcpListener::from_std`, axum-server TLS, integration
+/// tests) inherits the safe default instead of needing to remember.
 ///
 /// Bind-then-return-listener (rather than probe-then-close-then-rebind)
 /// avoids the classic drop-then-rebind race where a fast neighbour
@@ -77,7 +89,10 @@ pub fn bind_first_available(
             .parse()
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("{e}")))?;
         match StdTcpListener::bind(addr) {
-            Ok(l) => return Ok((l, port)),
+            Ok(l) => {
+                l.set_nonblocking(true)?;
+                return Ok((l, port));
+            }
             Err(e) => {
                 eprintln!("[net] bind {addr} failed: {e}");
                 last_err = Some(e);
@@ -149,5 +164,21 @@ mod tests {
         let _hog_a = StdTcpListener::bind(("127.0.0.1", a)).expect("hog a");
         let _hog_b = StdTcpListener::bind(("127.0.0.1", b)).expect("hog b");
         assert!(bind_first_available("127.0.0.1", &[a, b]).is_err());
+    }
+
+    #[test]
+    fn bind_first_available_returns_a_non_blocking_listener() {
+        // Contract: consumers can pass the returned listener straight
+        // to `tokio::net::TcpListener::from_std` without an extra
+        // `set_nonblocking(true)` call. Test via a poll on `accept()`
+        // that must return `WouldBlock` immediately in non-blocking
+        // mode.
+        let port = 55531u16;
+        let (listener, _) =
+            bind_first_available("127.0.0.1", &[port]).expect("bind");
+        let err = listener.accept().expect_err(
+            "non-blocking accept on an idle listener must return WouldBlock",
+        );
+        assert_eq!(err.kind(), std::io::ErrorKind::WouldBlock);
     }
 }
