@@ -335,13 +335,16 @@ pub async fn open_pairing_window(
     net: State<'_, BoundNet>,
     window: State<'_, Arc<PairingWindow>>,
 ) -> Result<PairingQrPayload, String> {
-    let fp = fingerprint
-        .0
-        .clone()
-        .ok_or("TLS is disabled; enable it before pairing")?;
     if net.port == 0 {
         return Err("WSS bind failed at startup; restart the desktop".into());
     }
+    // Empty-string fingerprint is the sentinel for "TLS is off"
+    // (dev-only escape hatch: `tls_enabled: false` in the config).
+    // The mobile side surfaces a clear warning banner in that case
+    // instead of a fake compare block. Full TLS is required for any
+    // real deployment; enforcement returns once native cert pinning
+    // lands on the mobile side.
+    let fp = fingerprint.0.clone().unwrap_or_default();
     let pairing_token = window.open();
     let device_hint = derive_device_hint(&net.hostname);
     Ok(PairingQrPayload {
@@ -379,15 +382,15 @@ pub async fn get_pairing_qr_payload(
     net: State<'_, BoundNet>,
     window: State<'_, Arc<PairingWindow>>,
 ) -> Result<Option<PairingQrPayload>, String> {
-    let Some(fp) = fingerprint.0.clone() else {
-        return Ok(None);
-    };
     if net.port == 0 {
         return Ok(None);
     }
     let Some(token) = window.current_token() else {
         return Ok(None);
     };
+    // Same empty-string sentinel as `open_pairing_window` for the
+    // TLS-off dev path; mobile surfaces the warning banner.
+    let fp = fingerprint.0.clone().unwrap_or_default();
     Ok(Some(PairingQrPayload {
         v: 1,
         host: net.hostname.clone(),

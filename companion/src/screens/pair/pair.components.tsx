@@ -64,18 +64,36 @@ export function ConfirmStage({
           {payload.device_hint}
         </Text>
       </View>
-      <View className="gap-2 rounded-md border border-border bg-card p-4">
-        <Text className="text-muted-foreground text-xs uppercase tracking-wide">
-          Fingerprint
-        </Text>
-        <Text className="font-mono text-foreground text-sm">
-          {formatFingerprintForVisualCompare(payload.fingerprint)}
-        </Text>
-        <Text className="mt-1 text-muted-foreground text-xs">
-          Compare this with the fingerprint shown on the desktop. Only tap
-          Confirm if they match exactly.
-        </Text>
-      </View>
+      {payload.fingerprint === '' ? (
+        // Empty-string fingerprint = dev-only `tls_enabled: false`
+        // path on the desktop. Show a matching warning banner so the
+        // user knows there is nothing to compare and the pair is
+        // unencrypted. Full TLS + a real fingerprint compare returns
+        // with the dev-client native-pinning migration.
+        <View className="gap-2 rounded-md border border-amber-500/50 bg-amber-500/10 p-4">
+          <Text className="font-semibold text-amber-500 text-xs uppercase tracking-wide">
+            TLS off (dev only)
+          </Text>
+          <Text className="text-amber-500/90 text-sm">
+            The desktop is serving plain ws://. Traffic is unencrypted and there
+            is no fingerprint to verify. Only tap Confirm on a trusted local
+            network.
+          </Text>
+        </View>
+      ) : (
+        <View className="gap-2 rounded-md border border-border bg-card p-4">
+          <Text className="text-muted-foreground text-xs uppercase tracking-wide">
+            Fingerprint
+          </Text>
+          <Text className="font-mono text-foreground text-sm">
+            {formatFingerprintForVisualCompare(payload.fingerprint)}
+          </Text>
+          <Text className="mt-1 text-muted-foreground text-xs">
+            Compare this with the fingerprint shown on the desktop. Only tap
+            Confirm if they match exactly.
+          </Text>
+        </View>
+      )}
       <View className="gap-3">
         <Pressable
           onPress={onConfirm}
