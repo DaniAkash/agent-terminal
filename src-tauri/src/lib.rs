@@ -151,6 +151,16 @@ async fn try_spawn_sidecar() -> Option<SidecarClient> {
 /// lands with the dev-client migration.
 fn build_tls_sans() -> Vec<String> {
     let mut sans = vec!["localhost".to_string(), "127.0.0.1".to_string()];
+    // Include the `.local` mDNS hostname so the mobile client's
+    // fast-path attempt (`wss://<host>.local:<port>/stream`) passes
+    // TLS name verification. Without this SAN, iOS + Android reject
+    // the handshake before we get to the PAIRING: auth exchange —
+    // matches openssl's "no matching subjectAltName" behaviour.
+    if let Some(host) = net::local_hostname() {
+        if !sans.contains(&host) {
+            sans.push(host);
+        }
+    }
     let Ok(ifaces) = local_ip_address::list_afinet_netifas() else {
         return sans;
     };

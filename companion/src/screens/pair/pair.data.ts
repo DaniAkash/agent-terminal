@@ -30,7 +30,7 @@ export async function completePairing(
   }
 
   const meta = deviceMeta()
-  let lastError: string | null = null
+  const failures: string[] = []
   for (const url of attempts) {
     try {
       const token = await runPairingSocket(url, qr.pairing_token, meta)
@@ -48,10 +48,33 @@ export async function completePairing(
       await saveDeviceToSecureStore(record)
       return record
     } catch (e) {
-      lastError = e instanceof Error ? e.message : String(e)
+      const msg = e instanceof Error ? e.message : String(e)
+      failures.push(`${maskUrl(url)}: ${msg}`)
+      console.warn(`[pair] attempt failed at ${maskUrl(url)}: ${msg}`)
     }
   }
-  throw new Error(lastError ?? 'pairing failed on every endpoint')
+  // Include every attempted endpoint in the surfaced error so the UI
+  // shows what actually went wrong per rung, not just the last one.
+  throw new Error(
+    failures.length > 0
+      ? `pairing failed on every endpoint: ${failures.join('; ')}`
+      : 'pairing failed on every endpoint',
+  )
+}
+
+/**
+ * Redact the host portion of a `wss://<host>:<port>/stream` URL for
+ * user-facing error text: replaces IPv4 octets with `x` and keeps
+ * `.local` names as-is (they are already human-readable and the QR
+ * shared them anyway).
+ */
+function maskUrl(url: string): string {
+  return url.replace(/\d+\.\d+\.\d+\.\d+/, (ip) =>
+    ip
+      .split('.')
+      .map((_, i) => (i < 2 ? 'x' : _))
+      .join('.'),
+  )
 }
 
 interface PairingReply {

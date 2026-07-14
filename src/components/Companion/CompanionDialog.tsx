@@ -190,9 +190,7 @@ function PairingSection({ payload, error, loading }: PairingSectionProps) {
         <div className="text-[11px] text-muted-foreground">
           Fingerprint (verify matches on your phone)
         </div>
-        <output className="break-all font-mono text-[11px] text-foreground/80">
-          {payload.fingerprint}
-        </output>
+        <Fingerprint value={payload.fingerprint} />
       </div>
     </div>
   )
@@ -249,6 +247,34 @@ function DeviceRow({ device, onRevoke }: DeviceRowProps) {
         Revoke
       </Button>
     </li>
+  )
+}
+
+/**
+ * Fingerprint block matching the Android pair screen's layout: two
+ * rows of four blocks of four hex pairs each. Wider inter-block
+ * spacing makes visual comparison against the mobile side one
+ * horizontal sweep rather than a squint through a single long line.
+ */
+function Fingerprint({ value }: { value: string }) {
+  const pairs = value.split(':')
+  // 32 pairs → 8 blocks of 4 → two rows of 4 blocks.
+  const rows: string[][] = [[], []]
+  for (let i = 0; i < 8; i++) {
+    const start = i * 4
+    const block = pairs.slice(start, start + 4).join(':')
+    rows[i < 4 ? 0 : 1]!.push(block)
+  }
+  return (
+    <output className="block font-mono text-[13px] leading-relaxed text-foreground/90">
+      {rows.map((row, idx) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: two fixed rows,
+        // order stable, no reordering.
+        <div key={idx} className="tracking-wide">
+          {row.join('  ')}
+        </div>
+      ))}
+    </output>
   )
 }
 

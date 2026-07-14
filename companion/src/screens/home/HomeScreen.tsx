@@ -26,13 +26,20 @@ function UnpairedHome() {
             </Text>
           </Pressable>
         </Link>
-        <Link href="/connect" asChild>
-          <Pressable className="items-center rounded-md border border-border px-6 py-3">
-            <Text className="text-base text-foreground">
-              Use manual token (advanced)
-            </Text>
-          </Pressable>
-        </Link>
+        {/* Manual token flow is a dev-only escape hatch for simulator
+            runs where the camera + QR path is impractical. `__DEV__`
+            is Metro's build-time constant: true in dev bundles,
+            statically false in production so the branch dead-code-
+            eliminates from the shipped bundle. */}
+        {__DEV__ && (
+          <Link href="/connect" asChild>
+            <Pressable className="items-center rounded-md border border-border px-6 py-3">
+              <Text className="text-base text-foreground">
+                Use manual token (dev only)
+              </Text>
+            </Pressable>
+          </Link>
+        )}
       </View>
     </View>
   )

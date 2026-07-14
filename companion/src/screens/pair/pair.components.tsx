@@ -114,7 +114,10 @@ export function ErrorStage({
 }: {
   error: PairError
   onRetry: () => void
-  onOpenManualConnect: () => void
+  /** Optional; when omitted the manual-token escape hatch is hidden.
+   *  Callers gate on `__DEV__` so the button dead-code-eliminates
+   *  from production bundles. */
+  onOpenManualConnect?: () => void
 }) {
   return (
     <View className="flex-1 justify-center gap-4 p-6">
@@ -133,14 +136,16 @@ export function ErrorStage({
             Scan again
           </Text>
         </Pressable>
-        <Pressable
-          onPress={onOpenManualConnect}
-          className="items-center rounded-md border border-border px-4 py-3"
-        >
-          <Text className="text-base text-foreground">
-            Use manual token instead
-          </Text>
-        </Pressable>
+        {onOpenManualConnect !== undefined && (
+          <Pressable
+            onPress={onOpenManualConnect}
+            className="items-center rounded-md border border-border px-4 py-3"
+          >
+            <Text className="text-base text-foreground">
+              Use manual token (dev only)
+            </Text>
+          </Pressable>
+        )}
       </View>
     </View>
   )

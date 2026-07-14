@@ -95,7 +95,9 @@ export function PairScreen() {
         <ErrorStage
           error={stage.error}
           onRetry={() => setStage({ kind: 'scanning' })}
-          onOpenManualConnect={() => router.replace('/connect')}
+          {...(__DEV__
+            ? { onOpenManualConnect: () => router.replace('/connect') }
+            : {})}
         />
       )}
     </View>
