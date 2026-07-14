@@ -48,9 +48,8 @@ use hook_server::start_hook_server;
 use mod_engine::{
     ModEngine,
     mods::{
+        AgentIdentityMod,
         AgentTurnMod,
-        ClaudeCodeMod,
-        CodexMod,
         DirTrackerMod,
         GitMonitorMod,
         ProcessTrackerMod,
@@ -252,8 +251,7 @@ pub fn run() {
             let engine_builder = ModEngine::builder()
                 .with_mod(DirTrackerMod::new())
                 .with_mod(ProcessTrackerMod::new())
-                .with_mod(ClaudeCodeMod::new())
-                .with_mod(CodexMod::new())
+                .with_mod(AgentIdentityMod::new())
                 .with_mod(ShellProcessMod::new())
                 .with_mod(GitMonitorMod::new())
                 .with_mod(AgentTurnMod::new().with_notifications(notification_service.clone()));
