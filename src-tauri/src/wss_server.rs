@@ -254,7 +254,14 @@ pub async fn run_with_listener(
     let app = Router::new()
         .route("/stream", get(handle_stream_upgrade))
         .with_state(state);
-    axum::serve(listener, app).await?;
+    // `into_make_service_with_connect_info::<SocketAddr>()` is what
+    // lets the /stream handler pull the peer address via
+    // `ConnectInfo<SocketAddr>` for accept-time logging.
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await?;
     Ok(())
 }
 
@@ -299,7 +306,7 @@ pub async fn run_with_tls_from_listener(
         .route("/stream", get(handle_stream_upgrade))
         .with_state(state);
     axum_server::from_tcp_rustls(listener, (*tls_config).clone())
-        .serve(app.into_make_service())
+        .serve(app.into_make_service_with_connect_info::<SocketAddr>())
         .await
         .map_err(WssError::Serve)?;
     Ok(())
@@ -307,10 +314,18 @@ pub async fn run_with_tls_from_listener(
 
 /// axum handler for `/stream`. Just performs the WebSocket upgrade and
 /// hands off to `connection_task`; all the interesting logic lives there.
+///
+/// The eprintln! log at the entry is a diagnostic hook for the pairing
+/// smoke: if this line does NOT appear when a phone tries to connect,
+/// the TLS handshake or TCP path failed before axum saw the request
+/// (usually iOS rejecting the self-signed cert). Confirmed reach means
+/// the failure is inside the auth flow itself.
 async fn handle_stream_upgrade(
     State(state): State<Arc<ServerState>>,
+    axum::extract::ConnectInfo(peer): axum::extract::ConnectInfo<SocketAddr>,
     ws: WebSocketUpgrade,
 ) -> Response {
+    eprintln!("[wss] /stream upgrade requested from {peer}");
     ws.on_upgrade(move |socket| connection_task(socket, state))
 }
 

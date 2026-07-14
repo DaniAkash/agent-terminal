@@ -251,29 +251,34 @@ function DeviceRow({ device, onRevoke }: DeviceRowProps) {
 }
 
 /**
- * Fingerprint block matching the Android pair screen's layout: two
- * rows of four blocks of four hex pairs each. Wider inter-block
- * spacing makes visual comparison against the mobile side one
- * horizontal sweep rather than a squint through a single long line.
+ * Fingerprint block matching the Android pair screen's layout: eight
+ * 4-pair blocks laid out in a wrapping flex row. On the desktop's
+ * `max-w-md` dialog this settles into two rows of four (matching the
+ * mobile side) at `text-xs` monospace; on narrower screens flex-wrap
+ * folds it to more rows of two rather than truncating.
+ *
+ * `whitespace-nowrap` on each span keeps a single block atomic (the
+ * colons within are never split), and `tabular-nums` fixes the digit
+ * widths so vertical scanning against the phone lines up column by
+ * column.
  */
 function Fingerprint({ value }: { value: string }) {
   const pairs = value.split(':')
-  // 32 pairs → 8 blocks of 4 → two rows of 4 blocks.
-  const rows: string[][] = [[], []]
-  for (let i = 0; i < 8; i++) {
-    const start = i * 4
-    const block = pairs.slice(start, start + 4).join(':')
-    rows[i < 4 ? 0 : 1]!.push(block)
+  const blocks: string[] = []
+  for (let i = 0; i < pairs.length; i += 4) {
+    blocks.push(pairs.slice(i, i + 4).join(':'))
   }
   return (
-    <output className="block font-mono text-[13px] leading-relaxed text-foreground/90">
-      {rows.map((row, idx) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: two fixed rows,
-        // order stable, no reordering.
-        <div key={idx} className="tracking-wide">
-          {row.join('  ')}
-        </div>
-      ))}
+    <output className="mx-auto block max-w-full font-mono text-[12px] text-foreground/90 tabular-nums">
+      <div className="flex flex-wrap justify-center gap-x-3 gap-y-1">
+        {blocks.map((block, idx) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: fixed block
+          // count from the SHA-256 split, order stable.
+          <span key={idx} className="whitespace-nowrap">
+            {block}
+          </span>
+        ))}
+      </div>
     </output>
   )
 }
