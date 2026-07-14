@@ -139,6 +139,20 @@ pub enum ClientFrame {
         op_id: u64,
         body: ReorderTabsBody,
     },
+
+    /// Two-stage QR pairing handshake. The mobile client authed with
+    /// `Auth { token: "PAIRING:<pairing_token>" }` and the server has
+    /// already validated the pairing token; the mobile now sends its
+    /// device metadata so the server can mint the long-lived device
+    /// token. The server reply is `ServerFrame::PairingComplete`
+    /// carrying the raw token; the mobile stashes it in secure-store
+    /// and reconnects with `Auth { token: <device_token> }` for
+    /// normal use.
+    PairingStart {
+        #[typeshare(serialized_as = "u32")]
+        op_id: u64,
+        body: PairingStartBody,
+    },
 }
 
 /// Frames sent from the desktop server to a mobile client.
@@ -220,6 +234,18 @@ pub enum ServerFrame {
         #[typeshare(serialized_as = "u32")]
         op_id: u64,
     },
+
+    /// Pairing succeeded. `body.device_token` is the raw long-lived
+    /// token the mobile client stashes in secure-store; the server
+    /// only ever persists its SHA-256. Immediately after this frame
+    /// the server closes the pairing window; the mobile client
+    /// disconnects and reconnects with `Auth { token: <device_token> }`
+    /// to enter normal session mode.
+    PairingComplete {
+        #[typeshare(serialized_as = "u32")]
+        op_id: u64,
+        body: PairingCompleteBody,
+    },
 }
 
 // -------- Phase B body structs --------
@@ -278,6 +304,39 @@ pub struct ReorderTabsBody {
     pub project_id: String,
     pub old_index: u32,
     pub new_index: u32,
+}
+
+/// Mobile-side metadata for the pairing handshake. Everything
+/// user-visible about the paired device (name, platform, model)
+/// originates on the mobile side and lands here.
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PairingStartBody {
+    /// User-visible device label. Defaults to the OS-reported device
+    /// name (e.g. iOS `Constants.deviceName`, Android
+    /// `Settings.Global.DEVICE_NAME`) at pairing time; the user can
+    /// edit it later.
+    pub device_name: String,
+    /// "ios" or "android".
+    pub platform: String,
+    /// Marketing model string, e.g. "iPhone 15 Pro". Optional because
+    /// Android values vary widely and are not always meaningful.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+}
+
+/// Server reply to `PairingStart`. Carries the freshly-minted
+/// long-lived device token the mobile stashes in secure-store.
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PairingCompleteBody {
+    /// Raw device token. Only ever transmitted here; every subsequent
+    /// use is a hash comparison server-side.
+    pub device_token: String,
+    /// Stable server-side id for this device. Not secret; exposed here
+    /// so the mobile can display "paired as <id short>" if the UX
+    /// wants to.
+    pub device_id: String,
 }
 
 #[typeshare]
@@ -440,6 +499,14 @@ mod tests {
                     new_index: 2,
                 },
             },
+            ClientFrame::PairingStart {
+                op_id: 8,
+                body: PairingStartBody {
+                    device_name: "Dani's iPhone".into(),
+                    platform: "ios".into(),
+                    model: Some("iPhone 15 Pro".into()),
+                },
+            },
         ];
         for case in cases {
             let s = serde_json::to_string(&case).expect("encode");
@@ -517,6 +584,13 @@ mod tests {
                 reason: "project not found".into(),
             },
             ServerFrame::OpOk { op_id: 43 },
+            ServerFrame::PairingComplete {
+                op_id: 8,
+                body: PairingCompleteBody {
+                    device_token: "550e8400-e29b-41d4-a716-446655440000".into(),
+                    device_id: "aa0e1400-e29b-41d4-a716-446655440000".into(),
+                },
+            },
         ];
         for case in cases {
             let s = serde_json::to_string(&case).expect("encode");
@@ -791,6 +865,56 @@ mod tests {
                 "agent": "claude",
                 "git_branch": "main",
                 "ports": [3000]
+            })
+        );
+    }
+
+    #[test]
+    fn client_pairing_start_wire_shape() {
+        let frame = ClientFrame::PairingStart {
+            op_id: 8,
+            body: PairingStartBody {
+                device_name: "Dani's iPhone".into(),
+                platform: "ios".into(),
+                model: Some("iPhone 15 Pro".into()),
+            },
+        };
+        assert_eq!(
+            serde_json::to_value(&frame).unwrap(),
+            json!({
+                "op": "pairing_start",
+                "body": {
+                    "op_id": 8,
+                    "body": {
+                        "device_name": "Dani's iPhone",
+                        "platform": "ios",
+                        "model": "iPhone 15 Pro"
+                    }
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn server_pairing_complete_wire_shape() {
+        let frame = ServerFrame::PairingComplete {
+            op_id: 8,
+            body: PairingCompleteBody {
+                device_token: "550e8400".into(),
+                device_id: "aa0e1400".into(),
+            },
+        };
+        assert_eq!(
+            serde_json::to_value(&frame).unwrap(),
+            json!({
+                "op": "pairing_complete",
+                "body": {
+                    "op_id": 8,
+                    "body": {
+                        "device_token": "550e8400",
+                        "device_id": "aa0e1400"
+                    }
+                }
             })
         );
     }

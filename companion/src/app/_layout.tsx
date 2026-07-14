@@ -2,6 +2,8 @@ import '../../global.css'
 import { ActionSheetProvider } from '@expo/react-native-action-sheet'
 import { Stack } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
+import { useEffect } from 'react'
+import { initWssBootstrap } from '@/modules/wss/bootstrap'
 
 // ActionSheetProvider wraps any component that uses useActionSheet()
 // from @expo/react-native-action-sheet (Phase B long-press menus on
@@ -13,16 +15,29 @@ import { StatusBar } from 'expo-status-bar'
 // native-module setup runs after expo-router has bootstrapped rather
 // than during the first import of _layout.tsx.
 export default function RootLayout() {
+  // Wire the reactive `$device` → `autoConnect` subscription once at
+  // app boot. From then on, any device transition — cold-start load
+  // from secure-store, a fresh pair completing, a Revoke clearing
+  // the record — routes through the subscription in bootstrap.ts,
+  // so the paired state is a single atom-of-truth and the UI
+  // switches seamlessly without a manual restart. useEffect
+  // exception: boot-time side effect syncing an external store
+  // (secure storage + WSS session) into the running app, one of
+  // CLAUDE.md's explicit "legitimate useEffect" cases.
+  useEffect(() => {
+    void initWssBootstrap()
+  }, [])
   return (
+    // biome-ignore lint/complexity/noUselessFragments: ActionSheetProvider
+    // uses React.Children.only internally, so the sibling StatusBar +
+    // Stack must be wrapped as a single fragment child.
     <ActionSheetProvider>
       <>
         <StatusBar style="auto" />
         <Stack>
           <Stack.Screen name="index" options={{ title: 'Agent Terminal' }} />
-          <Stack.Screen
-            name="connect"
-            options={{ title: 'Connect to desktop' }}
-          />
+          <Stack.Screen name="pair" options={{ title: 'Pair with desktop' }} />
+          <Stack.Screen name="connect" options={{ title: 'Manual connect' }} />
           <Stack.Screen
             name="projects"
             options={{

@@ -13,6 +13,7 @@
     "@xterm/xterm": "^6.0.0",
     "expo": "~56.0.12",
     "expo-build-properties": "^57.0.3",
+    "expo-camera": "~56.0.8",
     "expo-constants": "~56.0.20",
     "expo-linking": "~56.0.15",
     "expo-router": "~56.2.13",
@@ -53,11 +54,12 @@
     "fmt": "biome format",
     "lint": "biome lint",
     "typecheck": "tsc --noEmit",
+    "test": "bun test src/",
     "fallow": "fallow",
     "fallow:dead-code": "fallow dead-code",
     "fallow:dupes": "fallow dupes",
     "fallow:health": "fallow health",
-    "check": "concurrently --group --names fmt,lint,typecheck,fallow --prefix-colors auto \"bun run fmt\" \"bun run lint\" \"bun run typecheck\" \"bun run fallow\""
+    "check": "concurrently --group --names fmt,lint,typecheck,test,fallow --prefix-colors auto \"bun run fmt\" \"bun run lint\" \"bun run typecheck\" \"bun run test\" \"bun run fallow\""
   },
   "private": true
 }

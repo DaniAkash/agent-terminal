@@ -18,8 +18,9 @@
 
 use crate::auth_stub::AuthStub;
 use crate::mod_engine::{CwdTable, ModEngineHandle};
+use crate::pairing::{PairedTokens, PairingError, PairingWindow, PAIRING_PREFIX};
 use crate::projects_cache::ProjectsCache;
-use crate::protocol::{ClientFrame, ServerFrame};
+use crate::protocol::{ClientFrame, PairingCompleteBody, ServerFrame};
 use tauri::Emitter;
 use crate::pty_manager::{spawn_pty_if_absent, PtyMap};
 use crate::stream_hub::{StreamHub, SubscriberId};
@@ -97,6 +98,17 @@ pub struct ServerState {
     /// counter) and threaded through every `wss:mobile_op` event, so
     /// (connection_id, op_id) is globally unique per pending op.
     pub mobile_op_inboxes: Arc<MobileOpInboxes>,
+    /// Long-lived per-device token store. Auth path checks this before
+    /// the legacy dev bearer token: pair-a-device-once-then-connect is
+    /// the shipping model.
+    pub paired_tokens: Arc<PairedTokens>,
+    /// One-at-a-time pairing session. Opened by the desktop UI via the
+    /// `open_pairing_window` command, consumed by a mobile client
+    /// completing the QR handshake.
+    pub pairing_window: Arc<PairingWindow>,
+    /// Live connections tagged by paired-device id. Revoke walks this
+    /// map to force-close every active session under a device_id.
+    pub paired_conns: Arc<PairedConnMap>,
 }
 
 /// Reply-routing table for mobile CRUD ops. See ServerState docs.
@@ -124,6 +136,77 @@ impl MobileOpInboxes {
 }
 
 impl Default for MobileOpInboxes {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Live-connection registry keyed by `(device_id, connection_id)`, with
+/// one abort-signal `oneshot::Sender<()>` per entry. Revoke fires each
+/// matching sender; the connection task's select! branch on the
+/// corresponding receiver drops the socket. Deregister removes the
+/// entry on graceful disconnect so the map does not accumulate dead
+/// senders.
+pub struct PairedConnMap {
+    inner: std::sync::Mutex<HashMap<(String, u64), tokio::sync::oneshot::Sender<()>>>,
+}
+
+impl PairedConnMap {
+    pub fn new() -> Self {
+        Self {
+            inner: std::sync::Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// Track a new authenticated connection. `abort_tx` is the sender
+    /// half of a oneshot the connection task's select! branch awaits;
+    /// the caller keeps the receiver alive for the connection's
+    /// lifetime.
+    pub fn register(
+        &self,
+        device_id: String,
+        connection_id: u64,
+        abort_tx: tokio::sync::oneshot::Sender<()>,
+    ) {
+        self.inner
+            .lock()
+            .expect("paired_conns lock poisoned")
+            .insert((device_id, connection_id), abort_tx);
+    }
+
+    /// Called from the connection task's cleanup path so the map does
+    /// not hold dead senders.
+    pub fn deregister(&self, device_id: &str, connection_id: u64) {
+        self.inner
+            .lock()
+            .expect("paired_conns lock poisoned")
+            .remove(&(device_id.to_string(), connection_id));
+    }
+
+    /// Force-close every active session under `device_id`. Returns the
+    /// number of connections that were signalled. A send-failure means
+    /// the receiver already dropped (connection was closing anyway);
+    /// still count it, since the caller only cares that no further
+    /// traffic will flow.
+    pub fn revoke_and_close(&self, device_id: &str) -> usize {
+        let mut map = self.inner.lock().expect("paired_conns lock poisoned");
+        let keys: Vec<(String, u64)> = map
+            .keys()
+            .filter(|(id, _)| id == device_id)
+            .cloned()
+            .collect();
+        let mut count = 0usize;
+        for key in keys {
+            if let Some(tx) = map.remove(&key) {
+                let _ = tx.send(());
+                count += 1;
+            }
+        }
+        count
+    }
+}
+
+impl Default for PairedConnMap {
     fn default() -> Self {
         Self::new()
     }
@@ -171,7 +254,14 @@ pub async fn run_with_listener(
     let app = Router::new()
         .route("/stream", get(handle_stream_upgrade))
         .with_state(state);
-    axum::serve(listener, app).await?;
+    // `into_make_service_with_connect_info::<SocketAddr>()` is what
+    // lets the /stream handler pull the peer address via
+    // `ConnectInfo<SocketAddr>` for accept-time logging.
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await?;
     Ok(())
 }
 
@@ -216,7 +306,7 @@ pub async fn run_with_tls_from_listener(
         .route("/stream", get(handle_stream_upgrade))
         .with_state(state);
     axum_server::from_tcp_rustls(listener, (*tls_config).clone())
-        .serve(app.into_make_service())
+        .serve(app.into_make_service_with_connect_info::<SocketAddr>())
         .await
         .map_err(WssError::Serve)?;
     Ok(())
@@ -224,26 +314,47 @@ pub async fn run_with_tls_from_listener(
 
 /// axum handler for `/stream`. Just performs the WebSocket upgrade and
 /// hands off to `connection_task`; all the interesting logic lives there.
+///
+/// The eprintln! log at the entry is a diagnostic hook for the pairing
+/// smoke: if this line does NOT appear when a phone tries to connect,
+/// the TLS handshake or TCP path failed before axum saw the request
+/// (usually iOS rejecting the self-signed cert). Confirmed reach means
+/// the failure is inside the auth flow itself.
 async fn handle_stream_upgrade(
     State(state): State<Arc<ServerState>>,
+    axum::extract::ConnectInfo(peer): axum::extract::ConnectInfo<SocketAddr>,
     ws: WebSocketUpgrade,
 ) -> Response {
-    ws.on_upgrade(move |socket| connection_task(socket, state))
+    eprintln!("[wss] /stream upgrade requested from {peer}");
+    ws.on_upgrade(move |socket| connection_task(socket, state, peer))
 }
 
 /// Per-connection lifecycle. Reads frames, dispatches them, pushes
-/// replies. This initial commit only handles auth + the initial Projects
-/// push. The next commit wires the full ClientFrame dispatch loop.
-async fn connection_task(mut socket: WebSocket, state: Arc<ServerState>) {
+/// replies. Three auth branches:
+///
+/// - `PAIRING:<pairing_token>`: pair-mode. Server consumes the pairing
+///   token, waits for one `PairingStart` frame carrying the mobile's
+///   device metadata, mints a long-lived device token, sends
+///   `PairingComplete`, and closes. Mobile then reconnects with the
+///   new token for normal session mode.
+/// - Any other token that matches `paired_tokens.check_and_touch`:
+///   normal session mode. Auth-ok + Projects push + dispatch loop.
+///   Connection tagged with the device_id so Revoke can force-close.
+/// - Fallback: `auth_stub.check` (dev bearer token). Same session-mode
+///   flow, but not tagged with a device_id. This branch retires when
+///   the dev stub goes away.
+async fn connection_task(
+    mut socket: WebSocket,
+    state: Arc<ServerState>,
+    peer: SocketAddr,
+) {
     let connection_id = NEXT_CONNECTION_ID
         .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
     // Step 1: read the auth frame.
     let auth_frame = match read_frame(&mut socket).await {
         Ok(Some(f)) => f,
-        Ok(None) => {
-            // Client closed before sending auth. Nothing to do.
-            return;
-        }
+        Ok(None) => return,
         Err(e) => {
             eprintln!("[wss] read auth frame failed: {e}");
             return;
@@ -253,7 +364,6 @@ async fn connection_task(mut socket: WebSocket, state: Arc<ServerState>) {
     let token = match auth_frame {
         ClientFrame::Auth { token } => token,
         other => {
-            // Any non-Auth first frame is a protocol error.
             let _ = send_frame(
                 &mut socket,
                 &ServerFrame::AuthFail {
@@ -268,23 +378,41 @@ async fn connection_task(mut socket: WebSocket, state: Arc<ServerState>) {
         }
     };
 
-    // Step 2: validate.
-    if !state.auth.check(&token) {
-        let _ = send_frame(
-            &mut socket,
-            &ServerFrame::AuthFail {
-                reason: "bad token".to_string(),
-            },
-        )
-        .await;
+    // Step 2: dispatch to the right auth branch.
+    if let Some(pairing_token) = token.strip_prefix(PAIRING_PREFIX) {
+        pairing_flow(socket, &state, pairing_token).await;
         return;
     }
+
+    // Feed the peer IP into `check_and_touch` so `PairedDevice.last_ip`
+    // reflects the source the token was most recently used from. The
+    // Companion dialog surfaces this for troubleshooting; without
+    // this thread-through it stays `None` forever.
+    let peer_ip = peer.ip().to_string();
+    let (session_device_name, device_id) =
+        match state.paired_tokens.check_and_touch(&token, Some(peer_ip)) {
+            Some(dev) => (dev.device_name.clone(), Some(dev.id.clone())),
+            None => {
+                if state.auth.check(&token) {
+                    (state.auth.device_name.clone(), None)
+                } else {
+                    let _ = send_frame(
+                        &mut socket,
+                        &ServerFrame::AuthFail {
+                            reason: "bad token".to_string(),
+                        },
+                    )
+                    .await;
+                    return;
+                }
+            }
+        };
 
     // Step 3: auth-ok + immediate Projects push.
     if send_frame(
         &mut socket,
         &ServerFrame::AuthOk {
-            device_name: state.auth.device_name.clone(),
+            device_name: session_device_name,
         },
     )
     .await
@@ -316,13 +444,43 @@ async fn connection_task(mut socket: WebSocket, state: Arc<ServerState>) {
     let (outbox_tx, mut outbox_rx) = mpsc::unbounded_channel::<ServerFrame>();
     let mut subscriptions: HashMap<String, SubscriberId> = HashMap::new();
     let mut changes = state.projects_cache.subscribe_changes();
-    // Consume the current value so `changed().await` blocks until the
-    // NEXT notify — otherwise the first iteration would fire
-    // immediately and re-send the projects we just pushed above.
     changes.mark_unchanged();
+
+    // Revoke abort signal. Wired for paired connections (sender lives
+    // inside PairedConnMap; Revoke fires it). Dev-stub connections
+    // get a sender they hold locally in `_dev_stub_sender_keepalive`
+    // so the receiver never resolves during a legitimate session and
+    // the select! branch stays Pending. Dropping `_keepalive` on
+    // function exit is fine because we're already leaving the loop.
+    let (abort_tx, mut abort_rx) = tokio::sync::oneshot::channel::<()>();
+    let _dev_stub_sender_keepalive: Option<tokio::sync::oneshot::Sender<()>> =
+        match device_id.as_ref() {
+            Some(id) => {
+                state.paired_conns.register(id.clone(), connection_id, abort_tx);
+                None
+            }
+            None => Some(abort_tx),
+        };
 
     loop {
         tokio::select! {
+            biased;
+
+            // Revoke fires (Ok(())). A dropped sender (Err) is a bug
+            // path we do not model in-loop: for dev-stub connections
+            // the sender is held locally so this never happens; for
+            // paired connections a drop-without-signal would only
+            // occur if the caller misused the API. Both errors and
+            // successful revokes tear the connection down.
+            _ = &mut abort_rx => {
+                let _ = send_frame(
+                    &mut socket,
+                    &ServerFrame::AuthFail { reason: "revoked".into() },
+                )
+                .await;
+                break;
+            }
+
             // Client → server: read a frame, dispatch.
             incoming = read_frame(&mut socket) => {
                 let frame = match incoming {
@@ -369,15 +527,169 @@ async fn connection_task(mut socket: WebSocket, state: Arc<ServerState>) {
         }
     }
 
-    // Cleanup: drop every remaining subscription so the hub reclaims
-    // its per-tab bookkeeping. Also drop any pending mobile-op inbox
-    // entries for this connection so the map doesn't leak dead sender
-    // clones. Runs on any exit from the loop (client close, read error,
-    // outbox drained).
+    // Cleanup. Deregister the paired-conn entry so revoke doesn't
+    // signal a dead sender on the next iteration. Reap CRUD inboxes,
+    // drop subscriptions.
+    if let Some(id) = device_id.as_ref() {
+        state.paired_conns.deregister(id, connection_id);
+    }
     state.mobile_op_inboxes.reap_connection(connection_id);
     for (tab_id, sub_id) in subscriptions {
         state.hub.unsubscribe(&tab_id, sub_id);
     }
+}
+
+/// Handle the `PAIRING:` sub-flow. The auth path stripped the prefix
+/// and handed us the raw token; here we validate it against the
+/// currently-open `PairingWindow` (peek without burn — see
+/// `PairingWindow::validate`), send AuthOk with a "Pairing"
+/// placeholder, wait for exactly one PairingStart frame (60s timeout
+/// so a phone that camera-scans and never taps the confirm button
+/// doesn't leak a connection), mint the long-lived device token via
+/// `paired_tokens.insert`, and only then `consume` (burn) the pair
+/// token. This validate-then-consume ordering keeps the pair window
+/// alive across a transient insert failure (e.g. macOS Keychain
+/// permission prompt on first-run refuses the write) so the mobile
+/// can retry the same token without the user reopening the desktop
+/// dialog. Ends with a PairingComplete + close.
+async fn pairing_flow(mut socket: WebSocket, state: &Arc<ServerState>, pairing_token: &str) {
+    // Validate up-front but do NOT burn: `paired_tokens.insert` can
+    // fail (e.g. transient keychain refusal on the dev macOS build)
+    // and burning the token before the insert would strand the user
+    // — they would have to reopen the desktop Companion dialog for a
+    // fresh QR just to retry the same keychain write. The token is
+    // consumed only after a successful insert below.
+    if let Err(e) = state.pairing_window.validate(pairing_token) {
+        let reason = match e {
+            PairingError::NoOpenWindow => "no pairing window open on desktop",
+            PairingError::Expired => "pairing window expired, reopen on desktop",
+            PairingError::Mismatch => "pairing token mismatch",
+        };
+        let _ = send_frame(
+            &mut socket,
+            &ServerFrame::AuthFail {
+                reason: reason.to_string(),
+            },
+        )
+        .await;
+        return;
+    }
+
+    // Signal to the mobile that pair mode is active. Device name is a
+    // placeholder; the actual device metadata arrives in PairingStart.
+    if send_frame(
+        &mut socket,
+        &ServerFrame::AuthOk {
+            device_name: "Pairing".to_string(),
+        },
+    )
+    .await
+    .is_err()
+    {
+        return;
+    }
+
+    // Wait for the PairingStart frame with a bounded timeout. The
+    // 60s window is generous compared to the "user taps Confirm"
+    // path (typically ~1s after camera scan).
+    let next = tokio::time::timeout(
+        std::time::Duration::from_secs(60),
+        read_frame(&mut socket),
+    )
+    .await;
+    let frame = match next {
+        Ok(Ok(Some(f))) => f,
+        Ok(Ok(None)) => return, // client closed
+        Ok(Err(e)) => {
+            eprintln!("[wss] pairing read error: {e}");
+            return;
+        }
+        Err(_) => {
+            // Reason string carries "timeout" verbatim so the mobile
+            // client's `mapPairErrorFromException` substring match
+            // routes to its dedicated timeout UI state instead of the
+            // generic connection-failed fallback.
+            let _ = send_frame(
+                &mut socket,
+                &ServerFrame::AuthFail {
+                    reason: "pairing_start timeout: not received within 60s".to_string(),
+                },
+            )
+            .await;
+            return;
+        }
+    };
+
+    let (op_id, body) = match frame {
+        ClientFrame::PairingStart { op_id, body } => (op_id, body),
+        other => {
+            let _ = send_frame(
+                &mut socket,
+                &ServerFrame::AuthFail {
+                    reason: format!(
+                        "expected pairing_start, got {}",
+                        first_op_name(&other)
+                    ),
+                },
+            )
+            .await;
+            return;
+        }
+    };
+
+    let info = crate::pairing::DeviceInfo {
+        device_name: body.device_name,
+        platform: body.platform,
+        model: body.model,
+    };
+    let (device_id, device_token) = match state.paired_tokens.insert(info) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("[wss] pairing insert failed: {e}");
+            let _ = send_frame(
+                &mut socket,
+                &ServerFrame::AuthFail {
+                    reason: format!("keychain write failed: {e}"),
+                },
+            )
+            .await;
+            // Leave the pair window intact; validate-not-consume above
+            // means the token is still live and the user can retry
+            // without reopening the desktop dialog.
+            return;
+        }
+    };
+    // Insert succeeded, burn the pair token now.
+    if let Err(e) = state.pairing_window.consume(pairing_token) {
+        // Race: another client burned it between our validate and
+        // this consume. Log for diagnostics; the paired device is
+        // still inserted, so this connection continues to
+        // PairingComplete. Practical impact zero for a single-user
+        // desktop.
+        eprintln!("[wss] pair window burn lost a race: {e:?}");
+    }
+
+    // Notify the desktop UI so the paired-devices list refreshes.
+    if let Some(app) = state.app_handle.as_ref() {
+        let _ = app.emit(
+            "pairing:complete",
+            serde_json::json!({ "device_id": &device_id }),
+        );
+    }
+
+    let _ = send_frame(
+        &mut socket,
+        &ServerFrame::PairingComplete {
+            op_id,
+            body: PairingCompleteBody {
+                device_token,
+                device_id,
+            },
+        },
+    )
+    .await;
+    // Connection closes as this task returns. The mobile client
+    // reconnects with the new device_token for normal session mode.
 }
 
 /// Route a single ClientFrame to its handler. Kept as a standalone
@@ -578,6 +890,17 @@ async fn dispatch_client_frame(
         ClientFrame::ReorderTabs { op_id, body } => {
             dispatch_mobile_op(&state, &outbox_tx, connection_id, op_id, "reorder_tabs", &body);
         }
+
+        // Pairing frames only arrive inside the `pairing_flow` sub-
+        // task; a PairingStart received here is a protocol confusion
+        // (session-mode connection sending a pair frame). Bounce back
+        // an OpError so the mobile side can see the mistake.
+        ClientFrame::PairingStart { op_id, .. } => {
+            let _ = outbox_tx.send(ServerFrame::OpError {
+                op_id,
+                reason: "pairing_start only valid on PAIRING: connections".to_string(),
+            });
+        }
     }
 }
 
@@ -692,5 +1015,6 @@ fn first_op_name(frame: &ClientFrame) -> &'static str {
         ClientFrame::RemoveProject { .. } => "remove_project",
         ClientFrame::RemoveTab { .. } => "remove_tab",
         ClientFrame::ReorderTabs { .. } => "reorder_tabs",
+        ClientFrame::PairingStart { .. } => "pairing_start",
     }
 }

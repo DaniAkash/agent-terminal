@@ -14,6 +14,46 @@ export interface CreateTabBody {
   cwd?: string
 }
 
+/**
+ * Server reply to `PairingStart`. Carries the freshly-minted
+ * long-lived device token the mobile stashes in secure-store.
+ */
+export interface PairingCompleteBody {
+  /**
+   * Raw device token. Only ever transmitted here; every subsequent
+   * use is a hash comparison server-side.
+   */
+  device_token: string
+  /**
+   * Stable server-side id for this device. Not secret; exposed here
+   * so the mobile can display "paired as <id short>" if the UX
+   * wants to.
+   */
+  device_id: string
+}
+
+/**
+ * Mobile-side metadata for the pairing handshake. Everything
+ * user-visible about the paired device (name, platform, model)
+ * originates on the mobile side and lands here.
+ */
+export interface PairingStartBody {
+  /**
+   * User-visible device label. Defaults to the OS-reported device
+   * name (e.g. iOS `Constants.deviceName`, Android
+   * `Settings.Global.DEVICE_NAME`) at pairing time; the user can
+   * edit it later.
+   */
+  device_name: string
+  /** "ios" or "android". */
+  platform: string
+  /**
+   * Marketing model string, e.g. "iPhone 15 Pro". Optional because
+   * Android values vary widely and are not always meaningful.
+   */
+  model?: string
+}
+
 export interface TabSummary {
   tab_id: string
   label: string
@@ -229,6 +269,23 @@ export type ClientFrame =
         body: ReorderTabsBody
       }
     }
+  /**
+   * Two-stage QR pairing handshake. The mobile client authed with
+   * `Auth { token: "PAIRING:<pairing_token>" }` and the server has
+   * already validated the pairing token; the mobile now sends its
+   * device metadata so the server can mint the long-lived device
+   * token. The server reply is `ServerFrame::PairingComplete`
+   * carrying the raw token; the mobile stashes it in secure-store
+   * and reconnects with `Auth { token: <device_token> }` for
+   * normal use.
+   */
+  | {
+      op: 'pairing_start'
+      body: {
+        op_id: number
+        body: PairingStartBody
+      }
+    }
 
 /** Frames sent from the desktop server to a mobile client. */
 export type ServerFrame =
@@ -337,5 +394,20 @@ export type ServerFrame =
       op: 'op_ok'
       body: {
         op_id: number
+      }
+    }
+  /**
+   * Pairing succeeded. `body.device_token` is the raw long-lived
+   * token the mobile client stashes in secure-store; the server
+   * only ever persists its SHA-256. Immediately after this frame
+   * the server closes the pairing window; the mobile client
+   * disconnects and reconnects with `Auth { token: <device_token> }`
+   * to enter normal session mode.
+   */
+  | {
+      op: 'pairing_complete'
+      body: {
+        op_id: number
+        body: PairingCompleteBody
       }
     }

@@ -1,10 +1,12 @@
 use crate::mod_engine::ModEngine;
+use crate::pairing::{PairedDevice, PairedTokens, PairingWindow};
 use crate::projects_cache::{ProjectsCache, StoredProject};
 use crate::protocol::ServerFrame;
-use crate::wss_server::MobileOpInboxes;
+use crate::wss_server::{MobileOpInboxes, PairedConnMap};
 use crate::pty_manager::{spawn_pty, try_reattach, PtyDataPayload, PtyMap, ReattachResult};
 use crate::stream_hub::StreamHub;
 use portable_pty::PtySize;
+use serde::Serialize;
 use std::io::Write;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -281,6 +283,190 @@ pub async fn list_projects() -> Result<serde_json::Value, String> {
     }
     let raw = tokio::fs::read_to_string(&path).await.map_err(|e| e.to_string())?;
     serde_json::from_str(&raw).map_err(|e| e.to_string())
+}
+
+/// Snapshot of the network endpoints the desktop is currently reachable
+/// at. Populated once at startup and read by `get_pairing_qr_payload`.
+/// `port` is 0 when the WSS bind failed on every port in the trio.
+#[derive(Debug, Clone)]
+pub struct BoundNet {
+    pub hostname: Option<String>,
+    pub ips: Vec<String>,
+    pub port: u16,
+}
+
+/// Payload the desktop UI encodes into the pairing QR. Kept in sync
+/// (by convention, not by codegen) with the mobile-side parse in
+/// `companion/src/screens/pair`.
+#[derive(Debug, Serialize)]
+pub struct PairingQrPayload {
+    /// Schema version. Bump when adding required fields; mobile
+    /// clients must be forward-compatible with unknown extras.
+    pub v: u8,
+    /// `.local` mDNS hostname the desktop advertises, e.g.
+    /// `danis-macbook.local`. Absent when hostname resolution failed;
+    /// mobile clients fall back to IP-only in that case.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub host: Option<String>,
+    /// Every RFC 1918 IPv4 the desktop is currently bound to. Mobile
+    /// stores the first one as its fast-path address.
+    pub ips: Vec<String>,
+    /// Currently-bound WSS port. Mobile stores it and iterates through
+    /// the standardised trio on failure.
+    pub port: u16,
+    /// SHA-256 of the WSS server's TLS cert, uppercase-colon-hex.
+    /// Same value `get_tls_fingerprint` returns.
+    pub fingerprint: String,
+    /// One-shot pairing token, 5-minute TTL server-side.
+    pub pairing_token: String,
+    /// Human label the mobile shows during pairing so the user knows
+    /// which desktop they're pairing with. Derived from the hostname
+    /// (title-cased, `.local` stripped).
+    pub device_hint: String,
+}
+
+/// Mint a fresh pairing token and return the full QR payload the
+/// desktop UI encodes into the on-screen QR. Fails only when the WSS
+/// bind failed at startup (nothing for the mobile to connect to).
+///
+/// TLS-off is NOT a failure condition: `tls_enabled: false` in
+/// `companion-dev.json` yields an empty-string fingerprint sentinel
+/// in the payload, and both the desktop dialog and the mobile pair
+/// screen render a "TLS off (dev only)" banner in place of the
+/// fingerprint compare block. Full TLS + a required fingerprint
+/// returns once native cert pinning lands with the dev-client
+/// migration (Phase 2B / PR D).
+#[tauri::command]
+pub async fn open_pairing_window(
+    fingerprint: State<'_, TlsFingerprint>,
+    net: State<'_, BoundNet>,
+    window: State<'_, Arc<PairingWindow>>,
+) -> Result<PairingQrPayload, String> {
+    if net.port == 0 {
+        return Err("WSS bind failed at startup; restart the desktop".into());
+    }
+    // Empty-string fingerprint is the sentinel for "TLS is off"
+    // (dev-only escape hatch: `tls_enabled: false` in the config).
+    // The mobile side surfaces a clear warning banner in that case
+    // instead of a fake compare block. Full TLS is required for any
+    // real deployment; enforcement returns once native cert pinning
+    // lands on the mobile side.
+    let fp = fingerprint.0.clone().unwrap_or_default();
+    let pairing_token = window.open();
+    let device_hint = derive_device_hint(&net.hostname);
+    Ok(PairingQrPayload {
+        v: 1,
+        host: net.hostname.clone(),
+        ips: net.ips.clone(),
+        port: net.port,
+        fingerprint: fp,
+        pairing_token,
+        device_hint,
+    })
+}
+
+/// Close the pairing window if one is open. Idempotent. Called when
+/// the user closes the Companion dialog or when the 5-minute TTL
+/// window elapses.
+#[tauri::command]
+pub async fn close_pairing_window(
+    window: State<'_, Arc<PairingWindow>>,
+) -> Result<(), String> {
+    window.close();
+    Ok(())
+}
+
+/// Snapshot the pairing QR payload without opening a fresh session.
+/// Used when the desktop UI re-mounts and wants to redisplay whatever
+/// pairing token is currently live server-side (e.g. React strict-mode
+/// double-mount). Returns `Ok(None)` when no pairing session is
+/// currently open OR when the WSS bind failed at startup; the caller
+/// should treat that as "nothing to display, tell the user to open a
+/// new pairing session".
+///
+/// TLS-off is NOT an `Ok(None)` condition: with `tls_enabled: false`
+/// and a live session, the returned payload's `fingerprint` is the
+/// empty-string sentinel (same as `open_pairing_window`). The
+/// dev-only warning banner path handles the display.
+#[tauri::command]
+pub async fn get_pairing_qr_payload(
+    fingerprint: State<'_, TlsFingerprint>,
+    net: State<'_, BoundNet>,
+    window: State<'_, Arc<PairingWindow>>,
+) -> Result<Option<PairingQrPayload>, String> {
+    if net.port == 0 {
+        return Ok(None);
+    }
+    let Some(token) = window.current_token() else {
+        return Ok(None);
+    };
+    // Same empty-string sentinel as `open_pairing_window` for the
+    // TLS-off dev path; mobile surfaces the warning banner.
+    let fp = fingerprint.0.clone().unwrap_or_default();
+    Ok(Some(PairingQrPayload {
+        v: 1,
+        host: net.hostname.clone(),
+        ips: net.ips.clone(),
+        port: net.port,
+        fingerprint: fp,
+        pairing_token: token,
+        device_hint: derive_device_hint(&net.hostname),
+    }))
+}
+
+/// Snapshot every paired device for the desktop's Companion dialog.
+/// Returns an empty list on a fresh install with no pairings yet.
+#[tauri::command]
+pub async fn list_paired_devices(
+    paired: State<'_, Arc<PairedTokens>>,
+) -> Result<Vec<PairedDevice>, String> {
+    Ok(paired.list())
+}
+
+/// Revoke a paired device by id. Removes the token hash from persistent
+/// storage AND force-closes any currently-active WSS connection tagged
+/// with the device_id (each connection receives an `AuthFail: revoked`
+/// frame before the socket drops). Returns the number of active
+/// connections that were closed so the UI can surface e.g. "disconnected
+/// 1 device".
+#[tauri::command]
+pub async fn revoke_paired_device(
+    paired: State<'_, Arc<PairedTokens>>,
+    conns: State<'_, Arc<PairedConnMap>>,
+    device_id: String,
+) -> Result<usize, String> {
+    let removed = paired
+        .revoke(&device_id)
+        .map_err(|e| format!("revoke failed: {e}"))?;
+    if !removed {
+        return Err(format!("device {device_id} not paired"));
+    }
+    let closed = conns.revoke_and_close(&device_id);
+    Ok(closed)
+}
+
+/// Derive the "Dani's MacBook Pro"-style hint from a `.local` hostname
+/// like `danis-macbook.local`. Strips the `.local` suffix, replaces
+/// dashes with spaces, and title-cases each word. Falls back to
+/// "Desktop" when no hostname is available.
+fn derive_device_hint(hostname: &Option<String>) -> String {
+    let Some(host) = hostname.as_deref() else {
+        return "Desktop".to_string();
+    };
+    let stem = host.strip_suffix(".local").unwrap_or(host);
+    if stem.is_empty() {
+        return "Desktop".to_string();
+    }
+    stem.split('-')
+        .map(|w| {
+            let mut chars = w.chars();
+            match chars.next() {
+                Some(c) => c.to_uppercase().collect::<String>() + chars.as_str(),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn projects_config_path() -> Result<std::path::PathBuf, String> {

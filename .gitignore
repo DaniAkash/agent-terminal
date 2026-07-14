@@ -11,6 +11,13 @@ node_modules
 dist
 dist-ssr
 *.local
+# Cargo build artifacts for the xtask crate at the repo root. src-tauri
+# has its own .gitignore for its target/. Keeping target/ ignored at
+# root also matters for biome, which honours the root .gitignore via
+# `useIgnoreFile: true` — without this entry, biome scans compiled
+# rustc_info.json + fingerprint files and floods the check with
+# thousands of formatting complaints.
+/target
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

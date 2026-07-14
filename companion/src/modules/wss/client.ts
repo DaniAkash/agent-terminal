@@ -71,6 +71,88 @@ export function connect(url: string, token: string): void {
   openSocket()
 }
 
+/**
+ * Kick the resolver ladder against a persisted DeviceRecord. Walks
+ * `resolveWssCandidates(device)` and probes each with a bounded 2s
+ * TCP-level socket-open attempt; on the first success, hands off to
+ * `connect(url, device.token)` and returns. On full ladder
+ * exhaustion, marks the session as `unreachable` so the UI can
+ * surface a retry.
+ *
+ * Kept separate from `connect()` so the manual-token flow (from
+ * `/connect`) can bypass the ladder entirely.
+ */
+export async function autoConnect(
+  device: import('@/modules/stores/$device').DeviceRecord,
+): Promise<void> {
+  const { resolveWssCandidates } = await import('./resolver')
+  const candidates = resolveWssCandidates(device)
+  // Log a count + the desktop hint but never the actual candidate
+  // URLs. LAN IPs + `.local` names are private network topology
+  // that ends up attached to shared bug reports otherwise.
+  console.log('[wss.client] autoConnect ladder', {
+    rungs: candidates.length,
+    hint: device.deviceHint,
+  })
+  for (let i = 0; i < candidates.length; i++) {
+    const candidate = candidates[i]
+    if (candidate === undefined) continue
+    const reachable = await probeSocket(candidate, 2000)
+    if (reachable) {
+      console.log('[wss.client] autoConnect rung hit', { rung: i + 1 })
+      connect(candidate, device.token)
+      return
+    }
+  }
+  console.warn('[wss.client] autoConnect: all rungs failed')
+  $session.setKey('status', 'unreachable')
+  $session.setKey(
+    'lastError',
+    `Can't find desktop on this network (${device.deviceHint})`,
+  )
+}
+
+function probeSocket(url: string, timeoutMs: number): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    let done = false
+    const finish = (ok: boolean) => {
+      if (done) return
+      done = true
+      resolve(ok)
+    }
+    try {
+      const ws = new WebSocket(url)
+      const timer = setTimeout(() => {
+        try {
+          ws.close()
+        } catch {
+          /* ignore */
+        }
+        finish(false)
+      }, timeoutMs)
+      ws.onopen = () => {
+        clearTimeout(timer)
+        try {
+          ws.close()
+        } catch {
+          /* ignore */
+        }
+        finish(true)
+      }
+      ws.onerror = () => {
+        clearTimeout(timer)
+        finish(false)
+      }
+      ws.onclose = () => {
+        clearTimeout(timer)
+        finish(false)
+      }
+    } catch {
+      finish(false)
+    }
+  })
+}
+
 export function disconnect(): void {
   state.intentionallyDisconnected = true
   clearTimers()
@@ -390,8 +472,35 @@ function handleAuthOk(deviceName: string): void {
     lastError: null,
     lastConnectedAt: Date.now(),
   })
+  // Remember which resolver rung actually worked so the next cold
+  // start goes straight to the fast path. Parses out the host+port
+  // from the connected URL; import is lazy so the client module has
+  // no eager dep on the $device store.
+  if (state.url) {
+    const parsed = parseWssHostPort(state.url)
+    if (parsed) {
+      void import('@/modules/stores/$device').then((mod) => {
+        void mod.updateLastEndpoint(parsed.host, parsed.port)
+      })
+    }
+  }
   startHeartbeat()
   replayOpenSubscriptions()
+}
+
+function parseWssHostPort(url: string): { host: string; port: number } | null {
+  try {
+    const match = url.match(/^wss?:\/\/([^:/]+):(\d+)\//)
+    if (!match) return null
+    const host = match[1]
+    const portRaw = match[2]
+    if (host === undefined || portRaw === undefined) return null
+    const port = Number.parseInt(portRaw, 10)
+    if (!Number.isFinite(port)) return null
+    return { host, port }
+  } catch {
+    return null
+  }
 }
 
 function replayOpenSubscriptions(): void {

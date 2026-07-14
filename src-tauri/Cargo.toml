@@ -113,6 +113,24 @@ anyhow = "1"
 # was accidentally masked by NSAllowsLocalNetworking bypassing the
 # validation entirely on local destinations.
 local-ip-address = "0.6.13"
+# Native platform secret storage for the paired-devices map. macOS Keychain
+# on darwin, DPAPI/Windows-Native-Keyring on Windows, Secret Service on
+# Linux. No argon2 master password prompt (unlike tauri-plugin-stronghold);
+# unlocks silently when the user is logged in. Stores a single JSON blob
+# of `HashMap<device_id, PairedDevice>` under a fixed service+account.
+# The `v1` feature enables the classic `Entry::new` / `get_password` /
+# `set_password` API. The new `cli` feature exposes a lower-level
+# multi-backend selector that we don't need for one blob.
+keyring = { version = "4.1.4", features = ["v1"] }
+# mDNS / DNS-SD service registration for `_agent-terminal._tcp.local.`
+# so mobile clients can find the desktop by its `.local` name after an
+# IP change on the same LAN. Pure-Rust, no C deps, cross-platform.
+mdns-sd = "0.20.1"
+# Reads the machine's OS hostname. macOS "Local Hostname" (System
+# Preferences → Sharing) is the authoritative name; the crate returns
+# it verbatim on macOS. On Linux/Windows it returns whatever the
+# system's `gethostname()` returns.
+hostname = "0.4.2"
 
 [dev-dependencies]
 # Isolated temp directories for auth_stub round-trip tests.

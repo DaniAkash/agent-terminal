@@ -1,10 +1,25 @@
 import { Link } from 'expo-router'
-import { Pressable, Text, View } from 'react-native'
+import { ActivityIndicator, Pressable, Text, View } from 'react-native'
 import { useHomeData } from './home.data'
 
 export function HomeScreen() {
   const data = useHomeData()
-  return data.isPaired ? <PairedHome {...data} /> : <UnpairedHome />
+  switch (data.kind) {
+    case 'unpaired':
+      return <UnpairedHome />
+    case 'connecting':
+      return <ConnectingHome hint={data.hint} />
+    case 'unreachable':
+      return (
+        <UnreachableHome
+          hint={data.hint}
+          lastError={data.session.lastError}
+          onRetry={data.retry}
+        />
+      )
+    case 'connected':
+      return <PairedHome {...data} />
+  }
 }
 
 function UnpairedHome() {
@@ -18,13 +33,73 @@ function UnpairedHome() {
           Pair with a desktop to view and drive its tabs from here.
         </Text>
       </View>
-      <Link href="/connect" asChild>
-        <Pressable className="items-center rounded-md bg-accent px-6 py-3">
-          <Text className="font-semibold text-accent-foreground text-base">
-            Pair with desktop
-          </Text>
-        </Pressable>
-      </Link>
+      <View className="w-full gap-3">
+        <Link href="/pair" asChild>
+          <Pressable className="items-center rounded-md bg-accent px-6 py-3">
+            <Text className="font-semibold text-accent-foreground text-base">
+              Scan QR to pair
+            </Text>
+          </Pressable>
+        </Link>
+        {/* Manual token flow is a dev-only escape hatch for simulator
+            runs where the camera + QR path is impractical. `__DEV__`
+            is Metro's build-time constant: true in dev bundles,
+            statically false in production so the branch dead-code-
+            eliminates from the shipped bundle. */}
+        {__DEV__ && (
+          <Link href="/connect" asChild>
+            <Pressable className="items-center rounded-md border border-border px-6 py-3">
+              <Text className="text-base text-foreground">
+                Use manual token (dev only)
+              </Text>
+            </Pressable>
+          </Link>
+        )}
+      </View>
+    </View>
+  )
+}
+
+function ConnectingHome({ hint }: { hint: string | null }) {
+  return (
+    <View className="flex-1 items-center justify-center gap-4 bg-background p-6">
+      <ActivityIndicator size="large" />
+      <Text className="text-center font-semibold text-foreground text-lg">
+        Connecting to {hint ?? 'desktop'}…
+      </Text>
+      <Text className="text-center text-muted-foreground text-sm">
+        Looking for the desktop on your local network.
+      </Text>
+    </View>
+  )
+}
+
+function UnreachableHome({
+  hint,
+  lastError,
+  onRetry,
+}: {
+  hint: string | null
+  lastError: string | null
+  onRetry: () => void
+}) {
+  return (
+    <View className="flex-1 items-center justify-center gap-4 bg-background p-6">
+      <Text className="text-center font-semibold text-destructive text-lg">
+        Can't reach {hint ?? 'desktop'}
+      </Text>
+      <Text className="text-center text-muted-foreground text-sm">
+        {lastError ??
+          'Check that the desktop app is running and both devices are on the same Wi-Fi.'}
+      </Text>
+      <Pressable
+        onPress={onRetry}
+        className="items-center rounded-md bg-accent px-6 py-3"
+      >
+        <Text className="font-semibold text-accent-foreground text-base">
+          Retry
+        </Text>
+      </Pressable>
     </View>
   )
 }

@@ -2,6 +2,7 @@ import { useStore } from '@nanostores/react'
 import { getCurrentWebview } from '@tauri-apps/api/webview'
 import { useEffect, useState } from 'react'
 import { useHotkeys } from 'react-hotkeys-hook'
+import { CompanionDialog } from '@/components/Companion/CompanionDialog'
 import { Sidebar } from '@/components/Sidebar/Sidebar'
 import { StatusBar } from '@/components/StatusBar/StatusBar'
 import { TabSwitcher } from '@/components/TabSwitcher/TabSwitcher'
@@ -291,6 +292,11 @@ export function WorkspaceLayout() {
       <UpdateBanner />
       {/* Self-contained: owns its open state + Cmd+P hotkey. */}
       <TabSwitcher />
+      {/* Companion dialog for the pairing QR + paired-devices list.
+          Mounted at the layout level so it renders above the workspace
+          regardless of which tab is active. Self-gated on
+          `$companion.open`. */}
+      <CompanionDialog />
     </div>
   )
 }

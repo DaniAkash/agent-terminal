@@ -35,6 +35,15 @@ pub mod auth_stub;
 // one at startup and hands it to per-connection tasks.
 pub mod projects_cache;
 pub mod tls;
+// pub for direct test coverage (PairedTokens round-trip, PairingWindow
+// lifecycle) and so the wss_server dispatch path can name the types.
+pub mod pairing;
+// pub for direct test coverage. Net helpers are shared between the
+// pairing QR builder and the WSS server bootstrap (hostname resolution,
+// port trio bind fallback, LAN IP enumeration).
+pub mod net;
+// pub for direct test coverage of the mDNS registration + Drop.
+pub mod mdns;
 // pub so integration tests can drive the server directly (spin up on
 // 127.0.0.1:0 with an in-process client).
 pub mod wss_server;
@@ -63,6 +72,7 @@ use tauri::menu::{MenuBuilder, SubmenuBuilder};
 #[cfg(all(target_os = "macos", not(feature = "dev-instance")))]
 use tauri::menu::MenuItemBuilder;
 use auth_stub::AuthStub;
+use pairing::{PairedTokens, PairingWindow};
 use projects_cache::ProjectsCache;
 use pty_manager::PtyMap;
 use sidecar_client::SidecarClient;
@@ -71,7 +81,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use stream_hub::StreamHub;
 use tokio::process::Command;
-use wss_server::ServerState;
+use wss_server::{PairedConnMap, ServerState};
 
 /// Locate the runtime binary + sidecar entry script. Dev launches read from
 /// the source tree via CARGO_MANIFEST_DIR; production bundling is a separate
@@ -141,6 +151,16 @@ async fn try_spawn_sidecar() -> Option<SidecarClient> {
 /// lands with the dev-client migration.
 fn build_tls_sans() -> Vec<String> {
     let mut sans = vec!["localhost".to_string(), "127.0.0.1".to_string()];
+    // Include the `.local` mDNS hostname so the mobile client's
+    // fast-path attempt (`wss://<host>.local:<port>/stream`) passes
+    // TLS name verification. Without this SAN, iOS + Android reject
+    // the handshake before we get to the PAIRING: auth exchange —
+    // matches openssl's "no matching subjectAltName" behaviour.
+    if let Some(host) = net::local_hostname() {
+        if !sans.contains(&host) {
+            sans.push(host);
+        }
+    }
     let Ok(ifaces) = local_ip_address::list_afinet_netifas() else {
         return sans;
     };
@@ -313,14 +333,23 @@ pub fn run() {
             let mobile_op_inboxes_for_wss = Arc::clone(&mobile_op_inboxes);
             app.manage(Arc::clone(&mobile_op_inboxes));
 
-            // WSS server. AuthStub reads (or auto-generates) the dev
-            // config file — its bind_addr + tls_enabled come from there.
-            // Spawn as a tokio task; bind failure logs but doesn't block
-            // startup so a broken WSS never keeps the desktop from
-            // launching.
+            // WSS server + pairing infrastructure. See:
+            //   * pairing.rs — PairedTokens + PairingWindow
+            //   * net.rs — port trio bind fallback + `.local` hostname
+            //   * mdns.rs — `_agent-terminal._tcp.local.` advertisement
+            //
+            // Everything is best-effort at startup: a broken WSS should
+            // never keep the desktop from launching. Failures log loudly
+            // and downgrade the pairing / connect UX gracefully.
+            //
+            // A labelled block gives us clean early-exit ergonomics: the
+            // bind failure branch (or a missing home dir) can
+            // `break 'wss_setup` without skipping the window focus
+            // handler + Ok(()) return below.
             let config_dir = dirs::home_dir()
                 .map(|h| h.join(".config").join(identity::NAMESPACE));
-            if let Some(dir) = config_dir {
+            'wss_setup: {
+              if let Some(dir) = config_dir {
                 match AuthStub::load_or_init(&dir) {
                     Ok((auth, path)) => {
                         let auth = Arc::new(auth);
@@ -328,11 +357,8 @@ pub fn run() {
                             "[wss] dev config: {} (token inside — copy into companion client)",
                             path.display()
                         );
-                        // Load or generate the TLS material once at
-                        // startup. Stored under `<config_dir>/tls/`.
-                        // Fingerprint is exposed via the Tauri command
-                        // `get_tls_fingerprint` so the pairing UI (PR B)
-                        // can embed it in the QR.
+
+                        // TLS material.
                         let tls_material_result = if auth.tls_enabled {
                             let tls_dir = dir.join("tls");
                             let sans = build_tls_sans();
@@ -353,7 +379,111 @@ pub fn run() {
                             .as_ref()
                             .ok()
                             .map(|(fp, _)| fp.clone());
+
+                        // Paired-tokens + pairing-window shared handles.
+                        // Load or init the Keychain-backed map; dev
+                        // namespace so a dev build does not read prod
+                        // paired devices.
+                        let dev_ns = cfg!(feature = "dev-instance");
+                        let paired_tokens = match PairedTokens::load(dev_ns) {
+                            Ok(pt) => Arc::new(pt),
+                            Err(e) => {
+                                eprintln!(
+                                    "[wss] paired tokens load failed: {e}. \
+                                     Starting with an empty in-memory store."
+                                );
+                                Arc::new(PairedTokens::new_ephemeral())
+                            }
+                        };
+                        let pairing_window = Arc::new(PairingWindow::new());
+                        let paired_conns = Arc::new(PairedConnMap::new());
+
+                        // Port trio bind fallback. `bind_addr` from the
+                        // dev config carries the host to bind on
+                        // (typically `0.0.0.0`); we ignore its port and
+                        // walk the standardised trio so the QR-encoded
+                        // port matches whichever the kernel gave us.
+                        let bind_host_str = auth.bind_addr.ip().to_string();
+                        let bind_pair = match net::bind_first_available(
+                            &bind_host_str,
+                            &net::STANDARD_PORTS,
+                        ) {
+                            Ok(pair) => Some(pair),
+                            Err(e) => {
+                                eprintln!(
+                                    "[wss] bind failed on every port in the trio: {e}. \
+                                     Companion pairing + connect is unavailable this session."
+                                );
+                                None
+                            }
+                        };
+                        if bind_pair.is_none() {
+                            app.manage(commands::TlsFingerprint(tls_fingerprint));
+                            app.manage(commands::BoundNet {
+                                hostname: None,
+                                ips: Vec::new(),
+                                port: 0,
+                            });
+                            app.manage(Arc::clone(&paired_tokens));
+                            app.manage(Arc::clone(&pairing_window));
+                            app.manage(Arc::clone(&paired_conns));
+                            app.manage(auth);
+                            break 'wss_setup;
+                        }
+                        let (bound_std_listener, bound_port) = bind_pair.unwrap();
+                        let bind_ip = auth.bind_addr.ip();
+                        let bound_addr = std::net::SocketAddr::new(bind_ip, bound_port);
+                        eprintln!("[wss] bound {bound_addr}");
+
+                        // Pairing-QR + mDNS network snapshot.
+                        let hostname = net::local_hostname();
+                        let lan_ips = net::lan_ipv4s();
+                        eprintln!(
+                            "[wss] pairing snapshot: host={hostname:?} ips={lan_ips:?} port={bound_port}"
+                        );
+
+                        // mDNS advertisement (best-effort). Held for
+                        // the app's lifetime; Drop deregisters cleanly.
+                        // Skipped when there are no LAN IPs to
+                        // advertise or when TLS is disabled and we
+                        // therefore have no fingerprint to embed.
+                        let mdns_ad = tls_fingerprint
+                            .as_ref()
+                            .and_then(|fp| {
+                                hostname.as_ref().map(|h| (h.clone(), fp.clone()))
+                            })
+                            .and_then(|(h, fp)| {
+                                if lan_ips.is_empty() {
+                                    None
+                                } else {
+                                    match mdns::MdnsAdvertisement::register(
+                                        &h,
+                                        &lan_ips,
+                                        bound_port,
+                                        &fp,
+                                    ) {
+                                        Ok(ad) => Some(ad),
+                                        Err(e) => {
+                                            eprintln!("[wss] mdns register failed: {e}");
+                                            None
+                                        }
+                                    }
+                                }
+                            });
+                        if let Some(ad) = mdns_ad {
+                            app.manage(ad);
+                        }
+
                         app.manage(commands::TlsFingerprint(tls_fingerprint));
+                        app.manage(commands::BoundNet {
+                            hostname: hostname.clone(),
+                            ips: lan_ips.iter().map(ToString::to_string).collect(),
+                            port: bound_port,
+                        });
+                        app.manage(Arc::clone(&paired_tokens));
+                        app.manage(Arc::clone(&pairing_window));
+                        app.manage(Arc::clone(&paired_conns));
+
                         let server_state = Arc::new(ServerState {
                             hub: hub_for_wss,
                             auth: Arc::clone(&auth),
@@ -363,26 +493,53 @@ pub fn run() {
                             cwd_table,
                             app_handle: Some(app.handle().clone()),
                             mobile_op_inboxes: mobile_op_inboxes_for_wss,
+                            paired_tokens,
+                            pairing_window,
+                            paired_conns,
                         });
-                        let bind_addr = auth.bind_addr;
                         let tls_enabled = auth.tls_enabled;
                         app.manage(auth);
                         tauri::async_runtime::spawn(async move {
                             let result = if tls_enabled {
                                 match tls_bundle {
                                     Ok((_, rustls_cfg)) => {
-                                        wss_server::run_with_tls(bind_addr, server_state, rustls_cfg)
-                                            .await
+                                        wss_server::run_with_tls_from_listener(
+                                            bound_std_listener,
+                                            server_state,
+                                            rustls_cfg,
+                                        )
+                                        .await
                                     }
                                     Err(e) => {
                                         eprintln!(
                                             "[wss] TLS enabled in config but material load failed: {e}. Falling back to plain ws://"
                                         );
-                                        wss_server::run(bind_addr, server_state).await
+                                        // `bind_first_available`
+                                        // returns a non-blocking
+                                        // listener per its contract, so
+                                        // `TcpListener::from_std` (which
+                                        // requires non-blocking mode per
+                                        // tokio docs) is safe here.
+                                        match tokio::net::TcpListener::from_std(bound_std_listener) {
+                                            Ok(l) => wss_server::run_with_listener(l, server_state).await,
+                                            Err(e2) => {
+                                                eprintln!("[wss] listener conversion failed: {e2}");
+                                                return;
+                                            }
+                                        }
                                     }
                                 }
                             } else {
-                                wss_server::run(bind_addr, server_state).await
+                                // Same non-blocking guarantee from
+                                // `bind_first_available` as the
+                                // TLS-fallback branch above.
+                                match tokio::net::TcpListener::from_std(bound_std_listener) {
+                                    Ok(l) => wss_server::run_with_listener(l, server_state).await,
+                                    Err(e) => {
+                                        eprintln!("[wss] listener conversion failed: {e}");
+                                        return;
+                                    }
+                                }
                             };
                             if let Err(e) = result {
                                 eprintln!("[wss] server crashed: {e}");
@@ -393,9 +550,10 @@ pub fn run() {
                         eprintln!("[wss] disabled: dev config load failed: {e}");
                     }
                 }
-            } else {
+              } else {
                 eprintln!("[wss] disabled: no home directory");
-            }
+              }
+            } // 'wss_setup
 
             // Window focus → suppression signal only.
             // (The previous focus-event-based click heuristic is gone — it
@@ -427,6 +585,11 @@ pub fn run() {
             commands::report_mobile_op_error,
             commands::report_mobile_op_ok,
             commands::get_tls_fingerprint,
+            commands::open_pairing_window,
+            commands::close_pairing_window,
+            commands::get_pairing_qr_payload,
+            commands::list_paired_devices,
+            commands::revoke_paired_device,
             notifications::notif_set_projects,
             notifications::notif_set_active_tab,
             notifications::notif_set_app_focus,
