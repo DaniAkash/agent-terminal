@@ -537,7 +537,13 @@ async fn connection_task(mut socket: WebSocket, state: Arc<ServerState>) {
 /// confirm button doesn't leak a connection), mint the long-lived
 /// device token, send PairingComplete, then close.
 async fn pairing_flow(mut socket: WebSocket, state: &Arc<ServerState>, pairing_token: &str) {
-    if let Err(e) = state.pairing_window.consume(pairing_token) {
+    // Validate up-front but do NOT burn: `paired_tokens.insert` can
+    // fail (e.g. transient keychain refusal on the dev macOS build)
+    // and burning the token before the insert would strand the user
+    // — they would have to reopen the desktop Companion dialog for a
+    // fresh QR just to retry the same keychain write. The token is
+    // consumed only after a successful insert below.
+    if let Err(e) = state.pairing_window.validate(pairing_token) {
         let reason = match e {
             PairingError::NoOpenWindow => "no pairing window open on desktop",
             PairingError::Expired => "pairing window expired, reopen on desktop",
@@ -631,9 +637,21 @@ async fn pairing_flow(mut socket: WebSocket, state: &Arc<ServerState>, pairing_t
                 },
             )
             .await;
+            // Leave the pair window intact; validate-not-consume above
+            // means the token is still live and the user can retry
+            // without reopening the desktop dialog.
             return;
         }
     };
+    // Insert succeeded, burn the pair token now.
+    if let Err(e) = state.pairing_window.consume(pairing_token) {
+        // Race: another client burned it between our validate and
+        // this consume. Log for diagnostics; the paired device is
+        // still inserted, so this connection continues to
+        // PairingComplete. Practical impact zero for a single-user
+        // desktop.
+        eprintln!("[wss] pair window burn lost a race: {e:?}");
+    }
 
     // Notify the desktop UI so the paired-devices list refreshes.
     if let Some(app) = state.app_handle.as_ref() {

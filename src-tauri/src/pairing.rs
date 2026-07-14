@@ -222,7 +222,14 @@ impl PairedTokens {
             return Ok(());
         };
         let json = serde_json::to_string(map).context("serialise paired_tokens")?;
-        entry.set_password(&json).context("keyring set_password")?;
+        // Bubble up the actual keyring error text (PlatformFailure,
+        // Ambiguous, Invalid, TooLong, ...) rather than the flat
+        // "keyring set_password" label `context` would attach — the
+        // WSS pairing error surface displays this verbatim to the
+        // user, so specificity matters.
+        entry
+            .set_password(&json)
+            .map_err(|e| anyhow::anyhow!("keyring set_password failed: {e:?}"))?;
         Ok(())
     }
 }
@@ -288,6 +295,26 @@ impl PairingWindow {
             return Err(PairingError::Mismatch);
         }
         *slot = None;
+        Ok(())
+    }
+
+    /// Validate the token without burning it. Same semantics as
+    /// `consume` except the window stays open on success. Used by
+    /// `pairing_flow` to check the token up-front then defer the
+    /// burn until AFTER `paired_tokens.insert` succeeds, so a
+    /// transient keychain failure does not consume the pair token
+    /// and force the user to reopen the desktop dialog for a fresh
+    /// QR.
+    pub fn validate(&self, presented: &str) -> Result<(), PairingError> {
+        let mut slot = self.inner.lock().expect("pairing_window lock poisoned");
+        let session = slot.as_ref().ok_or(PairingError::NoOpenWindow)?;
+        if session.expires_at < Instant::now() {
+            *slot = None;
+            return Err(PairingError::Expired);
+        }
+        if !constant_time_eq(session.pairing_token.as_bytes(), presented.as_bytes()) {
+            return Err(PairingError::Mismatch);
+        }
         Ok(())
     }
 }
