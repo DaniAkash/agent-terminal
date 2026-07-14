@@ -37,8 +37,22 @@ module.exports = function withGradleWrapperVersion(
         'gradle-wrapper.properties',
       )
       const src = fs.readFileSync(p, 'utf8')
+      // Anchor to a line-start `distributionUrl=` (multiline flag);
+      // verify a replacement actually happened so a future Expo
+      // template drift (extra comment on the line, CRLF endings,
+      // property split across lines) surfaces as a loud plugin
+      // error instead of a silent no-op that would bring back the
+      // Gradle 9 / foojay-0.5.0 `IBM_SEMERU` crash.
+      const pattern = /^distributionUrl=.+$/m
+      if (!pattern.test(src)) {
+        throw new Error(
+          `withGradleWrapperVersion: distributionUrl line not found in ${p}. ` +
+            `Expo's gradle-wrapper.properties template may have changed shape; ` +
+            `update the plugin's regex or bump the pinned Gradle version.`,
+        )
+      }
       const patched = src.replace(
-        /distributionUrl=.+/,
+        pattern,
         `distributionUrl=https\\://services.gradle.org/distributions/gradle-${version}-bin.zip`,
       )
       fs.writeFileSync(p, patched)
