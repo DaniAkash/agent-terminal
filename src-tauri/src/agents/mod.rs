@@ -37,6 +37,14 @@ pub struct OscView<'a> {
     pub progress: &'a str,
 }
 
+/// True if `c` is in the Braille Patterns block (U+2800..=U+28FF). Agents paint
+/// animated spinner glyphs from this block into the OSC title while working, so
+/// a Braille glyph in the title is a robust "working" signal that survives the
+/// spinner-word rotation and prompt-box redraws that break screen matching.
+pub(crate) fn is_braille(c: char) -> bool {
+    ('\u{2800}'..='\u{28FF}').contains(&c)
+}
+
 /// Role a hook event plays in the state machine. The event-name-to-role mapping
 /// is per agent (Claude's `Notification` and Codex's `PermissionRequest` both
 /// map to `Blocked`, for example).
