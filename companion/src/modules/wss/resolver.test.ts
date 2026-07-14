@@ -18,34 +18,41 @@ function fakeDevice(overrides: Partial<DeviceRecord> = {}): DeviceRecord {
 }
 
 describe('resolveWssCandidates', () => {
-  it('rung 1 places the cached IP + cached port first', () => {
+  it('rung 1 places the cached IP + cached port first (wss then ws)', () => {
     const candidates = resolveWssCandidates(fakeDevice())
     expect(candidates[0]).toBe('wss://192.168.1.42:47823/stream')
+    expect(candidates[1]).toBe('ws://192.168.1.42:47823/stream')
   })
 
-  it('rung 2 uses the .local host on the cached port', () => {
+  it('rung 2 uses the .local host on the cached port (wss then ws)', () => {
     const candidates = resolveWssCandidates(fakeDevice())
-    expect(candidates[1]).toBe('wss://danis-macbook.local:47823/stream')
+    expect(candidates[2]).toBe('wss://danis-macbook.local:47823/stream')
+    expect(candidates[3]).toBe('ws://danis-macbook.local:47823/stream')
   })
 
   it('rung 3 tries the .local host on each other standard port', () => {
     const candidates = resolveWssCandidates(fakeDevice())
-    // After rungs 1+2, expect .local on the two remaining standard ports.
+    // After rungs 1+2 (4 URLs), expect .local on the two remaining
+    // standard ports, each in wss + ws pair.
     const localOtherPorts = candidates
-      .slice(2)
-      .filter((c) => c.startsWith('wss://danis-macbook.local:'))
+      .slice(4)
+      .filter((c) => c.includes('danis-macbook.local'))
     expect(localOtherPorts).toEqual([
       'wss://danis-macbook.local:28617/stream',
+      'ws://danis-macbook.local:28617/stream',
       'wss://danis-macbook.local:39482/stream',
+      'ws://danis-macbook.local:39482/stream',
     ])
   })
 
   it('rung 4 falls back to every IP on every standard port', () => {
     const candidates = resolveWssCandidates(fakeDevice())
     // Second IP + a non-primary port must appear somewhere after the
-    // .local rungs.
+    // .local rungs, in both schemes.
     expect(candidates).toContain('wss://10.0.0.7:28617/stream')
+    expect(candidates).toContain('ws://10.0.0.7:28617/stream')
     expect(candidates).toContain('wss://10.0.0.7:39482/stream')
+    expect(candidates).toContain('ws://10.0.0.7:39482/stream')
   })
 
   it('deduplicates URLs across rungs', () => {
@@ -59,7 +66,7 @@ describe('resolveWssCandidates', () => {
     const candidates = resolveWssCandidates(noHost as DeviceRecord)
     // Only IP-based rungs should surface; no `.local` URLs.
     expect(candidates.every((c) => !c.includes('.local'))).toBe(true)
-    // Cached path still first.
+    // Cached path still first (wss variant).
     expect(candidates[0]).toBe('wss://192.168.1.42:47823/stream')
   })
 
@@ -67,8 +74,10 @@ describe('resolveWssCandidates', () => {
     const candidates = resolveWssCandidates(
       fakeDevice({ lastIp: null, lastPort: null }),
     )
-    // First candidate should be primary IP on primary port from the QR.
+    // First candidate should be primary IP on primary port from the QR
+    // over wss (fallback ws comes right after).
     expect(candidates[0]).toBe('wss://192.168.1.42:47823/stream')
+    expect(candidates[1]).toBe('ws://192.168.1.42:47823/stream')
   })
 })
 
@@ -81,9 +90,17 @@ describe('classifyRung', () => {
     expect(classifyRung(dev, first)).toBe('cached')
   })
 
+  it('labels the ws cached fallback as `cached` too', () => {
+    const dev = fakeDevice()
+    expect(classifyRung(dev, 'ws://192.168.1.42:47823/stream')).toBe('cached')
+  })
+
   it('labels the .local + cached-port candidate as `local`', () => {
     const dev = fakeDevice()
     expect(classifyRung(dev, 'wss://danis-macbook.local:47823/stream')).toBe(
+      'local',
+    )
+    expect(classifyRung(dev, 'ws://danis-macbook.local:47823/stream')).toBe(
       'local',
     )
   })
@@ -93,11 +110,15 @@ describe('classifyRung', () => {
     expect(classifyRung(dev, 'wss://danis-macbook.local:28617/stream')).toBe(
       'standard-port',
     )
+    expect(classifyRung(dev, 'ws://danis-macbook.local:28617/stream')).toBe(
+      'standard-port',
+    )
   })
 
   it('labels IP-based fallbacks as `ip-fallback`', () => {
     const dev = fakeDevice()
     expect(classifyRung(dev, 'wss://10.0.0.7:28617/stream')).toBe('ip-fallback')
+    expect(classifyRung(dev, 'ws://10.0.0.7:28617/stream')).toBe('ip-fallback')
   })
 
   it('labels URLs outside the ladder as `unknown`', () => {

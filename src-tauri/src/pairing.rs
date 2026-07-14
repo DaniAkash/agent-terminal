@@ -102,6 +102,13 @@ impl PairedTokens {
     /// Load-or-init from Keychain. `dev` picks the dev-namespaced
     /// service so a dev build's paired devices do not collide with a
     /// prod build's on the same machine.
+    ///
+    /// On a JSON parse failure the malformed entry is deleted from
+    /// the Keychain and the loader returns an empty-map store
+    /// (still Keychain-backed for persistence). This self-heals the
+    /// "prior process crashed mid-write and left a truncated blob"
+    /// case, which otherwise degraded to an ephemeral in-memory
+    /// store and silently lost pairings on the next restart.
     pub fn load(dev: bool) -> Result<Self> {
         let service = if dev {
             KEYRING_SERVICE_DEV
@@ -112,7 +119,18 @@ impl PairedTokens {
             .with_context(|| format!("keyring Entry::new({service}, ...)"))?;
         let inner = match entry.get_password() {
             Ok(json) if json.is_empty() => HashMap::new(),
-            Ok(json) => serde_json::from_str(&json).with_context(|| "parse keychain blob")?,
+            Ok(json) => match serde_json::from_str(&json) {
+                Ok(map) => map,
+                Err(e) => {
+                    eprintln!(
+                        "[pairing] keychain blob failed to parse ({e}); \
+                         deleting and starting fresh (previous pairings \
+                         will need to reconnect)"
+                    );
+                    let _ = entry.delete_credential();
+                    HashMap::new()
+                }
+            },
             Err(keyring::Error::NoEntry) => HashMap::new(),
             Err(e) => return Err(e).context("keyring get_password"),
         };
