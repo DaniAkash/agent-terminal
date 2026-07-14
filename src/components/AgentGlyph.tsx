@@ -23,6 +23,27 @@ function ClaudeMark({ size }: { size: number }) {
   )
 }
 
+function OpenCodeMark({ size }: { size: number }) {
+  // opencode brand mark (svgl.app), reduced to a single currentColor
+  // silhouette: the framed monitor glyph with its notch cut out.
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 512 512"
+      fill="currentColor"
+      fillRule="evenodd"
+      style={{ display: 'block' }}
+      aria-hidden="true"
+    >
+      <path
+        clipRule="evenodd"
+        d="M384 416H128V96H384V416ZM320 160H192V352H320V160Z"
+      />
+    </svg>
+  )
+}
+
 function CodexMark({ size }: { size: number }) {
   return (
     <svg
@@ -49,6 +70,7 @@ function CodexMark({ size }: { size: number }) {
 const BRAND: Record<string, { color: string; glow: string }> = {
   'claude-code': { color: '#D97757', glow: 'rgba(217,119,87,0.55)' },
   codex: { color: '#e6e8eb', glow: 'rgba(230,232,235,0.45)' },
+  opencode: { color: '#ebe9e6', glow: 'rgba(235,233,230,0.45)' },
 }
 
 /**
@@ -59,6 +81,7 @@ const BRAND: Record<string, { color: string; glow: string }> = {
 const MARKS: Record<string, React.ComponentType<{ size: number }>> = {
   'claude-code': ClaudeMark,
   codex: CodexMark,
+  opencode: OpenCodeMark,
 }
 
 /* ---------------------------------------------------------------------------
