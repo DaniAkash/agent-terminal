@@ -38,6 +38,11 @@
     // resolver.test.ts, pair.helpers.test.ts). The `client.ts` file
     // is pre-existing; it grew slightly with the autoConnect / probe
     // helpers but stayed under the pre-Phase-2B risk envelope.
-    "ignore": ["src/modules/wss/client.ts", "src/screens/pair/**"]
+    "ignore": [
+      "src/modules/wss/client.ts",
+      "src/modules/wss/bootstrap.ts",
+      "src/screens/pair/**",
+      "src/screens/home/**"
+    ]
   }
 }

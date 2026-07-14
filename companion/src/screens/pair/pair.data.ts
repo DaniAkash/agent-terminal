@@ -46,6 +46,7 @@ export async function completePairing(
         ...(qr.host === undefined ? {} : { host: qr.host }),
       }
       await saveDeviceToSecureStore(record)
+      console.log(`[pair] success via ${maskUrl(url)}`)
       return record
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)

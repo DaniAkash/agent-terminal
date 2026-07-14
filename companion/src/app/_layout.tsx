@@ -3,9 +3,7 @@ import { ActionSheetProvider } from '@expo/react-native-action-sheet'
 import { Stack } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
 import { useEffect } from 'react'
-import { $device, loadDeviceFromSecureStore } from '@/modules/stores/$device'
-import { $session } from '@/modules/stores/$session'
-import { autoConnect } from '@/modules/wss/client'
+import { initWssBootstrap } from '@/modules/wss/bootstrap'
 
 // ActionSheetProvider wraps any component that uses useActionSheet()
 // from @expo/react-native-action-sheet (Phase B long-press menus on
@@ -17,21 +15,17 @@ import { autoConnect } from '@/modules/wss/client'
 // native-module setup runs after expo-router has bootstrapped rather
 // than during the first import of _layout.tsx.
 export default function RootLayout() {
-  // Cold-start boot: read the persisted DeviceRecord and, if present,
-  // kick the self-healing resolver ladder in the background. Session
-  // status flips through `connecting` → `connected`/`unreachable`;
-  // the UI reads $session and gates on it. useEffect exception: this
-  // is a boot-time side effect syncing an external store (secure
-  // storage) into the running app, one of CLAUDE.md's explicit
-  // "legitimate useEffect" cases.
+  // Wire the reactive `$device` → `autoConnect` subscription once at
+  // app boot. From then on, any device transition — cold-start load
+  // from secure-store, a fresh pair completing, a Revoke clearing
+  // the record — routes through the subscription in bootstrap.ts,
+  // so the paired state is a single atom-of-truth and the UI
+  // switches seamlessly without a manual restart. useEffect
+  // exception: boot-time side effect syncing an external store
+  // (secure storage + WSS session) into the running app, one of
+  // CLAUDE.md's explicit "legitimate useEffect" cases.
   useEffect(() => {
-    void (async () => {
-      await loadDeviceFromSecureStore()
-      const rec = $device.get().record
-      if (rec && $session.get().status === 'disconnected') {
-        void autoConnect(rec)
-      }
-    })()
+    void initWssBootstrap()
   }, [])
   return (
     // biome-ignore lint/complexity/noUselessFragments: ActionSheetProvider
