@@ -539,12 +539,19 @@ async fn connection_task(
     }
 }
 
-/// Handle the `PAIRING:` sub-flow. The auth path already validated the
-/// pairing token via `PairingWindow::consume`. Here we send AuthOk
-/// with a "Pairing" placeholder, wait for exactly one PairingStart
-/// frame (60s timeout so a phone that camera-scans and never taps the
-/// confirm button doesn't leak a connection), mint the long-lived
-/// device token, send PairingComplete, then close.
+/// Handle the `PAIRING:` sub-flow. The auth path stripped the prefix
+/// and handed us the raw token; here we validate it against the
+/// currently-open `PairingWindow` (peek without burn — see
+/// `PairingWindow::validate`), send AuthOk with a "Pairing"
+/// placeholder, wait for exactly one PairingStart frame (60s timeout
+/// so a phone that camera-scans and never taps the confirm button
+/// doesn't leak a connection), mint the long-lived device token via
+/// `paired_tokens.insert`, and only then `consume` (burn) the pair
+/// token. This validate-then-consume ordering keeps the pair window
+/// alive across a transient insert failure (e.g. macOS Keychain
+/// permission prompt on first-run refuses the write) so the mobile
+/// can retry the same token without the user reopening the desktop
+/// dialog. Ends with a PairingComplete + close.
 async fn pairing_flow(mut socket: WebSocket, state: &Arc<ServerState>, pairing_token: &str) {
     // Validate up-front but do NOT burn: `paired_tokens.insert` can
     // fail (e.g. transient keychain refusal on the dev macOS build)

@@ -326,9 +326,16 @@ pub struct PairingQrPayload {
 }
 
 /// Mint a fresh pairing token and return the full QR payload the
-/// desktop UI encodes into the on-screen QR. Fails when TLS is off
-/// (no fingerprint to embed) or when the WSS bind failed at startup
-/// (nothing for the mobile to connect to).
+/// desktop UI encodes into the on-screen QR. Fails only when the WSS
+/// bind failed at startup (nothing for the mobile to connect to).
+///
+/// TLS-off is NOT a failure condition: `tls_enabled: false` in
+/// `companion-dev.json` yields an empty-string fingerprint sentinel
+/// in the payload, and both the desktop dialog and the mobile pair
+/// screen render a "TLS off (dev only)" banner in place of the
+/// fingerprint compare block. Full TLS + a required fingerprint
+/// returns once native cert pinning lands with the dev-client
+/// migration (Phase 2B / PR D).
 #[tauri::command]
 pub async fn open_pairing_window(
     fingerprint: State<'_, TlsFingerprint>,
@@ -372,10 +379,15 @@ pub async fn close_pairing_window(
 /// Snapshot the pairing QR payload without opening a fresh session.
 /// Used when the desktop UI re-mounts and wants to redisplay whatever
 /// pairing token is currently live server-side (e.g. React strict-mode
-/// double-mount). Returns `Ok(None)` when no session is currently
-/// open, TLS is disabled, or the WSS bind failed at startup; the
-/// caller should treat that as "nothing to display, tell the user to
-/// open a new pairing session".
+/// double-mount). Returns `Ok(None)` when no pairing session is
+/// currently open OR when the WSS bind failed at startup; the caller
+/// should treat that as "nothing to display, tell the user to open a
+/// new pairing session".
+///
+/// TLS-off is NOT an `Ok(None)` condition: with `tls_enabled: false`
+/// and a live session, the returned payload's `fingerprint` is the
+/// empty-string sentinel (same as `open_pairing_window`). The
+/// dev-only warning banner path handles the display.
 #[tauri::command]
 pub async fn get_pairing_qr_payload(
     fingerprint: State<'_, TlsFingerprint>,
