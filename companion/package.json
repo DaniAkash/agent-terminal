@@ -54,11 +54,12 @@
     "fmt": "biome format",
     "lint": "biome lint",
     "typecheck": "tsc --noEmit",
+    "test": "bun test src/",
     "fallow": "fallow",
     "fallow:dead-code": "fallow dead-code",
     "fallow:dupes": "fallow dupes",
     "fallow:health": "fallow health",
-    "check": "concurrently --group --names fmt,lint,typecheck,fallow --prefix-colors auto \"bun run fmt\" \"bun run lint\" \"bun run typecheck\" \"bun run fallow\""
+    "check": "concurrently --group --names fmt,lint,typecheck,test,fallow --prefix-colors auto \"bun run fmt\" \"bun run lint\" \"bun run typecheck\" \"bun run test\" \"bun run fallow\""
   },
   "private": true
 }

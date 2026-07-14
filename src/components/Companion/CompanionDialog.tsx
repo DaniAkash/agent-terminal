@@ -299,10 +299,8 @@ function Fingerprint({ value }: { value: string }) {
   return (
     <output className="mx-auto block max-w-full font-mono text-[12px] text-foreground/90 tabular-nums">
       <div className="flex flex-wrap justify-center gap-x-3 gap-y-1">
-        {blocks.map((block, idx) => (
-          // biome-ignore lint/suspicious/noArrayIndexKey: fixed block
-          // count from the SHA-256 split, order stable.
-          <span key={idx} className="whitespace-nowrap">
+        {blocks.map((block) => (
+          <span key={block} className="whitespace-nowrap">
             {block}
           </span>
         ))}
