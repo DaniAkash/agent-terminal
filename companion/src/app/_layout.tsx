@@ -34,26 +34,31 @@ export default function RootLayout() {
     })()
   }, [])
   return (
+    // biome-ignore lint/complexity/noUselessFragments: ActionSheetProvider
+    // uses React.Children.only internally, so the sibling StatusBar +
+    // Stack must be wrapped as a single fragment child.
     <ActionSheetProvider>
-      <StatusBar style="auto" />
-      <Stack>
-        <Stack.Screen name="index" options={{ title: 'Agent Terminal' }} />
-        <Stack.Screen name="pair" options={{ title: 'Pair with desktop' }} />
-        <Stack.Screen name="connect" options={{ title: 'Manual connect' }} />
-        <Stack.Screen
-          name="projects"
-          options={{
-            title: 'Projects',
-            presentation: 'modal',
-          }}
-        />
-        <Stack.Screen
-          name="tab/[tabid]"
-          options={{
-            headerBackTitle: 'Back',
-          }}
-        />
-      </Stack>
+      <>
+        <StatusBar style="auto" />
+        <Stack>
+          <Stack.Screen name="index" options={{ title: 'Agent Terminal' }} />
+          <Stack.Screen name="pair" options={{ title: 'Pair with desktop' }} />
+          <Stack.Screen name="connect" options={{ title: 'Manual connect' }} />
+          <Stack.Screen
+            name="projects"
+            options={{
+              title: 'Projects',
+              presentation: 'modal',
+            }}
+          />
+          <Stack.Screen
+            name="tab/[tabid]"
+            options={{
+              headerBackTitle: 'Back',
+            }}
+          />
+        </Stack>
+      </>
     </ActionSheetProvider>
   )
 }
