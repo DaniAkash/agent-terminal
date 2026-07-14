@@ -1,0 +1,90 @@
+// Agent Terminal opencode plugin.
+//
+// Reports agent turn state to Agent Terminal's local hook server so the tab
+// badge reflects working / blocked / turn-end. Fire-and-forget: it never blocks
+// or throws into opencode.
+//
+// Written by Agent Terminal. Do not edit; reinstalled on launch.
+//
+// Correlation: `AGENT_TERMINAL_TAB_ID` (and the hook port) are injected into the
+// shell by Agent Terminal. When opencode runs outside Agent Terminal the tab id
+// is absent and every report is dropped.
+
+const TAB_ID = process.env.AGENT_TERMINAL_TAB_ID
+const PORT = process.env.AGENT_TERMINAL_HOOK_PORT || "47384"
+
+// Subagent (task tool) sessions carry a parentID. Only the root session drives
+// the pane badge; track child session ids and drop their reports so a subagent
+// finishing does not flip the pane to idle while the root is still working.
+const childSessions = new Set()
+
+async function report(event, sessionID) {
+  if (!TAB_ID) return
+  const body = JSON.stringify({
+    agent: "opencode",
+    event,
+    tab_id: TAB_ID,
+    session_id: sessionID || "",
+  })
+  try {
+    await fetch(`http://127.0.0.1:${PORT}/hook`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+      signal: AbortSignal.timeout(500),
+    })
+  } catch {
+    // one-way notification; ignore transport errors
+  }
+}
+
+// opencode's session.status carries { type: "idle" | "busy" | "retry" } (older
+// builds used a bare string). "idle" means the turn finished.
+function stateFromStatus(status) {
+  const type = typeof status === "string" ? status : status && status.type
+  switch (type) {
+    case "idle":
+      return "turn_end"
+    case "busy":
+    case "working":
+    case "retry":
+      return "working"
+    default:
+      return null
+  }
+}
+
+export const AgentTerminalStatePlugin = async () => {
+  return {
+    "chat.message": async ({ sessionID }) => {
+      if (sessionID && childSessions.has(sessionID)) return
+      await report("working", sessionID)
+    },
+    event: async ({ event }) => {
+      const type = event && event.type
+      const properties = (event && event.properties) || {}
+      const sessionID = properties.sessionID
+      if (sessionID && childSessions.has(sessionID)) return
+      switch (type) {
+        case "session.created":
+          if (properties.info && properties.info.parentID) {
+            childSessions.add(properties.info.id)
+          } else if (sessionID) {
+            await report("session_start", sessionID)
+          }
+          break
+        case "session.updated":
+        case "session.idle":
+        case "session.status": {
+          const state = stateFromStatus(properties.status)
+          if (state) await report(state, sessionID)
+          break
+        }
+        case "permission.asked":
+        case "permission.updated":
+          await report("blocked", sessionID)
+          break
+      }
+    },
+  }
+}

@@ -13,19 +13,23 @@
 //! - **Atomic writes**: config changes go through a temp-file rename so a
 //!   crash mid-write can't produce a corrupt config.
 
+use crate::agents::{self, HookInstall};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 
-// ─── Static registry ─────────────────────────────────────────────────────────
+// ─── Native-config install view ──────────────────────────────────────────────
 //
-// All supported agents (Claude Code, Codex) speak the same hook protocol:
-// nested matcher+hooks JSON entries with `{type:"command", command:"…", timeout:N}`.
-// Codex's `hook_runtime.rs` module is literally called `ClaudeHooksEngine` and
-// reads the same shape from `~/.codex/hooks.json` that Claude reads from
-// `~/.claude/settings.json`. There used to be a `HookConfigFormat::Codex` flat
-// variant — that was wrong and silently broke codex hook delivery from day one.
-// The 2026-04-27 e2e tests caught it: Codex never fired for our config until we
-// rewrote `hooks.json` in the nested format.
+// The agent registry (`crate::agents`) is the single source of truth. This
+// module materialises the subset of agents whose hooks install via a settings
+// -file merge (Claude, Codex) into `AGENT_HOOK_CONFIGS`. Both speak the same
+// hook protocol: nested matcher+hooks JSON entries with
+// `{type:"command", command:"…", timeout:N}`. Codex's engine is literally named
+// `ClaudeHooksEngine` and reads the same shape from `~/.codex/hooks.json` that
+// Claude reads from `~/.claude/settings.json`.
+//
+// Plugin-based agents (opencode) install differently and are handled by
+// `install_plugin_agents`, not this list.
 
 pub struct AgentHookEvent {
     /// Name used as the key in the agent's config (e.g. `"UserPromptSubmit"`).
@@ -43,54 +47,45 @@ pub struct AgentHookConfig {
     pub config_tilde_path: &'static str,
     /// Timeout (ms) written into each hook entry.
     pub timeout_ms: u64,
-    pub events: &'static [AgentHookEvent],
+    pub events: Vec<AgentHookEvent>,
 }
 
-pub static AGENT_HOOK_CONFIGS: &[AgentHookConfig] = &[
-    AgentHookConfig {
-        agent_name: "Claude Code",
-        hook_stem: "claude",
-        agent_id: "claude-code",
-        config_tilde_path: "~/.claude/settings.json",
-        timeout_ms: 10_000,
-        events: &[
-            AgentHookEvent { event_name: "SessionStart" },
-            AgentHookEvent { event_name: "UserPromptSubmit" },
-            AgentHookEvent { event_name: "PreToolUse" },
-            AgentHookEvent { event_name: "Notification" },
-            AgentHookEvent { event_name: "Stop" },
-            AgentHookEvent { event_name: "SessionEnd" },
-        ],
-    },
-    AgentHookConfig {
-        agent_name: "Codex CLI",
-        hook_stem: "codex",
-        agent_id: "codex",
-        config_tilde_path: "~/.codex/hooks.json",
-        timeout_ms: 5_000,
-        events: &[
-            AgentHookEvent { event_name: "SessionStart" },
-            AgentHookEvent { event_name: "UserPromptSubmit" },
-            // Codex's equivalent of Claude's `Notification` — fires when the
-            // agent is blocked waiting for user approval (e.g. a shell command
-            // that needs confirmation). Routed to the same `awaiting` state in
-            // AgentTurnMod so the UI shows the amber badge identically.
-            AgentHookEvent { event_name: "PermissionRequest" },
-            AgentHookEvent { event_name: "Stop" },
-        ],
-    },
-];
+/// The native-config install view, derived from the agent registry. Only agents
+/// with a `HookInstall::NativeConfig` appear here (Claude, Codex). Order follows
+/// the registry, so index 0 is Claude and index 1 is Codex.
+pub static AGENT_HOOK_CONFIGS: LazyLock<Vec<AgentHookConfig>> = LazyLock::new(|| {
+    agents::AGENTS
+        .iter()
+        .filter_map(|a| {
+            let hook = a.hook.as_ref()?;
+            let HookInstall::NativeConfig { config_tilde_path } = &hook.install else {
+                return None;
+            };
+            Some(AgentHookConfig {
+                agent_name: a.display_name,
+                // Script filename stem — the agent's primary process name keeps
+                // the on-disk name stable (`claude-hook`, `codex-hook`).
+                hook_stem: a.process_names.first().copied().unwrap_or(a.id),
+                agent_id: a.id,
+                config_tilde_path,
+                timeout_ms: hook.timeout_ms,
+                events: hook
+                    .events
+                    .iter()
+                    .map(|e| AgentHookEvent { event_name: e.name })
+                    .collect(),
+            })
+        })
+        .collect()
+});
 
 // ─── Registry lookup ──────────────────────────────────────────────────────────
 
 /// Looks up an `AgentHookConfig` by its `agent_id` (e.g. `"claude-code"`).
 ///
-/// This is the canonical way for per-agent mods (and any other consumer) to
-/// resolve human-readable display names without re-declaring constants.
-/// `ClaudeCodeMod` and `CodexMod` both call this when emitting
-/// `tab_type_changed` so that the agent's display name on the wire stays
-/// in lock-step with the registry — adding a new agent means one new entry
-/// in `AGENT_HOOK_CONFIGS` and nothing else.
+/// Resolves the native-config view for consumers that need an agent's display
+/// name or event list. For display name alone, `crate::agents::by_id` is the
+/// direct path.
 pub fn config_for_agent_id(agent_id: &str) -> Option<&'static AgentHookConfig> {
     AGENT_HOOK_CONFIGS.iter().find(|c| c.agent_id == agent_id)
 }
@@ -112,7 +107,7 @@ pub async fn ensure_hooks_installed() {
     let hooks_dir = home
         .join(format!(".{}", crate::identity::NAMESPACE))
         .join("hooks");
-    for config in AGENT_HOOK_CONFIGS {
+    for config in AGENT_HOOK_CONFIGS.iter() {
         if let Err(e) = install_for_agent(config, &home, &hooks_dir).await {
             eprintln!(
                 "[hook_config] failed to install hooks for {}: {e}",
@@ -120,6 +115,47 @@ pub async fn ensure_hooks_installed() {
             );
         }
     }
+    install_plugin_agents(&home).await;
+}
+
+/// Installs plugin-based hook integrations (opencode) from the registry.
+///
+/// A plugin is only written when the agent's config directory already exists,
+/// so we never create an agent's config tree for a user who does not have it.
+async fn install_plugin_agents(home: &Path) {
+    for a in agents::AGENTS {
+        let Some(hook) = a.hook.as_ref() else { continue };
+        let HookInstall::Plugin { dir_tilde_path, install_name, asset } = &hook.install else {
+            continue;
+        };
+        let plugin_dir = expand_tilde(dir_tilde_path, home);
+        if let Err(e) = install_plugin_asset(&plugin_dir, install_name, asset).await {
+            eprintln!("[hook_config] failed to install {} plugin: {e}", a.display_name);
+        }
+    }
+}
+
+/// Writes a plugin `asset` to `plugin_dir/name`, idempotently. Skips entirely
+/// when the agent is absent (its config dir, the parent of `plugin_dir`, does
+/// not exist), and skips the write when the asset is already current.
+async fn install_plugin_asset(
+    plugin_dir: &Path,
+    name: &str,
+    asset: &str,
+) -> std::io::Result<()> {
+    match plugin_dir.parent() {
+        Some(config_dir) if config_dir.exists() => {}
+        _ => return Ok(()),
+    }
+    tokio::fs::create_dir_all(plugin_dir).await?;
+    let path = plugin_dir.join(name);
+    if let Ok(existing) = tokio::fs::read_to_string(&path).await {
+        if existing == asset {
+            return Ok(());
+        }
+    }
+    tokio::fs::write(&path, asset).await?;
+    Ok(())
 }
 
 async fn install_for_agent(
@@ -302,7 +338,7 @@ pub(crate) async fn merge_hook_config_at(
             .as_object_mut()
             .ok_or("\"hooks\" is not a JSON object")?;
 
-        for event in config.events {
+        for event in &config.events {
             let our_command = format!("{} {}", script_path_str, event.event_name);
 
             let arr = hooks_obj
@@ -469,7 +505,7 @@ mod tests {
         assert!(config_path.exists());
         let v = read_json(&config_path);
         assert!(v["hooks"].is_object(), "hooks key must exist");
-        for event in claude_config().events {
+        for event in &claude_config().events {
             assert!(
                 has_our_command(&v, event.event_name, &script),
                 "missing command for {}", event.event_name
@@ -693,7 +729,7 @@ mod tests {
 
         let v = read_json(&config_path);
         // Each event array should have exactly one entry (ours) in nested format.
-        for event in claude_config().events {
+        for event in &claude_config().events {
             let arr = v["hooks"][event.event_name].as_array().unwrap();
             let our_cmd = format!("{} {}", script.display(), event.event_name);
             // Count entries whose inner hooks[] contains our command.
@@ -725,7 +761,7 @@ mod tests {
 
         let v = read_json(&config_path);
         assert!(v["hooks"].is_object());
-        for event in codex_config().events {
+        for event in &codex_config().events {
             // Same nested format as Claude: each entry has a "hooks" array
             // containing {type:"command", command:"…"} objects. Codex's hook
             // engine is literally Claude's — see codex-rs/hooks/.
@@ -809,7 +845,7 @@ mod tests {
             .unwrap();
 
         let v = read_json(&config_path);
-        for event in codex_config().events {
+        for event in &codex_config().events {
             let arr = v["hooks"][event.event_name].as_array().unwrap();
             let our_cmd = format!("{} {}", script.display(), event.event_name);
             // Count occurrences inside nested hooks[] arrays (same format as Claude).
@@ -918,5 +954,71 @@ mod tests {
             content.contains("\\\"tab_id\\\":"),
             "script must emit a tab_id JSON field"
         );
+    }
+
+    // ── Registry: native list derives from the registry ──────────────────────
+    #[test]
+    fn native_configs_derive_from_registry() {
+        // Only NativeConfig agents appear, in registry order: Claude then Codex.
+        assert_eq!(AGENT_HOOK_CONFIGS.len(), 2);
+        assert_eq!(claude_config().agent_id, "claude-code");
+        assert_eq!(codex_config().agent_id, "codex");
+        // opencode is plugin-based and must not appear in the native list.
+        assert!(config_for_agent_id("opencode").is_none());
+        // Event names round-trip from the registry.
+        assert!(claude_config().events.iter().any(|e| e.event_name == "Stop"));
+        assert!(codex_config().events.iter().any(|e| e.event_name == "PermissionRequest"));
+    }
+
+    // ── P1: plugin installed when the agent's config dir exists ──────────────
+    #[tokio::test]
+    async fn p1_plugin_installed_when_config_dir_present() {
+        let dir = temp_dir("p1"); // stands in for the opencode config dir
+        let plugin_dir = dir.join("plugin");
+        let asset = "export const Plugin = async () => ({})\n";
+
+        install_plugin_asset(&plugin_dir, "agent-terminal-state.js", asset)
+            .await
+            .unwrap();
+
+        let installed = fs::read_to_string(plugin_dir.join("agent-terminal-state.js")).unwrap();
+        assert_eq!(installed, asset);
+    }
+
+    // ── P2: plugin skipped when the agent's config dir is absent ─────────────
+    #[tokio::test]
+    async fn p2_plugin_skipped_when_config_dir_absent() {
+        let dir = temp_dir("p2");
+        // Parent (the agent's config dir) does not exist → must be a no-op.
+        let plugin_dir = dir.join("no-such-agent").join("plugin");
+
+        install_plugin_asset(&plugin_dir, "agent-terminal-state.js", "x")
+            .await
+            .unwrap();
+
+        assert!(!plugin_dir.exists(), "must not create config tree for an absent agent");
+    }
+
+    // ── P3: plugin install is idempotent ─────────────────────────────────────
+    #[tokio::test]
+    async fn p3_plugin_install_idempotent() {
+        let dir = temp_dir("p3");
+        let plugin_dir = dir.join("plugin");
+        let asset = "console.log('agent-terminal')\n";
+
+        install_plugin_asset(&plugin_dir, "agent-terminal-state.js", asset)
+            .await
+            .unwrap();
+        let path = plugin_dir.join("agent-terminal-state.js");
+        let mtime_before = fs::metadata(&path).unwrap().modified().unwrap();
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+
+        install_plugin_asset(&plugin_dir, "agent-terminal-state.js", asset)
+            .await
+            .unwrap();
+        let mtime_after = fs::metadata(&path).unwrap().modified().unwrap();
+
+        assert_eq!(mtime_before, mtime_after, "unchanged asset must not be rewritten");
     }
 }
