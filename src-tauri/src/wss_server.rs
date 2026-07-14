@@ -326,7 +326,7 @@ async fn handle_stream_upgrade(
     ws: WebSocketUpgrade,
 ) -> Response {
     eprintln!("[wss] /stream upgrade requested from {peer}");
-    ws.on_upgrade(move |socket| connection_task(socket, state))
+    ws.on_upgrade(move |socket| connection_task(socket, state, peer))
 }
 
 /// Per-connection lifecycle. Reads frames, dispatches them, pushes
@@ -343,7 +343,11 @@ async fn handle_stream_upgrade(
 /// - Fallback: `auth_stub.check` (dev bearer token). Same session-mode
 ///   flow, but not tagged with a device_id. This branch retires when
 ///   the dev stub goes away.
-async fn connection_task(mut socket: WebSocket, state: Arc<ServerState>) {
+async fn connection_task(
+    mut socket: WebSocket,
+    state: Arc<ServerState>,
+    peer: SocketAddr,
+) {
     let connection_id = NEXT_CONNECTION_ID
         .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
@@ -380,8 +384,13 @@ async fn connection_task(mut socket: WebSocket, state: Arc<ServerState>) {
         return;
     }
 
+    // Feed the peer IP into `check_and_touch` so `PairedDevice.last_ip`
+    // reflects the source the token was most recently used from. The
+    // Companion dialog surfaces this for troubleshooting; without
+    // this thread-through it stays `None` forever.
+    let peer_ip = peer.ip().to_string();
     let (session_device_name, device_id) =
-        match state.paired_tokens.check_and_touch(&token, None) {
+        match state.paired_tokens.check_and_touch(&token, Some(peer_ip)) {
             Some(dev) => (dev.device_name.clone(), Some(dev.id.clone())),
             None => {
                 if state.auth.check(&token) {

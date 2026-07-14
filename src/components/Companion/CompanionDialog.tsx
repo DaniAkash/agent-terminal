@@ -43,11 +43,26 @@ export function CompanionDialog() {
 
   useEffect(() => {
     if (!open) return
+    let cancelled = false
     let unlisten: (() => void) | undefined
+    // Race window: `listenForPairingComplete()` resolves
+    // asynchronously with the unlisten fn. If the dialog closes
+    // before that resolves, the previous cleanup runs while
+    // `unlisten` is still undefined, and the listener registers
+    // later with no way to remove it — one leaked subscription per
+    // fast open/close cycle. The `cancelled` flag closes the gap:
+    // cleanup flips it, and either the pending .then() disposes the
+    // listener immediately on arrival OR the cleanup calls the
+    // now-set `unlisten`.
     void listenForPairingComplete().then((fn) => {
-      unlisten = fn
+      if (cancelled) {
+        fn()
+      } else {
+        unlisten = fn
+      }
     })
     return () => {
+      cancelled = true
       unlisten?.()
     }
   }, [open])
