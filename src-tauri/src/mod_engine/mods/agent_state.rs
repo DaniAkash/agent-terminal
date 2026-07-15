@@ -152,6 +152,9 @@ impl TabState {
         self.osc = None;
         self.prompt_returned = false;
         self.emitted = None;
+        // Drop any half-parsed OSC sequence so bytes buffered at agent exit
+        // cannot leak into the next session's parse.
+        self.parser = OscParser::new();
     }
 }
 
@@ -275,8 +278,8 @@ impl AgentStateMod {
                 return Some(tid.to_string());
             }
         }
-        if let Some(sid) = &payload.session_id {
-            if let Some(tid) = self.session_tabs.get(sid.as_str()) {
+        if let Some(sid) = payload.session_id.as_deref().filter(|s| !s.is_empty()) {
+            if let Some(tid) = self.session_tabs.get(sid) {
                 return Some(tid.clone());
             }
         }
@@ -393,9 +396,10 @@ impl Mod for AgentStateMod {
 
         // Repair the missed-SessionStart cascade: any event that resolves a tab
         // (re)establishes the session→tab mapping, so one dropped SessionStart
-        // never orphans the rest of the session.
-        if let Some(sid) = &payload.session_id {
-            self.session_tabs.entry(sid.clone()).or_insert_with(|| tab_id.clone());
+        // never orphans the rest of the session. An empty session id is treated
+        // as absent so it can never become a shared, cross-tab key.
+        if let Some(sid) = payload.session_id.as_deref().filter(|s| !s.is_empty()) {
+            self.session_tabs.entry(sid.to_string()).or_insert_with(|| tab_id.clone());
         }
 
         // AskUserQuestion is special: stash the question, do not change state.
@@ -466,8 +470,8 @@ impl Mod for AgentStateMod {
                 st.hook_state = AgentState::Idle;
                 st.awaiting_message = None;
                 st.completed_message = None;
-                if let Some(sid) = &payload.session_id {
-                    self.session_tabs.remove(sid.as_str());
+                if let Some(sid) = payload.session_id.as_deref().filter(|s| !s.is_empty()) {
+                    self.session_tabs.remove(sid);
                 }
             }
             EventRole::Completed => unreachable!("handled above"),
@@ -746,6 +750,19 @@ this line is not json at all
         let mut rx = register_tab(&mut m, "proj:tab-1");
         m.on_hook_event(&payload("claude-code", "SessionStart", Some("proj:tab-1"), Some("s-y")));
         assert_eq!(m.session_tabs.get("s-y").map(String::as_str), Some("proj:tab-1"));
+        assert_eq!(drain_states(&mut rx), vec!["idle"]);
+    }
+
+    #[test]
+    fn empty_session_id_is_never_a_correlation_key() {
+        // A payload can carry session_id == "" (e.g. a plugin fallback). It must
+        // never become a shared key in session_tabs, or events with an empty id
+        // and no tab_id could mis-route across tabs.
+        let mut m = AgentStateMod::new();
+        let mut rx = register_tab(&mut m, "proj:tab-1");
+        m.on_hook_event(&payload("opencode", "session_start", Some("proj:tab-1"), Some("")));
+        assert!(m.session_tabs.is_empty(), "empty session id must not be mapped");
+        // The event still resolved via tab_id and drove state.
         assert_eq!(drain_states(&mut rx), vec!["idle"]);
     }
 

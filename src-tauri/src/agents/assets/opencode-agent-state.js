@@ -20,12 +20,11 @@ const childSessions = new Set()
 
 async function report(event, sessionID) {
   if (!TAB_ID) return
-  const body = JSON.stringify({
-    agent: "opencode",
-    event,
-    tab_id: TAB_ID,
-    session_id: sessionID || "",
-  })
+  const payload = { agent: "opencode", event, tab_id: TAB_ID }
+  // Only send a session id when we actually have one. An empty string would
+  // deserialize as a real (but shared) key server-side and could mis-correlate.
+  if (sessionID) payload.session_id = sessionID
+  const body = JSON.stringify(payload)
   try {
     await fetch(`http://127.0.0.1:${PORT}/hook`, {
       method: "POST",
