@@ -1,3 +1,7 @@
+// `pub` so integration tests can enumerate the agent registry and resolve
+// per-agent profiles. This is the single source of truth for which agents are
+// supported and how each is identified, hooked, and detected.
+pub mod agents;
 mod commands;
 // `pub` so integration tests in `tests/` can call `ensure_hooks_installed()` and
 // build payloads against `HookPayload`. Internal API otherwise — the app uses these
@@ -53,9 +57,8 @@ use hook_server::start_hook_server;
 use mod_engine::{
     ModEngine,
     mods::{
-        AgentTurnMod,
-        ClaudeCodeMod,
-        CodexMod,
+        AgentIdentityMod,
+        AgentStateMod,
         DirTrackerMod,
         GitMonitorMod,
         ProcessTrackerMod,
@@ -268,11 +271,10 @@ pub fn run() {
             let engine_builder = ModEngine::builder()
                 .with_mod(DirTrackerMod::new())
                 .with_mod(ProcessTrackerMod::new())
-                .with_mod(ClaudeCodeMod::new())
-                .with_mod(CodexMod::new())
+                .with_mod(AgentIdentityMod::new())
                 .with_mod(ShellProcessMod::new())
                 .with_mod(GitMonitorMod::new())
-                .with_mod(AgentTurnMod::new().with_notifications(notification_service.clone()));
+                .with_mod(AgentStateMod::new().with_notifications(notification_service.clone()));
 
             // Start the hook HTTP server, wired to the engine's hook channel.
             let hook_tx = engine_builder.hook_sender();

@@ -427,6 +427,10 @@ fn build_shell_command(
 ) -> CommandBuilder {
     let mut cmd = CommandBuilder::new(shell_path);
     cmd.env("AGENT_TERMINAL_TAB_ID", tab_id);
+    // Plugin-based agents (opencode) report over HTTP from their own runtime,
+    // so they need the hook port at runtime. The shell hook scripts hardcode it
+    // at generation time; the plugin reads it from this env var.
+    cmd.env("AGENT_TERMINAL_HOOK_PORT", crate::identity::HOOK_PORT.to_string());
 
     // macOS launchd starts GUI apps with a minimal env (no TERM, no user
     // PATH). Without TERM zsh can't initialize zle and the user sees doubled
