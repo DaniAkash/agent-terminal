@@ -1,10 +1,11 @@
-import { NativeModule, requireNativeModule } from 'expo';
+import { NativeModule, requireNativeModule } from 'expo'
 
-import { PinnedWebSocketModuleEvents } from './PinnedWebSocket.types';
+import type { PinnedWebSocketModuleEvents } from './PinnedWebSocket.types'
 
 declare class PinnedWebSocketModule extends NativeModule<PinnedWebSocketModuleEvents> {
-  hello(): string;
-  setValueAsync(value: string): Promise<void>;
+  connect(url: string, fingerprint: string): Promise<string>
+  send(id: string, text: string): void
+  close(id: string, code?: number, reason?: string): Promise<void>
 }
 
-export default requireNativeModule<PinnedWebSocketModule>('PinnedWebSocket');
+export default requireNativeModule<PinnedWebSocketModule>('PinnedWebSocket')
