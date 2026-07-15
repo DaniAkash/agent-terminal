@@ -16,3 +16,9 @@ android {
     abortOnError false
   }
 }
+
+dependencies {
+  // React Native already ships OkHttp; declaring the same major version here
+  // lets us compile against the API without pulling a second copy at runtime.
+  implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+}
