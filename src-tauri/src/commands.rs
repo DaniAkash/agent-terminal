@@ -260,10 +260,11 @@ pub async fn report_mobile_op_ok(
 pub struct TlsFingerprint(pub Option<String>);
 
 /// Return the fingerprint the mobile client should verify against.
-/// PR B's pairing UI embeds this in the QR alongside the WSS URL and
-/// the pairing token. Returns an error when TLS is disabled so the
-/// caller can surface a clear message instead of pretending pairing is
-/// possible.
+/// The pairing UI embeds this in the QR alongside the WSS URL and
+/// the pairing token. Returns an error when the fingerprint is
+/// unavailable (only cause: TLS material generation failed at
+/// startup) so the caller can surface a clear message instead of
+/// pretending pairing is possible.
 #[tauri::command]
 pub async fn get_tls_fingerprint(
     state: tauri::State<'_, TlsFingerprint>,
@@ -271,7 +272,7 @@ pub async fn get_tls_fingerprint(
     state
         .0
         .clone()
-        .ok_or_else(|| "TLS is disabled or cert generation failed at startup".to_string())
+        .ok_or_else(|| "TLS cert generation failed at startup; restart the desktop".to_string())
 }
 
 #[tauri::command]
