@@ -64,25 +64,32 @@ fn regen_protocol() -> Result<()> {
     // red whenever a developer's biome version formats slightly
     // differently from typeshare's output.
     //
-    // Version pin: `bunx @biomejs/biome` without a version resolves to
-    // whatever biome is latest at run time. CI and dev machines picked
-    // up different versions that formatted this file slightly
-    // differently, tripping the CI drift check even when the wire
-    // types themselves hadn't drifted. Pin to the exact version listed
-    // in `companion/package.json` devDependencies so every runner
-    // produces byte-identical output.
+    // Invoke biome directly from `companion/node_modules/.bin/biome`
+    // rather than through `bunx --bun @biomejs/biome@<version>`. bunx
+    // resolves via a temporary lockfile that touches the network + the
+    // per-runner bunx cache; on CI this occasionally produced a
+    // slightly different biome instance from what a local `bun install`
+    // materialises, tripping the drift check even when the wire types
+    // matched. The direct binary path is fully deterministic: whatever
+    // `companion/package.json` pins is what runs. Prerequisites: run
+    // `bun install` in `companion/` before invoking this xtask.
+    let companion_dir = root.join("companion");
+    let biome_bin = companion_dir
+        .join("node_modules")
+        .join(".bin")
+        .join("biome");
+    if !biome_bin.exists() {
+        bail!(
+            "biome binary not found at {}. Run `bun install` in companion/ first.",
+            biome_bin.display()
+        );
+    }
     run_in(
-        &root.join("companion"),
-        "bunx",
-        &[
-            "--bun",
-            "@biomejs/biome@2.5.1",
-            "format",
-            "--write",
-            output.to_str().unwrap(),
-        ],
+        &companion_dir,
+        biome_bin.to_str().unwrap(),
+        &["format", "--write", output.to_str().unwrap()],
     )
-    .context("failed to invoke biome via bunx — is `bun` on PATH?")?;
+    .context("failed to invoke biome")?;
 
     println!("✓ regenerated {}", output.display());
     Ok(())
