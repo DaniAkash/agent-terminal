@@ -40,7 +40,14 @@ class PinnedWebSocketModule : Module() {
         .hostnameVerifier { _, _ -> true }
         .build()
       val request = Request.Builder().url(url).build()
-      val connection = PinnedConnection(id) { name, body -> sendEvent(name, body) }
+      // `terminate` runs from onClosed / onFailure on the OkHttp
+      // dispatcher thread. Idempotence lives inside PinnedConnection
+      // so the map removal here happens at most once per connection.
+      val connection = PinnedConnection(
+        id,
+        emit = { name, body -> sendEvent(name, body) },
+        terminate = { closedId -> connections.remove(closedId) },
+      )
       connection.socket = client.newWebSocket(request, connection)
       connections[id] = connection
       promise.resolve(id)
