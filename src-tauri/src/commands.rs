@@ -256,8 +256,7 @@ pub async fn report_mobile_op_ok(
 /// `Option<String>` from other Options in the app state map. Holds the
 /// SHA-256 fingerprint of the WSS server's self-signed cert, formatted
 /// as `openssl x509 -fingerprint -sha256` output (colon-separated
-/// uppercase hex). None when tls_enabled=false or when cert generation
-/// failed at startup.
+/// uppercase hex). None only when cert generation failed at startup.
 pub struct TlsFingerprint(pub Option<String>);
 
 /// Return the fingerprint the mobile client should verify against.
@@ -326,16 +325,10 @@ pub struct PairingQrPayload {
 }
 
 /// Mint a fresh pairing token and return the full QR payload the
-/// desktop UI encodes into the on-screen QR. Fails only when the WSS
-/// bind failed at startup (nothing for the mobile to connect to).
-///
-/// TLS-off is NOT a failure condition: `tls_enabled: false` in
-/// `companion-dev.json` yields an empty-string fingerprint sentinel
-/// in the payload, and both the desktop dialog and the mobile pair
-/// screen render a "TLS off (dev only)" banner in place of the
-/// fingerprint compare block. Full TLS + a required fingerprint
-/// returns once native cert pinning lands with the dev-client
-/// migration (Phase 2B / PR D).
+/// desktop UI encodes into the on-screen QR. Fails when the WSS bind
+/// failed at startup (nothing for mobile to connect to) or when the
+/// TLS fingerprint is unavailable (mobile side pins on it, so pairing
+/// without one would silently produce an un-verifiable session).
 #[tauri::command]
 pub async fn open_pairing_window(
     fingerprint: State<'_, TlsFingerprint>,
@@ -345,13 +338,10 @@ pub async fn open_pairing_window(
     if net.port == 0 {
         return Err("WSS bind failed at startup; restart the desktop".into());
     }
-    // Empty-string fingerprint is the sentinel for "TLS is off"
-    // (dev-only escape hatch: `tls_enabled: false` in the config).
-    // The mobile side surfaces a clear warning banner in that case
-    // instead of a fake compare block. Full TLS is required for any
-    // real deployment; enforcement returns once native cert pinning
-    // lands on the mobile side.
-    let fp = fingerprint.0.clone().unwrap_or_default();
+    let fp = fingerprint
+        .0
+        .clone()
+        .ok_or_else(|| "TLS fingerprint unavailable; cannot pair".to_string())?;
     let pairing_token = window.open();
     let device_hint = derive_device_hint(&net.hostname);
     Ok(PairingQrPayload {
@@ -380,14 +370,10 @@ pub async fn close_pairing_window(
 /// Used when the desktop UI re-mounts and wants to redisplay whatever
 /// pairing token is currently live server-side (e.g. React strict-mode
 /// double-mount). Returns `Ok(None)` when no pairing session is
-/// currently open OR when the WSS bind failed at startup; the caller
-/// should treat that as "nothing to display, tell the user to open a
-/// new pairing session".
-///
-/// TLS-off is NOT an `Ok(None)` condition: with `tls_enabled: false`
-/// and a live session, the returned payload's `fingerprint` is the
-/// empty-string sentinel (same as `open_pairing_window`). The
-/// dev-only warning banner path handles the display.
+/// currently open, when the WSS bind failed at startup, or when the
+/// TLS fingerprint is unavailable; the caller should treat any of
+/// those as "nothing to display, tell the user to open a new pairing
+/// session".
 #[tauri::command]
 pub async fn get_pairing_qr_payload(
     fingerprint: State<'_, TlsFingerprint>,
@@ -400,9 +386,9 @@ pub async fn get_pairing_qr_payload(
     let Some(token) = window.current_token() else {
         return Ok(None);
     };
-    // Same empty-string sentinel as `open_pairing_window` for the
-    // TLS-off dev path; mobile surfaces the warning banner.
-    let fp = fingerprint.0.clone().unwrap_or_default();
+    let Some(fp) = fingerprint.0.clone() else {
+        return Ok(None);
+    };
     Ok(Some(PairingQrPayload {
         v: 1,
         host: net.hostname.clone(),

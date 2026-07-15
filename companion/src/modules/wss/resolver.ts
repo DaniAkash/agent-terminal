@@ -35,22 +35,15 @@ export function resolveWssCandidates(device: DeviceRecord): string[] {
   const candidates: string[] = []
   const seen = new Set<string>()
 
-  // Emit `wss://` first, then plain `ws://` as a dev-only fallback.
-  // Symmetric with `buildPairingAttemptUrls` in `pair.helpers.ts` so
-  // a desktop running with `tls_enabled: false` (Phase 2A escape
-  // hatch until native cert-pinning lands with the dev-client
-  // migration) auto-reconnects instead of erroring after a
-  // successful pair. Wss will fail fast when nothing is TLS-serving,
-  // and ws succeeds; when TLS is on the wss attempt wins first and
-  // the ws candidate never gets tried.
+  // Every candidate is wss://. PinnedWebSocket rejects other schemes,
+  // so a ws:// entry here would never open; symmetric with
+  // buildPairingAttemptUrls in pair.helpers.ts.
   const push = (host: string, port: number) => {
     if (!host) return
-    for (const scheme of ['wss', 'ws']) {
-      const url = `${scheme}://${host}:${port}/stream`
-      if (seen.has(url)) continue
-      seen.add(url)
-      candidates.push(url)
-    }
+    const url = `wss://${host}:${port}/stream`
+    if (seen.has(url)) return
+    seen.add(url)
+    candidates.push(url)
   }
 
   const cachedPort = device.lastPort ?? device.port
@@ -94,10 +87,7 @@ export function classifyRung(
   const candidates = resolveWssCandidates(device)
   const idx = candidates.indexOf(resolvedUrl)
   if (idx === -1) return 'unknown'
-  // Rung boundaries: rung 1 = index 0..1 (wss+ws for cached ip),
-  // rung 2 = index 2..3 (wss+ws for .local + cached port), etc.
-  // A "cached hit" means either scheme against the cached IP.
-  if (idx < 2) return 'cached'
+  if (idx === 0) return 'cached'
   const cachedPort = device.lastPort ?? device.port
   const usesLocal = device.host && resolvedUrl.includes(`${device.host}:`)
   if (usesLocal && resolvedUrl.includes(`:${cachedPort}/`)) return 'local'
