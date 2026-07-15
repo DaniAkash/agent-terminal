@@ -10,7 +10,7 @@ Thank you for your interest in contributing. Agent Terminal is in early active d
 - [Code conventions](#code-conventions)
 - [Branch and commit conventions](#branch-and-commit-conventions)
 - [Pull request process](#pull-request-process)
-- [Adding a new agent (MOD system guide)](#adding-a-new-agent-mod-system-guide)
+- [Adding a new agent (agent registry)](#adding-a-new-agent-agent-registry)
 - [Reporting bugs](#reporting-bugs)
 - [Requesting features](#requesting-features)
 - [Releasing](#releasing)
@@ -80,16 +80,23 @@ agent-terminal/
 │
 ├── src-tauri/                  # Rust backend
 │   └── src/
+│       ├── agents/             # Agent registry (single source of truth)
+│       │   ├── mod.rs          # AgentProfile + AGENTS registry + lookups
+│       │   ├── claude_code.rs  # one profile per agent (identity, hooks, OSC)
+│       │   ├── codex.rs
+│       │   ├── opencode.rs
+│       │   └── assets/         # plugin assets for plugin-based agents
 │       ├── mod_engine/         # MOD system core
-│       │   ├── engine.rs       # ModEngine — wires PTY output to registered MODs
-│       │   ├── context.rs      # ModContext — shared state passed to each MOD
+│       │   ├── engine.rs       # ModEngine: wires PTY output to registered MODs
+│       │   ├── context.rs      # ModContext: per-tab context passed to each MOD
 │       │   └── mods/           # Individual MOD implementations
-│       │       ├── dir_tracker.rs
+│       │       ├── agent_identity.rs  # registry-driven agent detection -> badges
+│       │       ├── agent_state.rs     # fused state engine (hooks + OSC + floor)
+│       │       ├── shell_process.rs   # process scan + registry-based identity
 │       │       ├── process_tracker.rs
-│       │       ├── claude_code.rs
-│       │       ├── codex.rs
-│       │       ├── process_inspector.rs
+│       │       ├── dir_tracker.rs
 │       │       └── git_monitor.rs
+│       ├── hook_config.rs      # installs agent hooks/plugins from the registry
 │       ├── pty_manager.rs      # PTY lifecycle (spawn, write, resize, close)
 │       ├── shell_integration.rs # Writes OSC 7 / OSC 133 shell hook scripts
 │       └── commands.rs         # Tauri IPC command handlers
@@ -116,7 +123,7 @@ agent-terminal/
 - **Formatter:** `rustfmt` (runs automatically in most editors with rust-analyzer)
 - **Linter:** Clippy — run `bun run lint:rust` or `cargo clippy --all-targets`
 - **No `unwrap()` in production paths** — use `?` or handle errors explicitly
-- **MODs must be stateless** — see [Adding a new agent](#adding-a-new-agent-mod-system-guide) below
+- **MODs own their per-tab state** (allocate in `on_open`, drop in `on_close`); most agent work is data in the registry, see [Adding a new agent](#adding-a-new-agent-agent-registry) below
 
 ---
 
@@ -160,117 +167,107 @@ chore: update tauri to 2.1.0
 
 ---
 
-## Adding a new agent (MOD system guide)
+## Adding a new agent (agent registry)
 
-The MOD system is how Agent Terminal learns about what's running in a terminal tab. Each MOD is a Rust struct that receives PTY output line-by-line and emits structured events to the frontend.
+Agent support is declarative. A single registry in `src-tauri/src/agents/` is the source of truth for how each agent is identified, how its hook integration is installed, and how its live state is detected. Identity detection, hook installation, and OSC state detection all read the registry, so adding an agent is mostly one profile entry plus (for plugin-based agents) one plugin asset. There is no per-agent MOD to write and no `lib.rs` change.
 
-Adding support for a new agent (e.g. Gemini CLI) requires changes in two places: **Rust** (detection + data extraction) and **TypeScript** (display).
+How the state engine works, in one paragraph: each agent tab gets a fused state from three signals. **Hooks** (the agent's own lifecycle events, POSTed to a local server) give precise transitions. **OSC** (the agent's window title / progress) corrects a stale hook for agents that emit it. An agent-agnostic **process/prompt floor** (process liveness plus shell-prompt return) releases any stuck state back to idle, so a missed hook never leaves a badge stuck. You supply the per-agent facts; the engine does the fusing.
 
-### Step 1 — Create the Rust MOD
+### Step 1: add an agent profile
 
-Create `src-tauri/src/mod_engine/mods/<agent_name>.rs`.
-
-A MOD implements the `TerminalMod` trait:
+Create `src-tauri/src/agents/<agent>.rs` and register it in `AGENTS` in `src-tauri/src/agents/mod.rs`:
 
 ```rust
-use crate::mod_engine::{ModContext, TerminalMod};
+use super::{AgentProfile, EventRole, HookEvent, HookInstall, HookSpec};
 
-pub struct GeminiMod;
+static EVENTS: &[HookEvent] = &[
+    HookEvent { name: "SessionStart", role: EventRole::SessionStart },
+    HookEvent { name: "UserPromptSubmit", role: EventRole::Working },
+    HookEvent { name: "Stop", role: EventRole::Completed },
+];
 
-impl GeminiMod {
-    pub fn new() -> Self { Self }
-}
+pub static PROFILE: AgentProfile = AgentProfile {
+    id: "my-agent",               // stable id used on the hook wire and as the frontend agent_id
+    display_name: "My Agent",
+    process_names: &["my-agent"], // foreground process basename(s) that identify this agent
+    runtime_wrapped: false,       // true if it runs under node/bun/python (identity then walks argv)
+    hook: Some(HookSpec {
+        install: HookInstall::NativeConfig { config_tilde_path: "~/.my-agent/settings.json" },
+        events: EVENTS,
+        timeout_ms: 5_000,
+    }),
+    osc: None,                    // Some(fn) if the agent reports state via its OSC title/progress
+};
+```
 
-impl TerminalMod for GeminiMod {
-    fn on_line(&self, line: &str, ctx: &ModContext) {
-        // Called for every line of PTY output.
-        // Detect when the agent process starts by matching its launch output.
-        // Use ctx.emit() to send structured events to the frontend.
+Then wire it into the registry in `agents/mod.rs`:
+
+```rust
+pub mod my_agent;
+
+pub static AGENTS: &[&AgentProfile] = &[
+    // ... existing profiles ...
+    &my_agent::PROFILE,
+];
+```
+
+That alone makes identity detection and hook install pick up the agent.
+
+### Step 2: choose how the hook installs
+
+Map each hook event name to an `EventRole` (`SessionStart`, `Working`, `Blocked`, `Completed`, `SessionEnd`). The engine is role-driven, so an agent can use whatever event names it emits. Pick the install kind:
+
+- **`HookInstall::NativeConfig`** for agents with their own hooks settings file (like Claude's `~/.claude/settings.json`). Agent Terminal merges its hook command in non-destructively, preserving existing entries.
+- **`HookInstall::Plugin`** for agents that load plugins from a directory (like opencode's `~/.config/opencode/plugin/`). Add a fresh plugin asset under `src-tauri/src/agents/assets/` and reference it with `include_str!`. The plugin POSTs `{ "agent", "event", "tab_id", "session_id"? }` to the local hook server; the hook port is provided to the shell as `AGENT_TERMINAL_HOOK_PORT` and the tab id as `AGENT_TERMINAL_TAB_ID`. Omit `session_id` when unknown (never send an empty string).
+
+An agent with no hook at all is fine too (`hook: None`): it is still detected by process name and gets working/idle from the floor.
+
+### Step 3: OSC state signature (optional)
+
+If the agent paints its state into the terminal title or progress (like Claude's Braille spinner glyph), add a pure function and set `osc: Some(...)`:
+
+```rust
+use super::{is_braille, OscState, OscView};
+
+fn state_from_osc(view: &OscView) -> Option<OscState> {
+    if view.title.trim_start().chars().next().is_some_and(is_braille) {
+        return Some(OscState::Working);
     }
-
-    fn on_process_start(&self, cmd: &str, ctx: &ModContext) {
-        // Called when a new process starts in the tab.
-        // Check if cmd contains the agent binary name.
-        if cmd.contains("gemini") {
-            ctx.emit("tab_type_changed", serde_json::json!({
-                "tabId": ctx.tab_id(),
-                "type": "agent",
-                "agentName": "gemini",
-                "agentCmd": cmd,
-            }));
-        }
-    }
+    // ... your idle / blocked signals ...
+    None
 }
 ```
 
-**Key rules for MODs:**
-- **Stateless** — MODs must not store mutable state between calls. All state lives in `ModContext` or is emitted to the frontend.
-- **Non-blocking** — `on_line` is called synchronously on the PTY output thread. Never perform I/O or sleep inside a MOD.
-- **Emit, don't act** — MODs observe and report; they never write to the PTY.
+This corrects a stale hook without any screen scraping. Reference the agent's actual title output; do not scrape arbitrary screen text.
 
-### Step 2 — Register the MOD
+### Step 4: frontend glyph
 
-In `src-tauri/src/lib.rs`, add your MOD to the engine builder:
-
-```rust
-use mod_engine::mods::GeminiMod;
-
-let mod_engine = ModEngine::builder()
-    // ... existing mods ...
-    .with_mod(GeminiMod::new())
-    .build();
-```
-
-Also export it from `src-tauri/src/mod_engine/mods/mod.rs`:
-
-```rust
-mod gemini;
-pub use gemini::GeminiMod;
-```
-
-### Step 3 — Add the frontend agent glyph
-
-In `src/components/AgentGlyph.tsx`, add the new agent to the `BRAND` and `MARKS` maps:
+In `src/components/AgentGlyph.tsx`, add the agent's `id` to `BRAND` (color + glow) and `MARKS` (a small SVG brand-mark component that renders at ~10-16px):
 
 ```tsx
-// BRAND: color + glow for the state ring
 const BRAND: Record<string, { color: string; glow: string }> = {
-  'claude-code': { color: '#D97757', glow: 'rgba(217,119,87,0.55)' },
-  'codex':       { color: '#e6e8eb', glow: 'rgba(230,232,235,0.45)' },
-  'gemini':      { color: '#4285F4', glow: 'rgba(66,133,244,0.45)' }, // ← add
+  // ... existing ...
+  'my-agent': { color: '#4285F4', glow: 'rgba(66,133,244,0.45)' },
 }
 
-// MARKS: SVG brand mark component — must stay in sync with BRAND
 const MARKS: Record<string, React.ComponentType<{ size: number }>> = {
-  'claude-code': ClaudeMark,
-  'codex':       CodexMark,
-  'gemini':      GeminiMark, // ← add your SVG mark component
+  // ... existing ...
+  'my-agent': MyAgentMark,
 }
 ```
 
-Create `GeminiMark` as a small SVG component using the agent's brand icon. Keep it simple — the mark renders at 10–16px.
+This is optional: unknown agents fall back to a generic sparkle glyph. If the agent has a full-permissions flag, add it to `hasDangerFlag` in `src/components/agent.helpers.ts`.
 
-### Step 4 — Handle the danger flag (if applicable)
+### Step 5: test
 
-If the agent has a "full permissions" flag (like `--dangerously-skip-permissions` for Claude Code), add it to `hasDangerFlag` in `src/components/agent.helpers.ts`:
+Add unit tests next to your profile (identity resolution, and the OSC signature if present), then:
 
-```ts
-export function hasDangerFlag(agentCmd: string | undefined): boolean {
-  if (!agentCmd) return false
-  return (
-    agentCmd.includes('--dangerously-skip-permissions') ||
-    agentCmd.includes('--yolo') ||
-    agentCmd.includes('--your-new-flag')  // ← add
-  )
-}
+```sh
+cargo test --manifest-path src-tauri/Cargo.toml --lib -- agents::
+bun run tauri:dev
 ```
 
-### Step 5 — Test
-
-Run the app with `bun run tauri:dev`, open a terminal tab, and launch the agent. Verify:
-- The tab type changes to `agent` (sidebar shows the glyph)
-- The status bar right side shows the process info
-- The danger badge appears when the permission flag is used
+Launch the agent in a tab and verify the badge cycles idle -> in-progress -> awaiting -> completed. Then kill the agent mid-turn (Ctrl-C or close the pane) and confirm the badge returns to idle within a couple seconds rather than sticking. That is the floor doing its job.
 
 ---
 

@@ -27,8 +27,9 @@ struct InspectorTabState {
 /// Uses `sysinfo` for CPU/memory metrics (fast, no subprocess).
 /// Uses `lsof -iTCP` for listening port detection.
 ///
-/// Agent detection (claude/codex) is retained via `diff_agent_pids` so
-/// `ClaudeCodeMod` and `CodexMod` continue to work unchanged.
+/// Agent detection is registry-driven via `diff_agent_pids` + `identify_agent`
+/// (see `crate::agents`), emitting the agent's stable id so `AgentIdentityMod`
+/// and the state engine resolve it without hardcoded names.
 ///
 /// Scan interval: every 2 seconds while the tab is open.
 pub struct ShellProcessMod {
@@ -102,10 +103,10 @@ fn diff_agent_pids(
     let mut current_pids: HashMap<String, (u32, String)> = HashMap::new();
     for proc in processes {
         let name = proc.get("name").and_then(|n| n.as_str()).unwrap_or("");
-        if name == "claude" || name == "codex" {
+        let cmd = proc.get("command").and_then(|c| c.as_str()).unwrap_or("");
+        if let Some(agent_id) = identify_agent(name, cmd) {
             if let Some(pid) = proc.get("pid").and_then(|p| p.as_u64()) {
-                let cmd = proc.get("command").and_then(|c| c.as_str()).unwrap_or("").to_string();
-                current_pids.insert(name.to_string(), (pid as u32, cmd));
+                current_pids.insert(agent_id.to_string(), (pid as u32, cmd.to_string()));
             }
         }
     }
@@ -126,6 +127,71 @@ fn diff_agent_pids(
     }
 
     *prev_pids = current_pids.into_iter().map(|(k, (pid, _))| (k, pid)).collect();
+}
+
+/// Resolve a process (`name` from sysinfo, lowercased; `command` full argv) to
+/// a known agent id, or `None`.
+///
+/// A direct process-name match wins. Otherwise, for agents that can run under a
+/// JS/py runtime (`runtime_wrapped`), walk argv for a token whose basename names
+/// such an agent, so `bun /…/opencode serve` resolves to opencode.
+fn identify_agent(name: &str, command: &str) -> Option<&'static str> {
+    if let Some(profile) = crate::agents::by_process_name(name) {
+        return Some(profile.id);
+    }
+    if is_runtime_wrapper(name) {
+        for token in command.split_whitespace() {
+            let base = token.rsplit(['/', '\\']).next().unwrap_or(token);
+            if let Some(profile) = crate::agents::by_process_name(base) {
+                if profile.runtime_wrapped {
+                    return Some(profile.id);
+                }
+            }
+        }
+    }
+    None
+}
+
+fn is_runtime_wrapper(name: &str) -> bool {
+    matches!(
+        name,
+        "node" | "bun" | "deno" | "python" | "python3" | "sh" | "bash" | "zsh" | "fish"
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::identify_agent;
+
+    #[test]
+    fn direct_process_names_resolve() {
+        assert_eq!(identify_agent("claude", "claude"), Some("claude-code"));
+        assert_eq!(identify_agent("codex", "codex --sandbox"), Some("codex"));
+        assert_eq!(identify_agent("opencode", "/usr/local/bin/opencode"), Some("opencode"));
+    }
+
+    #[test]
+    fn runtime_wrapped_opencode_resolves_via_argv() {
+        assert_eq!(
+            identify_agent("bun", "bun /Users/x/.opencode/bin/opencode serve"),
+            Some("opencode")
+        );
+        assert_eq!(identify_agent("node", "node /opt/opencode tui"), Some("opencode"));
+    }
+
+    #[test]
+    fn non_agents_are_ignored() {
+        assert_eq!(identify_agent("bash", "bash"), None);
+        assert_eq!(identify_agent("vim", "vim file.txt"), None);
+        assert_eq!(identify_agent("node", "node /x/some-other-app.js"), None);
+    }
+
+    #[test]
+    fn wrapper_walk_only_applies_to_runtime_wrapped_agents() {
+        // claude is not runtime_wrapped, so a bun-wrapped `claude` token must
+        // not match through the argv walk (direct name match is the only path).
+        assert_eq!(identify_agent("bun", "bun /x/claude"), None);
+    }
 }
 
 #[derive(serde::Serialize)]
