@@ -1,6 +1,10 @@
 export type PinnedWebSocketOpenEvent = { id: string }
 export type PinnedWebSocketMessageEvent = { id: string; data: string }
-export type PinnedWebSocketCloseEvent = { id: string; code: number; reason: string }
+export type PinnedWebSocketCloseEvent = {
+  id: string
+  code: number
+  reason: string
+}
 export type PinnedWebSocketErrorEvent = { id: string; message: string }
 
 export type PinnedWebSocketModuleEvents = {

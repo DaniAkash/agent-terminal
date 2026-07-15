@@ -46,7 +46,8 @@ export class PinnedWebSocket {
         this.readyState = PinnedWebSocket.OPEN
         this.onopen?.()
         if (this.id) {
-          for (const text of this.pendingSends) PinnedWebSocketModule.send(this.id, text)
+          for (const text of this.pendingSends)
+            PinnedWebSocketModule.send(this.id, text)
         }
         this.pendingSends = []
       },
