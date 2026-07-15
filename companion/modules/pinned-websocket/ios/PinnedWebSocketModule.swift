@@ -20,10 +20,21 @@ public class PinnedWebSocketModule: Module {
         return
       }
       let id = UUID().uuidString
+      let registry = self.registry
       let connection = PinnedConnection(
         id: id,
         expectedFingerprint: normalizeFingerprint(fingerprint),
-        emit: { [weak self] name, body in self?.sendEvent(name, body) }
+        emit: { [weak self] name, body in self?.sendEvent(name, body) },
+        // Called from natural close, transport failure, and pin
+        // mismatch. Drops the registry entry and invalidates the
+        // URLSession so the session -> delegate retain cycle
+        // dies. Idempotent: `remove` returns nil on a second call
+        // (JS already called close, or another terminal path
+        // already fired), and `finishTasksAndInvalidate` on an
+        // already-invalidated session is a no-op.
+        terminate: { [weak registry] connectionId in
+          registry?.remove(id: connectionId)
+        }
       )
       self.registry.insert(id: id, connection: connection)
       connection.open(url: parsed)
@@ -65,17 +76,22 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionWe
   let id: String
   let expectedFingerprint: String
   private let emit: (String, [String: Any?]) -> Void
+  private let terminate: (String) -> Void
   private var session: URLSession!
   private var task: URLSessionWebSocketTask?
+  private var terminated = false
+  private let terminateLock = NSLock()
 
   init(
     id: String,
     expectedFingerprint: String,
-    emit: @escaping (String, [String: Any?]) -> Void
+    emit: @escaping (String, [String: Any?]) -> Void,
+    terminate: @escaping (String) -> Void
   ) {
     self.id = id
     self.expectedFingerprint = expectedFingerprint
     self.emit = emit
+    self.terminate = terminate
     super.init()
     // Ephemeral: no persisted cookies, credentials, or URL cache. We do not
     // want URLSession reusing a cached credential from a previous run.
@@ -84,6 +100,19 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionWe
       delegate: self,
       delegateQueue: nil
     )
+  }
+
+  // Idempotent teardown. Runs at most once per connection instance
+  // regardless of which terminal path (JS close, natural close,
+  // transport failure, pin mismatch) triggered it.
+  private func teardown() {
+    terminateLock.lock()
+    let alreadyTerminated = terminated
+    terminated = true
+    terminateLock.unlock()
+    if alreadyTerminated { return }
+    session.finishTasksAndInvalidate()
+    terminate(id)
   }
 
   func open(url: URL) {
@@ -104,8 +133,7 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionWe
   func close(code: Int?, reason: String?) {
     let closeCode = URLSessionWebSocketTask.CloseCode(rawValue: code ?? 1000) ?? .normalClosure
     task?.cancel(with: closeCode, reason: reason?.data(using: .utf8))
-    // Breaks the session -> delegate retain cycle once outstanding tasks drain.
-    session.finishTasksAndInvalidate()
+    teardown()
   }
 
   // Recursively re-arm receive; each call yields exactly one message.
@@ -125,7 +153,11 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionWe
         }
         self.pump()
       case .failure(let error):
+        // Transport failure is terminal: don't re-arm receive, and
+        // release the session + registry entry so we don't leak on
+        // repeated pair-drop / reconnect cycles.
         self.emit("onError", ["id": self.id, "message": error.localizedDescription])
+        self.teardown()
       }
     }
   }
@@ -158,6 +190,7 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionWe
           "certificate pinning failed: presented \(observed), expected \(expectedFingerprint)",
       ])
       completionHandler(.cancelAuthenticationChallenge, nil)
+      teardown()
     }
   }
 
@@ -181,6 +214,7 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionWe
       "code": closeCode.rawValue,
       "reason": reasonText,
     ])
+    teardown()
   }
 }
 
