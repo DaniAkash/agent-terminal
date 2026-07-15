@@ -39,41 +39,17 @@ export class PinnedWebSocket {
       throw new Error('PinnedWebSocket requires a non-empty fingerprint')
     }
 
-    const openSub = PinnedWebSocketModule.addListener(
-      'onOpen',
-      (event: PinnedWebSocketOpenEvent) => {
-        if (event.id !== this.id) return
-        this.readyState = PinnedWebSocket.OPEN
-        this.onopen?.()
-        if (this.id) {
-          for (const text of this.pendingSends)
-            PinnedWebSocketModule.send(this.id, text)
-        }
-        this.pendingSends = []
-      },
+    const openSub = PinnedWebSocketModule.addListener('onOpen', (event) =>
+      this.handleOpen(event),
     )
-    const messageSub = PinnedWebSocketModule.addListener(
-      'onMessage',
-      (event: PinnedWebSocketMessageEvent) => {
-        if (event.id !== this.id) return
-        this.onmessage?.({ data: event.data })
-      },
+    const messageSub = PinnedWebSocketModule.addListener('onMessage', (event) =>
+      this.handleMessage(event),
     )
-    const closeSub = PinnedWebSocketModule.addListener(
-      'onClose',
-      (event: PinnedWebSocketCloseEvent) => {
-        if (event.id !== this.id) return
-        this.readyState = PinnedWebSocket.CLOSED
-        this.onclose?.({ code: event.code, reason: event.reason })
-        this.dispose()
-      },
+    const closeSub = PinnedWebSocketModule.addListener('onClose', (event) =>
+      this.handleClose(event),
     )
-    const errorSub = PinnedWebSocketModule.addListener(
-      'onError',
-      (event: PinnedWebSocketErrorEvent) => {
-        if (event.id !== this.id) return
-        this.onerror?.({ message: event.message })
-      },
+    const errorSub = PinnedWebSocketModule.addListener('onError', (event) =>
+      this.handleError(event),
     )
     this.disposers.push(
       () => openSub.remove(),
@@ -108,6 +84,37 @@ export class PinnedWebSocket {
     if (this.id) {
       void PinnedWebSocketModule.close(this.id, code, reason)
     }
+  }
+
+  private handleOpen(event: PinnedWebSocketOpenEvent): void {
+    if (event.id !== this.id) return
+    this.readyState = PinnedWebSocket.OPEN
+    this.onopen?.()
+    this.flushPendingSends()
+  }
+
+  private handleMessage(event: PinnedWebSocketMessageEvent): void {
+    if (event.id !== this.id) return
+    this.onmessage?.({ data: event.data })
+  }
+
+  private handleClose(event: PinnedWebSocketCloseEvent): void {
+    if (event.id !== this.id) return
+    this.readyState = PinnedWebSocket.CLOSED
+    this.onclose?.({ code: event.code, reason: event.reason })
+    this.dispose()
+  }
+
+  private handleError(event: PinnedWebSocketErrorEvent): void {
+    if (event.id !== this.id) return
+    this.onerror?.({ message: event.message })
+  }
+
+  private flushPendingSends(): void {
+    const id = this.id
+    if (!id) return
+    for (const text of this.pendingSends) PinnedWebSocketModule.send(id, text)
+    this.pendingSends = []
   }
 
   private dispose(): void {

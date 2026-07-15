@@ -10,7 +10,11 @@
     // and TerminalDom.tsx on iOS/fallback. Fallow's import graph doesn't
     // model the platform split, so it flags the iOS file as unreachable.
     // Both are legitimate consumers.
-    "src/screens/tab/TerminalDom.tsx"
+    "src/screens/tab/TerminalDom.tsx",
+    // Config plugin loaded by string reference in app.json (Expo's
+    // config-plugins mechanism). Fallow doesn't parse app.json's
+    // plugin array.
+    "plugins/withGradleWrapperVersion.js"
   ],
   // react-native-web is required by expo/dom's `.web.tsx` files that
   // Metro pulls in when bundling `'use dom'` components. No source
@@ -18,7 +22,17 @@
   // expo-build-properties is loaded as a config plugin in app.json
   // (referenced by string name). Fallow only scans TS/JS imports and
   // doesn't parse the app.json config-plugin array.
-  "ignoreDependencies": ["react-native-web", "expo-build-properties"],
+  // expo-dev-client is autolinked by the Expo dev-client build
+  // pipeline; no source file imports it directly.
+  // @expo/config-plugins is imported from plugins/withGradleWrapperVersion.js
+  // (a config plugin loaded by app.json, outside fallow's scanned tree)
+  // and is a transitive dep of `expo` so it's always installed.
+  "ignoreDependencies": [
+    "react-native-web",
+    "expo-build-properties",
+    "expo-dev-client",
+    "@expo/config-plugins"
+  ],
   "rules": {
     // `expo` is the Expo SDK runtime. It's imported transitively by
     // expo-router and directly by metro.config.js (build tooling). Fallow's
