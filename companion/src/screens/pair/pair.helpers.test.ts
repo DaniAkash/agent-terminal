@@ -67,19 +67,15 @@ describe('buildPairingAttemptUrls', () => {
     device_hint: 'D',
   }
 
-  it('prefers .local host first when the QR carries one, with ws fallback per host', () => {
+  it('prefers .local host first when the QR carries one', () => {
     const urls = buildPairingAttemptUrls({
       ...base,
       host: 'danis-macbook.local',
     })
-    // .local first (wss then ws), then each IP (wss then ws).
     expect(urls).toEqual([
       'wss://danis-macbook.local:47823/stream',
-      'ws://danis-macbook.local:47823/stream',
       'wss://192.168.1.42:47823/stream',
-      'ws://192.168.1.42:47823/stream',
       'wss://10.0.0.7:47823/stream',
-      'ws://10.0.0.7:47823/stream',
     ])
   })
 
@@ -87,9 +83,7 @@ describe('buildPairingAttemptUrls', () => {
     const urls = buildPairingAttemptUrls(base)
     expect(urls).toEqual([
       'wss://192.168.1.42:47823/stream',
-      'ws://192.168.1.42:47823/stream',
       'wss://10.0.0.7:47823/stream',
-      'ws://10.0.0.7:47823/stream',
     ])
   })
 

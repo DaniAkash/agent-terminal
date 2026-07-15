@@ -3,11 +3,9 @@ import type { PairingQrPayload } from './pair.types'
 /**
  * Build the sequence of pairing URLs the mobile tries against a
  * scanned QR. Prefers the `.local` hostname first because it survives
- * IP shifts, then walks the primary + secondary IPs. Each host emits
- * two candidates: `wss://` first, then plain `ws://` as a dev-only
- * fallback so a desktop running with `tls_enabled: false` (or one
- * whose self-signed cert the mobile OS refuses to accept) still
- * pairs. The desktop side accepts either scheme on the same port.
+ * IP shifts, then walks the primary + secondary IPs. Every candidate
+ * is `wss://` because the native PinnedWebSocket rejects any other
+ * scheme; there is no cleartext fallback.
  *
  * Returns an empty array when the QR carries no addressable endpoint
  * (defensive; the server always populates at least one field).
@@ -19,7 +17,6 @@ export function buildPairingAttemptUrls(qr: PairingQrPayload): string[] {
   for (const ip of qr.ips) hosts.push(ip)
   for (const host of hosts) {
     urls.push(`wss://${host}:${qr.port}/stream`)
-    urls.push(`ws://${host}:${qr.port}/stream`)
   }
   return urls
 }

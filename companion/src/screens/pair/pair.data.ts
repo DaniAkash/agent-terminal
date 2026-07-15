@@ -1,4 +1,5 @@
 import Constants from 'expo-constants'
+import { PinnedWebSocket } from '../../../modules/pinned-websocket'
 import { Platform } from 'react-native'
 import type { DeviceRecord } from '@/modules/stores/$device'
 import { saveDeviceToSecureStore } from '@/modules/stores/$device'
@@ -33,7 +34,12 @@ export async function completePairing(
   const failures: string[] = []
   for (const url of attempts) {
     try {
-      const token = await runPairingSocket(url, qr.pairing_token, meta)
+      const token = await runPairingSocket(
+        url,
+        qr.pairing_token,
+        qr.fingerprint,
+        meta,
+      )
       const record: DeviceRecord = {
         token: token.device_token,
         deviceId: token.device_id,
@@ -98,11 +104,18 @@ interface DeviceMeta {
 function runPairingSocket(
   url: string,
   pairingToken: string,
+  fingerprint: string,
   meta: DeviceMeta,
 ): Promise<PairingReply> {
   return new Promise<PairingReply>((resolve, reject) => {
     let settled = false
-    const ws = new WebSocket(url)
+    let ws: PinnedWebSocket
+    try {
+      ws = new PinnedWebSocket(url, { fingerprint })
+    } catch (e) {
+      reject(e instanceof Error ? e : new Error(String(e)))
+      return
+    }
     const timer = setTimeout(() => {
       if (settled) return
       settled = true
@@ -128,7 +141,7 @@ function runPairingSocket(
       )
     }
     ws.onmessage = (event) => {
-      const raw = String(event.data)
+      const raw = event.data
       const complete = parsePairingCompleteFrame(raw)
       if (complete) {
         done(() => resolve(complete))
@@ -162,8 +175,8 @@ function runPairingSocket(
         )
       }
     }
-    ws.onerror = () => {
-      done(() => reject(new Error(`socket error at ${url}`)))
+    ws.onerror = (event) => {
+      done(() => reject(new Error(event.message || `socket error at ${url}`)))
     }
     ws.onclose = (event) => {
       if (settled) return

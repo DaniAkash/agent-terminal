@@ -1,3 +1,5 @@
+import { PinnedWebSocket } from '../../../modules/pinned-websocket'
+import { $device } from '@/modules/stores/$device'
 import { $session, resetSession } from '@/modules/stores/$session'
 import type {
   ClientFrame,
@@ -28,7 +30,7 @@ type TabSubscription = TabHandlers & {
 const subscriptions = new Map<string, TabSubscription>()
 
 type ConnectionState = {
-  socket: WebSocket | null
+  socket: PinnedWebSocket | null
   socketGeneration: number
   url: string | null
   token: string | null
@@ -55,10 +57,10 @@ const HEARTBEAT_INTERVAL_MS = 15_000
 const PONG_TIMEOUT_MS = 30_000
 
 export function connect(url: string, token: string): void {
-  // Scheme is caller-owned. The desktop ships TLS-on by default so the
-  // paired URL is `wss://`; a user who deliberately disabled TLS on the
-  // desktop for debugging pastes a `ws://` URL and we honour it. Silent
-  // scheme rewriting here would defeat that escape hatch.
+  // Every connection is TLS-pinned end-to-end. The PinnedWebSocket
+  // constructor rejects non-wss:// URLs synchronously so a stale ws://
+  // URL from a legacy paired record fails loudly at construction rather
+  // than silently downgrading the transport.
   console.log('[wss.client] connect()', {
     url,
     tokenLen: token.length,
@@ -120,34 +122,41 @@ function probeSocket(url: string, timeoutMs: number): Promise<boolean> {
       done = true
       resolve(ok)
     }
+    const fingerprint = $device.get().record?.fingerprint
+    if (!fingerprint) {
+      finish(false)
+      return
+    }
+    let ws: PinnedWebSocket
     try {
-      const ws = new WebSocket(url)
-      const timer = setTimeout(() => {
-        try {
-          ws.close()
-        } catch {
-          /* ignore */
-        }
-        finish(false)
-      }, timeoutMs)
-      ws.onopen = () => {
-        clearTimeout(timer)
-        try {
-          ws.close()
-        } catch {
-          /* ignore */
-        }
-        finish(true)
-      }
-      ws.onerror = () => {
-        clearTimeout(timer)
-        finish(false)
-      }
-      ws.onclose = () => {
-        clearTimeout(timer)
-        finish(false)
-      }
+      ws = new PinnedWebSocket(url, { fingerprint })
     } catch {
+      finish(false)
+      return
+    }
+    const timer = setTimeout(() => {
+      try {
+        ws.close()
+      } catch {
+        /* ignore */
+      }
+      finish(false)
+    }, timeoutMs)
+    ws.onopen = () => {
+      clearTimeout(timer)
+      try {
+        ws.close()
+      } catch {
+        /* ignore */
+      }
+      finish(true)
+    }
+    ws.onerror = () => {
+      clearTimeout(timer)
+      finish(false)
+    }
+    ws.onclose = () => {
+      clearTimeout(timer)
       finish(false)
     }
   })
@@ -231,7 +240,7 @@ function sendPending(opId: number, frame: ClientFrame): Promise<void> {
     // the pending entry armed and the caller waiting the full 10 s
     // timeout for a misleading "timed out" error when the actual state
     // is "not connected".
-    if (state.socket?.readyState !== WebSocket.OPEN) {
+    if (state.socket?.readyState !== PinnedWebSocket.OPEN) {
       reject(new Error(`${frame.op} failed: not connected`))
       return
     }
@@ -309,7 +318,7 @@ function sendSubscribeOrResume(tabId: string, sub: TabSubscription): void {
 }
 
 function send(frame: ClientFrame): void {
-  if (state.socket?.readyState !== WebSocket.OPEN) return
+  if (state.socket?.readyState !== PinnedWebSocket.OPEN) return
   state.socket.send(JSON.stringify(frame))
 }
 
@@ -331,15 +340,15 @@ function openSocket(): void {
   }
   ws.onmessage = (event) => {
     if (!isCurrentGeneration(generation)) return
-    handleFrame(event.data as string)
+    handleFrame(event.data)
   }
   ws.onclose = (event) => {
     if (!isCurrentGeneration(generation)) return
-    handleClose(event)
+    handleClose(event.code, event.reason)
   }
   ws.onerror = (event) => {
     if (!isCurrentGeneration(generation)) return
-    console.error('[wss.client] socket error event', event)
+    console.error('[wss.client] socket error event', event.message)
   }
 }
 
@@ -347,11 +356,20 @@ function isCurrentGeneration(generation: number): boolean {
   return generation === state.socketGeneration
 }
 
-function tryConstructSocket(url: string): WebSocket | null {
+function tryConstructSocket(url: string): PinnedWebSocket | null {
+  const fingerprint = $device.get().record?.fingerprint
+  if (!fingerprint) {
+    console.error(
+      '[wss.client] openSocket blocked: no paired device fingerprint in $device',
+    )
+    $session.setKey('status', 'auth_failed')
+    $session.setKey('lastError', 'not paired')
+    return null
+  }
   try {
-    return new WebSocket(url)
+    return new PinnedWebSocket(url, { fingerprint })
   } catch (err) {
-    console.error('[wss.client] WebSocket constructor threw:', err)
+    console.error('[wss.client] PinnedWebSocket constructor threw:', err)
     $session.setKey('status', 'unreachable')
     $session.setKey(
       'lastError',
@@ -367,17 +385,14 @@ function handleOpen(): void {
   send({ op: 'auth', body: { token: state.token ?? '' } })
 }
 
-function handleClose(event: CloseEvent): void {
-  console.log('[wss.client] socket closed', {
-    code: event.code,
-    reason: event.reason,
-  })
+function handleClose(code: number, reason: string): void {
+  console.log('[wss.client] socket closed', { code, reason })
   clearTimers()
   state.socket = null
   if (state.intentionallyDisconnected) return
   if ($session.get().status !== 'auth_failed') {
     $session.setKey('status', 'unreachable')
-    if (event.reason) $session.setKey('lastError', event.reason)
+    if (reason) $session.setKey('lastError', reason)
   }
   scheduleReconnect()
 }
@@ -532,7 +547,7 @@ function startHeartbeat(): void {
 }
 
 function heartbeatTick(): void {
-  if (state.socket?.readyState !== WebSocket.OPEN) return
+  if (state.socket?.readyState !== PinnedWebSocket.OPEN) return
   send({ op: 'ping' })
   updatePongDeadline()
 }
