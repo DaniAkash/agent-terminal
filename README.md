@@ -63,9 +63,8 @@ Always-on context for the focused tab — refreshed every couple of seconds, nev
 |---|---|
 | [Claude Code](https://claude.ai/code) | ✅ Supported |
 | [Codex CLI](https://github.com/openai/codex) | ✅ Supported |
-| [Gemini CLI](https://github.com/google-gemini/gemini-cli) | 🔜 Planned |
+| [opencode](https://github.com/sst/opencode) | ✅ Supported |
 | [Cursor](https://www.cursor.com) | 🔜 Planned |
-| [Open Code](https://github.com/sst/opencode) | 🔜 Planned |
 
 Want support for another agent? [Open an issue](https://github.com/DaniAkash/agent-terminal/issues/new) or [tell me on X](https://x.com/dani_akash_).
 
@@ -99,7 +98,7 @@ Specifically helpful:
 
 - **Linux testers** — try a dev build, file what's broken (rendering, shell integration, keyboard shortcuts, anything).
 - **Windows testers + developers** — Windows needs ConPTY-side adjustments and a separate shell-integration path; if you're up for Tauri/Rust work, this is the highest-leverage area to contribute.
-- **Other agent integrations** — adding Gemini CLI, Cursor, Open Code, etc. is a focused PR (see [CONTRIBUTING.md](./CONTRIBUTING.md) for the MOD system guide).
+- **Other agent integrations** — adding Cursor and other agents is a focused PR (see [CONTRIBUTING.md](./CONTRIBUTING.md) for the agent registry guide).
 - **Bug reports + feature ideas** — open an issue, even rough ones.
 
 If you're interested, [open an issue](https://github.com/DaniAkash/agent-terminal/issues/new) or [reach out on X](https://x.com/dani_akash_) — happy to pair / sync on direction.
@@ -111,14 +110,14 @@ If you're interested, [open an issue](https://github.com/DaniAkash/agent-termina
 Already shipped:
 - ✅ Project-scoped workspaces with persistent tabs
 - ✅ Live status bar (process, git, cwd, ports, model)
-- ✅ Claude Code + Codex detection and agent badges
+- ✅ Claude Code, Codex, and opencode detection and agent badges
 - ✅ Agent turn detection (idle / in-progress / awaiting / done)
 - ✅ Keyboard shortcuts
 - ✅ Universal macOS binary (Apple Silicon + Intel)
 - ✅ Theme toggle with light / dark / system support
 
 Coming next:
-- 🚧 More agent integrations (Gemini CLI, Cursor, Open Code)
+- 🚧 More agent integrations (Cursor, and more)
 - 🚧 Linux support
 - 🚧 Windows support
 - 🚧 macOS App Store distribution
