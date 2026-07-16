@@ -1,4 +1,9 @@
 import '../../global.css'
+// Registers the dev-client runtime shims (deep-link URL, dev menu,
+// launcher UI) before the router mounts. Autolinking would still
+// wire the native side, but the JS side needs this side-effect
+// import so the launcher screen becomes reachable.
+import 'expo-dev-client'
 import { ActionSheetProvider } from '@expo/react-native-action-sheet'
 import { Stack } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'

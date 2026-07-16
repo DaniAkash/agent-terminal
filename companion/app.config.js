@@ -1,0 +1,64 @@
+// Expo config as executable JS so the local Gradle-wrapper plugin is
+// referenced through a real import instead of a string path. Static
+// analysis (fallow, ts-prune) now sees the plugin as reachable code;
+// Expo prebuild resolves the same function it did before.
+const withGradleWrapperVersion = require('./plugins/withGradleWrapperVersion')
+
+/** @type {import('@expo/config-types').ExpoConfig} */
+const config = {
+  name: 'companion',
+  slug: 'companion',
+  version: '1.0.0',
+  scheme: 'agent-terminal-companion',
+  experiments: {
+    typedRoutes: true,
+  },
+  orientation: 'portrait',
+  icon: './assets/icon.png',
+  userInterfaceStyle: 'light',
+  ios: {
+    bundleIdentifier: 'com.daniakash.agent-terminal.companion.dev',
+    supportsTablet: true,
+    infoPlist: {
+      NSAppTransportSecurity: {
+        NSAllowsLocalNetworking: true,
+      },
+      NSLocalNetworkUsageDescription:
+        'Agent Terminal connects to your desktop over your local Wi-Fi to stream terminal output. No traffic leaves your network.',
+    },
+  },
+  android: {
+    package: 'com.daniakash.agent_terminal.companion.dev',
+    adaptiveIcon: {
+      backgroundColor: '#E6F4FE',
+      foregroundImage: './assets/android-icon-foreground.png',
+      backgroundImage: './assets/android-icon-background.png',
+      monochromeImage: './assets/android-icon-monochrome.png',
+    },
+    predictiveBackGestureEnabled: false,
+    networkSecurityConfig: './network-security-config.xml',
+  },
+  plugins: [
+    'expo-router',
+    'expo-secure-store',
+    [
+      'expo-camera',
+      {
+        cameraPermission:
+          'Agent Terminal uses the camera to scan the pairing QR shown on your desktop.',
+        recordAudioAndroid: false,
+      },
+    ],
+    [
+      'expo-build-properties',
+      {
+        android: {
+          networkSecurityConfig: './network-security-config.xml',
+        },
+      },
+    ],
+    withGradleWrapperVersion,
+  ],
+}
+
+module.exports = { expo: config }
