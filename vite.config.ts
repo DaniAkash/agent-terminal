@@ -29,7 +29,7 @@ export default defineConfig(async () => ({
         }
       : undefined,
     watch: {
-      ignored: ['**/src-tauri/**', '**/companion/**'],
+      ignored: ['**/src-tauri/**', '**/companion/**', '**/website/**'],
     },
   },
 }))
