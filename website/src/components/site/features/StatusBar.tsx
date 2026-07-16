@@ -22,7 +22,10 @@ const METRICS = [
 
 export default function StatusBarFeature() {
   return (
-    <section className="w-full py-28 md:py-36 border-t border-border/40">
+    <section
+      id="status-bar"
+      className="w-full py-28 md:py-36 border-t border-border/40"
+    >
       <div className="mx-auto max-w-[1000px] px-4 text-center">
         <h3 className="text-3xl md:text-4xl font-medium tracking-tight leading-[1.15] text-text-primary">
           Everything you would normally run{" "}

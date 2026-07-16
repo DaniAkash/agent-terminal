@@ -13,10 +13,10 @@ export default function Hero() {
   return (
     <section
       id="hero"
-      className="relative min-h-[100dvh] w-full pt-32 pb-16 md:pt-40"
+      className="relative w-full pt-28 pb-24 md:pt-32 md:pb-28"
     >
-      <div className="mx-auto grid max-w-[1400px] grid-cols-1 gap-14 px-4 lg:grid-cols-12 lg:gap-10">
-        <div className="lg:col-span-7 flex flex-col justify-center">
+      <div className="mx-auto grid max-w-[1400px] grid-cols-1 items-center gap-14 px-4 lg:grid-cols-12 lg:gap-10">
+        <div className="lg:col-span-7">
           <div className="mb-6 inline-flex w-fit items-center gap-2 rounded border border-border/70 bg-surface/60 px-2 py-1 font-mono text-[11px] text-text-faint">
             <span className="inline-block h-1.5 w-1.5 rounded-full bg-state-ok" />
             <span>running</span>
@@ -56,7 +56,7 @@ export default function Hero() {
           </div>
         </div>
 
-        <div className="lg:col-span-5 flex flex-col justify-center">
+        <div className="lg:col-span-5">
           <div className="relative">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <HeroOscTitle />

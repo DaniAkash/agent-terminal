@@ -1,25 +1,32 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "motion/react";
 
 /*
  * The signature idea for the page. A slim mono strip fixed to the top
  * of the viewport that mimics agent-terminal's own status bar. Section
  * pill on the left updates as the user scrolls (IntersectionObserver);
- * right group runs a fake session timer so the whole thing feels alive.
+ * right group runs a real session timer so the whole thing feels alive.
  *
- * Zero fake-precise data: the elapsed time is real (counts up from page
- * load), the memory value is a static plausible number (mock, allowed
- * because the label is not a claim about product performance), and the
- * git-style tag is real (the current release version).
+ * The IntersectionObserver keeps a per-section visibility set (not just
+ * the current-callback delta) so the "active" section is always the
+ * topmost intersecting one from the full SECTIONS list, no matter which
+ * subset of sections happened to change intersection state in the last
+ * callback batch. This is the correction to the previous version that
+ * skipped labels when 4 consecutive sections all intersected the
+ * viewport at the same scroll position without a change event firing.
  */
 
 const SECTIONS = [
   { id: "hero", label: "hero" },
+  { id: "social", label: "signals" },
   { id: "problem", label: "problem" },
   { id: "solution", label: "solution" },
   { id: "features", label: "features / mod-engine" },
+  { id: "agent-state", label: "features / agent-state" },
+  { id: "status-bar", label: "features / status-bar" },
+  { id: "keymap", label: "features / keymap" },
   { id: "companion", label: "companion" },
   { id: "how", label: "how-it-works" },
   { id: "faq", label: "faq" },
@@ -36,8 +43,13 @@ function formatElapsed(ms: number): string {
 export default function StatusStrip() {
   const [active, setActive] = useState<string>("hero");
   const [elapsedMs, setElapsedMs] = useState(0);
+  const visibleRef = useRef<Set<string>>(new Set(["hero"]));
 
-  // Update the section pill as the user scrolls.
+  const orderedIds = useMemo(() => SECTIONS.map((s) => s.id), []);
+
+  // Update the section pill as the user scrolls. Track full visible
+  // set across callbacks, then compute the topmost intersecting section
+  // from the ordered SECTIONS list.
   useEffect(() => {
     const els = SECTIONS.map((s) => document.getElementById(s.id)).filter(
       (el): el is HTMLElement => el !== null,
@@ -46,23 +58,28 @@ export default function StatusStrip() {
 
     const observer = new IntersectionObserver(
       (entries) => {
-        // Pick the topmost intersecting section, matches how a real
-        // status bar reports the "focused" tab.
-        const visible = entries
-          .filter((e) => e.isIntersecting)
-          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
-        if (visible.length > 0) {
-          setActive(visible[0].target.id);
+        for (const e of entries) {
+          if (e.isIntersecting) visibleRef.current.add(e.target.id);
+          else visibleRef.current.delete(e.target.id);
         }
+        // Topmost intersecting section = first id in the ordered list
+        // that's currently visible. Falls back to the last known section
+        // (never regresses to "hero" mid-page).
+        const topmost = orderedIds.find((id) => visibleRef.current.has(id));
+        if (topmost) setActive(topmost);
       },
-      { rootMargin: "-96px 0px -60% 0px", threshold: [0, 0.1, 0.5] },
+      // Trigger when a section's top crosses the header + 15% mark.
+      // Bottom margin -70% so a section only "counts" once it's in
+      // roughly the top third of the viewport, which matches where a
+      // reader's eye actually is.
+      { rootMargin: "-96px 0px -70% 0px", threshold: 0 },
     );
 
     els.forEach((el) => observer.observe(el));
     return () => observer.disconnect();
-  }, []);
+  }, [orderedIds]);
 
-  // Live "session" timer since page load. Real, not mock.
+  // Live "session" timer since page load.
   useEffect(() => {
     const started = performance.now();
     const id = setInterval(() => {
