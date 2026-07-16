@@ -1,26 +1,67 @@
 @import "tailwindcss";
 
+/*
+ * Palette tokens derived from the app's own theme.
+ * bg #0e0f10 and text #e6e8eb are literally what agent-terminal
+ * uses in its terminal. amber #e9b856 comes from the app's model
+ * badge and is the single accent for the whole page.
+ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg: #0e0f10;
+  --surface: #161719;
+  --surface-elev: #1c1e21;
+  --border: #2a2c31;
+  --border-strong: #3a3d43;
+  --text-primary: #e6e8eb;
+  --text-muted: #9aa0a8;
+  --text-faint: #5c626a;
+  --accent: #e9b856;
+  --accent-tint: rgba(233, 184, 86, 0.14);
+  --accent-strong: #f0c76a;
+  --state-danger: #c26565;
+  --state-ok: #7bb37b;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-elev: var(--surface-elev);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-text-primary: var(--text-primary);
+  --color-text-muted: var(--text-muted);
+  --color-text-faint: var(--text-faint);
+  --color-accent: var(--accent);
+  --color-accent-tint: var(--accent-tint);
+  --color-accent-strong: var(--accent-strong);
+  --color-state-danger: var(--state-danger);
+  --color-state-ok: var(--state-ok);
   --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-mono: var(--font-jetbrains-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  color-scheme: dark;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--text-primary);
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-feature-settings: "cv02", "cv03", "cv11", "ss01";
+}
+
+::selection {
+  background: var(--accent-tint);
+  color: var(--accent-strong);
+}
+
+/*
+ * Keep the amber accent as an actual amber even in high-contrast mode;
+ * the state colors also stay recognizable.
+ */
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --accent-tint: rgba(233, 184, 86, 0.28);
+  }
 }
