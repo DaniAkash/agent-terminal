@@ -26,7 +26,7 @@ export default function StatusBarFeature() {
       id="status-bar"
       className="w-full py-28 md:py-36 border-t border-border/40"
     >
-      <div className="mx-auto max-w-[1000px] px-4 text-center">
+      <div className="mx-auto max-w-[1000px] px-6 sm:px-8 lg:px-12 text-center">
         <h3 className="text-3xl md:text-4xl font-medium tracking-tight leading-[1.15] text-text-primary">
           Everything you would normally run{" "}
           <code className="rounded bg-surface px-2 py-0.5 font-mono text-[0.85em] text-accent">

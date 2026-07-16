@@ -6,7 +6,7 @@ export default function Problem() {
       id="problem"
       className="w-full py-28 md:py-36 border-b border-border/40"
     >
-      <div className="mx-auto grid max-w-[1400px] grid-cols-1 gap-14 px-4 lg:grid-cols-12">
+      <div className="mx-auto grid max-w-[1400px] grid-cols-1 gap-14 px-6 sm:px-8 lg:px-12 lg:grid-cols-12">
         <div className="lg:col-span-7">
           <h2 className="text-3xl md:text-5xl font-medium tracking-tight leading-[1.1] text-text-primary">
             A normal terminal doesn&rsquo;t know

@@ -96,7 +96,7 @@ export default function StatusStrip() {
       aria-hidden="true"
       className="fixed top-0 left-0 right-0 z-50 h-8 border-b border-border/80 bg-bg/70 backdrop-blur-md"
     >
-      <div className="mx-auto flex h-full max-w-[1400px] items-center justify-between px-4 font-mono text-[11px] text-text-faint">
+      <div className="mx-auto flex h-full max-w-[1400px] items-center justify-between px-6 sm:px-8 lg:px-12 font-mono text-[11px] text-text-faint">
         <div className="flex items-center gap-3">
           <span className="text-text-muted">agent-terminal</span>
           <span className="text-text-faint">/</span>

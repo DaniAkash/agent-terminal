@@ -5,7 +5,7 @@ import { GithubLogo, Star } from "@phosphor-icons/react/dist/ssr";
 export default function Nav() {
   return (
     <header className="fixed top-8 left-0 right-0 z-40 h-16 border-b border-border/60 bg-bg/70 backdrop-blur-md">
-      <div className="mx-auto flex h-full max-w-[1400px] items-center justify-between px-4">
+      <div className="mx-auto flex h-full max-w-[1400px] items-center justify-between px-6 sm:px-8 lg:px-12">
         <Link href="/" className="flex items-center gap-2.5">
           <Image
             src="/logo.png"

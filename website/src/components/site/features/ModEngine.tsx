@@ -41,7 +41,7 @@ export default async function ModEngine() {
       id="features"
       className="w-full py-28 md:py-36 border-t border-border/40"
     >
-      <div className="mx-auto grid max-w-[1400px] grid-cols-1 gap-14 px-4 lg:grid-cols-12">
+      <div className="mx-auto grid max-w-[1400px] grid-cols-1 gap-14 px-6 sm:px-8 lg:px-12 lg:grid-cols-12">
         <div className="lg:col-span-5 flex flex-col justify-center">
           <div className="mb-4 inline-flex w-fit items-center gap-2 rounded border border-border/70 bg-surface/60 px-2 py-1 font-mono text-[11px] text-text-faint">
             <span>[proc: mod-engine]</span>

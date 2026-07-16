@@ -15,7 +15,7 @@ export default function Hero() {
       id="hero"
       className="relative w-full pt-28 pb-24 md:pt-32 md:pb-28"
     >
-      <div className="mx-auto grid max-w-[1400px] grid-cols-1 items-center gap-14 px-4 lg:grid-cols-12 lg:gap-10">
+      <div className="mx-auto grid max-w-[1400px] grid-cols-1 items-center gap-14 px-6 sm:px-8 lg:px-12 lg:grid-cols-12 lg:gap-10">
         <div className="lg:col-span-7">
           <div className="mb-6 inline-flex w-fit items-center gap-2 rounded border border-border/70 bg-surface/60 px-2 py-1 font-mono text-[11px] text-text-faint">
             <span className="inline-block h-1.5 w-1.5 rounded-full bg-state-ok" />

@@ -3,7 +3,7 @@ import Image from "next/image";
 export default function Solution() {
   return (
     <section id="solution" className="w-full py-28 md:py-36">
-      <div className="mx-auto max-w-[900px] px-4 text-center">
+      <div className="mx-auto max-w-[900px] px-6 sm:px-8 lg:px-12 text-center">
         <Image
           src="/logo.png"
           alt=""

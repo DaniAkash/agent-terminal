@@ -48,7 +48,7 @@ const COLS = [
 export default function Footer() {
   return (
     <footer className="w-full border-t border-border/60 bg-surface/40 py-16">
-      <div className="mx-auto max-w-[1400px] px-4">
+      <div className="mx-auto max-w-[1400px] px-6 sm:px-8 lg:px-12">
         <div className="grid grid-cols-1 gap-10 md:grid-cols-4">
           <div>
             <div className="flex items-center gap-2.5">

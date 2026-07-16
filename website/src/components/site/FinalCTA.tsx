@@ -12,7 +12,7 @@ export default function FinalCTA() {
       id="cta"
       className="w-full py-32 md:py-44 border-t border-border/40"
     >
-      <div className="mx-auto max-w-[720px] px-4 text-center">
+      <div className="mx-auto max-w-[720px] px-6 sm:px-8 lg:px-12 text-center">
         <h2 className="text-4xl md:text-6xl font-medium tracking-tight leading-[1.05] text-text-primary">
           Give your agents a better home.
         </h2>

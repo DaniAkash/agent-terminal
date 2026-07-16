@@ -31,7 +31,7 @@ export default function HowItWorks() {
       id="how"
       className="w-full py-28 md:py-36 border-t border-border/40"
     >
-      <div className="mx-auto max-w-[1400px] px-4">
+      <div className="mx-auto max-w-[1400px] px-6 sm:px-8 lg:px-12">
         <div className="mx-auto mb-16 max-w-[640px] text-center">
           <h2 className="text-3xl md:text-5xl font-medium tracking-tight leading-[1.1] text-text-primary">
             Three steps.
