@@ -19,8 +19,11 @@ import { motion } from "motion/react";
  */
 
 const SECTIONS = [
-  { id: "hero", label: "hero" },
-  { id: "social", label: "signals" },
+  { id: "hero", label: "intro" },
+  // SocialProof ribbon deliberately omitted; it's part of the hero
+  // fold visually and having its own label would flicker the strip
+  // for a 60px scroll window. Label stays on 'intro' while the reader
+  // scrolls through it.
   { id: "problem", label: "problem" },
   { id: "solution", label: "solution" },
   { id: "features", label: "features / mod-engine" },
@@ -30,7 +33,7 @@ const SECTIONS = [
   { id: "companion", label: "companion" },
   { id: "how", label: "how-it-works" },
   { id: "faq", label: "faq" },
-  { id: "cta", label: "cta" },
+  { id: "cta", label: "install" },
 ];
 
 function formatElapsed(ms: number): string {
@@ -68,11 +71,12 @@ export default function StatusStrip() {
         const topmost = orderedIds.find((id) => visibleRef.current.has(id));
         if (topmost) setActive(topmost);
       },
-      // Trigger when a section's top crosses the header + 15% mark.
-      // Bottom margin -70% so a section only "counts" once it's in
-      // roughly the top third of the viewport, which matches where a
-      // reader's eye actually is.
-      { rootMargin: "-96px 0px -70% 0px", threshold: 0 },
+      // Observation window: from 96px below the top (past the chrome)
+      // down to the middle of the viewport. A section counts as
+      // "active" as soon as its top crosses above the viewport middle,
+      // which is where the reader's eye actually is at that scroll
+      // depth. Previously used -70% (top third) which felt laggy.
+      { rootMargin: "-96px 0px -50% 0px", threshold: 0 },
     );
 
     els.forEach((el) => observer.observe(el));
