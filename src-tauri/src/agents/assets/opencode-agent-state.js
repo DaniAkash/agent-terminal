@@ -40,7 +40,7 @@ async function report(event, sessionID) {
 // opencode's session.status carries { type: "idle" | "busy" | "retry" } (older
 // builds used a bare string). "idle" means the turn finished.
 function stateFromStatus(status) {
-  const type = typeof status === "string" ? status : status && status.type
+  const type = typeof status === "string" ? status : status?.type
   switch (type) {
     case "idle":
       return "turn_end"
@@ -53,37 +53,49 @@ function stateFromStatus(status) {
   }
 }
 
+// Handlers extracted so the top-level event dispatcher stays flat. Each
+// takes the parsed `properties` bag + the current `sessionID`, so the
+// dispatcher never has to reach back into `event` for anything.
+async function handleSessionCreated(properties, sessionID) {
+  if (properties.info?.parentID) {
+    childSessions.add(properties.info.id)
+  } else if (sessionID) {
+    await report("session_start", sessionID)
+  }
+}
+
+async function handleSessionStatus(properties, sessionID) {
+  const state = stateFromStatus(properties.status)
+  if (state) await report(state, sessionID)
+}
+
+async function dispatchEvent(event) {
+  const type = event?.type
+  const properties = event?.properties ?? {}
+  const sessionID = properties.sessionID
+  if (sessionID && childSessions.has(sessionID)) return
+  switch (type) {
+    case "session.created":
+      await handleSessionCreated(properties, sessionID)
+      break
+    case "session.updated":
+    case "session.idle":
+    case "session.status":
+      await handleSessionStatus(properties, sessionID)
+      break
+    case "permission.asked":
+    case "permission.updated":
+      await report("blocked", sessionID)
+      break
+  }
+}
+
 export const AgentTerminalStatePlugin = async () => {
   return {
     "chat.message": async ({ sessionID }) => {
       if (sessionID && childSessions.has(sessionID)) return
       await report("working", sessionID)
     },
-    event: async ({ event }) => {
-      const type = event && event.type
-      const properties = (event && event.properties) || {}
-      const sessionID = properties.sessionID
-      if (sessionID && childSessions.has(sessionID)) return
-      switch (type) {
-        case "session.created":
-          if (properties.info && properties.info.parentID) {
-            childSessions.add(properties.info.id)
-          } else if (sessionID) {
-            await report("session_start", sessionID)
-          }
-          break
-        case "session.updated":
-        case "session.idle":
-        case "session.status": {
-          const state = stateFromStatus(properties.status)
-          if (state) await report(state, sessionID)
-          break
-        }
-        case "permission.asked":
-        case "permission.updated":
-          await report("blocked", sessionID)
-          break
-      }
-    },
+    event: async ({ event }) => dispatchEvent(event),
   }
 }
