@@ -40,8 +40,6 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.1",
-    "@expo/config-plugins": "~56.0.9",
-    "@expo/config-types": "~56.0.6",
     "@types/bun": "^1.3.14",
     "@types/react": "~19.2.2",
     "concurrently": "^10.0.3",
