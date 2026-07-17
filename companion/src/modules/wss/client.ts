@@ -38,7 +38,14 @@ type ConnectionState = {
   reconnectTimer: ReturnType<typeof setTimeout> | null
   heartbeatTimer: ReturnType<typeof setInterval> | null
   pongDeadline: number | null
+  /**
+   * Wall-clock ms of the last inbound frame of any kind. Feeds the
+   * watchdog (receive-side liveness) and probeConnection (foreground
+   * probe waits for lastFrameAt to bump past a captured baseline).
+   */
+  lastFrameAt: number | null
   intentionallyDisconnected: boolean
+  probing: boolean
 }
 
 const state: ConnectionState = {
@@ -50,11 +57,23 @@ const state: ConnectionState = {
   reconnectTimer: null,
   heartbeatTimer: null,
   pongDeadline: null,
+  lastFrameAt: null,
   intentionallyDisconnected: false,
+  probing: false,
 }
 
 const HEARTBEAT_INTERVAL_MS = 15_000
 const PONG_TIMEOUT_MS = 30_000
+// Watchdog: force-close if no inbound frame in this window. Sized just
+// above heartbeat's worst-case round-trip (15 s ping cadence + 30 s
+// pong window) so a normal missed pong doesn't trip it, but a truly
+// silent socket doesn't linger past ~45 s.
+const FRAME_STALE_MS = 45_000
+// probeConnection budget: on foreground / network transition we send
+// a ping and wait for ANY inbound frame this long before declaring the
+// socket dead.
+const PROBE_TIMEOUT_MS = 3_000
+const PROBE_POLL_MS = 100
 
 export function connect(url: string, token: string): void {
   // Every connection is TLS-pinned end-to-end. The PinnedWebSocket
@@ -347,6 +366,9 @@ function openSocket(): void {
   state.socketGeneration += 1
   const generation = state.socketGeneration
   state.socket = ws
+  // Fresh socket, no history. Watchdog needs a baseline so it doesn't
+  // fire on the first tick before any frame has arrived.
+  state.lastFrameAt = Date.now()
   ws.onopen = () => {
     if (!isCurrentGeneration(generation)) return
     handleOpen()
@@ -434,6 +456,10 @@ function forceCloseAndReconnect(reason: string): void {
 }
 
 function handleFrame(raw: string): void {
+  // Stamp the receive-side liveness clock BEFORE parsing so even a
+  // malformed frame from the desktop still counts as "the peer is
+  // alive". Watchdog + probeConnection both key off this timestamp.
+  state.lastFrameAt = Date.now()
   let frame: ServerFrame
   try {
     frame = JSON.parse(raw) as ServerFrame
@@ -579,11 +605,29 @@ function scheduleReconnect(): void {
 
 function startHeartbeat(): void {
   clearTimers()
-  state.heartbeatTimer = setInterval(heartbeatTick, HEARTBEAT_INTERVAL_MS)
+  state.heartbeatTimer = setInterval(heartbeatAndWatchdogTick, HEARTBEAT_INTERVAL_MS)
 }
 
-function heartbeatTick(): void {
+/**
+ * Runs once per HEARTBEAT_INTERVAL_MS. Combines two liveness checks:
+ *
+ * - Heartbeat (send-side): fire a ping, expect a pong within
+ *   PONG_TIMEOUT_MS. Detects "server never replied to us".
+ * - Watchdog (receive-side): if we haven't seen ANY inbound frame in
+ *   FRAME_STALE_MS, the peer went silent. Detects "server stopped
+ *   saying anything at all, including broadcasts we should be seeing".
+ *
+ * Different failure modes, different latencies, both worth catching.
+ */
+function heartbeatAndWatchdogTick(): void {
   if (state.socket?.readyState !== PinnedWebSocket.OPEN) return
+  const last = state.lastFrameAt
+  if (last !== null && Date.now() - last > FRAME_STALE_MS) {
+    forceCloseAndReconnect(
+      `no frames for ${Math.round((Date.now() - last) / 1000)}s`,
+    )
+    return
+  }
   send({ op: 'ping' })
   updatePongDeadline()
 }
@@ -594,8 +638,45 @@ function updatePongDeadline(): void {
     return
   }
   if (Date.now() > state.pongDeadline) {
-    state.socket?.close()
+    forceCloseAndReconnect('pong deadline exceeded')
   }
+}
+
+/**
+ * Active liveness check for lifecycle events (app foreground, network
+ * transition). Sends a ping and polls lastFrameAt for up to
+ * PROBE_TIMEOUT_MS looking for ANY inbound frame. Returns 'alive' if
+ * we saw one, 'dead' otherwise.
+ *
+ * Callers (lifecycle.ts) reconnect on 'dead'. Concurrent probes short-
+ * circuit to 'alive' rather than stacking pings.
+ */
+export async function probeConnection(): Promise<'alive' | 'dead'> {
+  if (state.socket?.readyState !== PinnedWebSocket.OPEN) return 'dead'
+  if (state.probing) return 'alive'
+  state.probing = true
+  const before = state.lastFrameAt ?? 0
+  send({ op: 'ping' })
+  const startedAt = Date.now()
+  try {
+    while (Date.now() - startedAt < PROBE_TIMEOUT_MS) {
+      if ((state.lastFrameAt ?? 0) > before) return 'alive'
+      await new Promise((r) => setTimeout(r, PROBE_POLL_MS))
+    }
+    return 'dead'
+  } finally {
+    state.probing = false
+  }
+}
+
+/**
+ * Public entry point for lifecycle.ts to force-close a suspected-dead
+ * socket. Thin wrapper around the internal helper; keeps the export
+ * surface intentional so callers can't accidentally invoke the raw
+ * internals.
+ */
+export function forceCloseFromLifecycle(reason: string): void {
+  forceCloseAndReconnect(reason)
 }
 
 function clearTimers(): void {
