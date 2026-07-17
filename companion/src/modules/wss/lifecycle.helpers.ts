@@ -108,7 +108,9 @@ export function executeNetInfoAction<TRecord>(
     return
   }
   if (action === 'reconnect' && record !== null) {
-    void deps.autoConnect(record)
+    deps.autoConnect(record).catch((err: unknown) => {
+      console.error('[wss.lifecycle] autoConnect from NetInfo failed:', err)
+    })
   }
 }
 

@@ -81,7 +81,9 @@ function handleAppStateChange(next: AppStateStatus): void {
     const elapsed = backgroundedAt ? Date.now() - backgroundedAt : 0
     backgroundedAt = null
     console.log(`[wss.lifecycle] foregrounded after ${elapsed} ms`)
-    void handleForegroundResume(elapsed)
+    handleForegroundResume(elapsed).catch((err) => {
+      console.error('[wss.lifecycle] foreground resume failed:', err)
+    })
   }
 }
 

@@ -26,7 +26,7 @@ describe('computeBackoffDelay', () => {
   })
 
   test('caps at 30 s + jitter', () => {
-    // 1000 * 2^(7-1) = 64000, capped to 30000. Plus jitter.
+    // 1000 * 2^(7-2) = 32000, capped to 30000. Plus jitter.
     expect(computeBackoffDelay(7, { random: zeroRandom })).toBe(30_000)
     expect(computeBackoffDelay(10, { random: zeroRandom })).toBe(30_000)
     expect(computeBackoffDelay(100, { random: zeroRandom })).toBe(30_000)
