@@ -1,6 +1,17 @@
 import { Link } from 'expo-router'
+import { useEffect, useState } from 'react'
 import { ActivityIndicator, Pressable, Text, View } from 'react-native'
 import { useHomeData } from './home.data'
+
+/**
+ * How long we wait on ConnectingHome before showing the escape-hatch
+ * "Stuck? Unpair" link. Shorter than autoConnect's worst-case ladder
+ * timeout (~10 s across four rungs), so the user always sees the link
+ * before the state naturally transitions to `unreachable`. If the
+ * ladder resolves before this fires, the ConnectingHome unmounts and
+ * the timer is cleared.
+ */
+const STUCK_CONNECTING_MS = 10_000
 
 export function HomeScreen() {
   const data = useHomeData()
@@ -8,13 +19,14 @@ export function HomeScreen() {
     case 'unpaired':
       return <UnpairedHome />
     case 'connecting':
-      return <ConnectingHome hint={data.hint} />
+      return <ConnectingHome hint={data.hint} onUnpair={data.unpair} />
     case 'unreachable':
       return (
         <UnreachableHome
           hint={data.hint}
           lastError={data.session.lastError}
           onRetry={data.retry}
+          onUnpair={data.unpair}
         />
       )
     case 'connected':
@@ -60,7 +72,14 @@ function UnpairedHome() {
   )
 }
 
-function ConnectingHome({ hint }: { hint: string | null }) {
+function ConnectingHome({
+  hint,
+  onUnpair,
+}: {
+  hint: string | null
+  onUnpair: () => void
+}) {
+  const stuck = useStuckTimer(STUCK_CONNECTING_MS)
   return (
     <View className="flex-1 items-center justify-center gap-4 bg-background p-6">
       <ActivityIndicator size="large" />
@@ -70,18 +89,44 @@ function ConnectingHome({ hint }: { hint: string | null }) {
       <Text className="text-center text-muted-foreground text-sm">
         Looking for the desktop on your local network.
       </Text>
+      {stuck && (
+        <Pressable onPress={onUnpair} hitSlop={12} className="mt-2">
+          <Text className="text-center text-muted-foreground text-sm underline">
+            Stuck? Unpair
+          </Text>
+        </Pressable>
+      )}
     </View>
   )
+}
+
+/**
+ * Emit `true` after `ms` milliseconds. Timer starts on mount, clears
+ * on unmount. Used by ConnectingHome to reveal the escape-hatch
+ * Unpair link only after the ladder has had a real chance to complete.
+ *
+ * useEffect is the right hook here: we're subscribing to a timer, an
+ * external system that lives outside React's render cycle.
+ */
+function useStuckTimer(ms: number): boolean {
+  const [stuck, setStuck] = useState(false)
+  useEffect(() => {
+    const t = setTimeout(() => setStuck(true), ms)
+    return () => clearTimeout(t)
+  }, [ms])
+  return stuck
 }
 
 function UnreachableHome({
   hint,
   lastError,
   onRetry,
+  onUnpair,
 }: {
   hint: string | null
   lastError: string | null
   onRetry: () => void
+  onUnpair: () => void
 }) {
   return (
     <View className="flex-1 items-center justify-center gap-4 bg-background p-6">
@@ -98,6 +143,11 @@ function UnreachableHome({
       >
         <Text className="font-semibold text-accent-foreground text-base">
           Retry
+        </Text>
+      </Pressable>
+      <Pressable onPress={onUnpair} hitSlop={12} className="mt-2">
+        <Text className="text-center text-muted-foreground text-sm underline">
+          Unpair from desktop
         </Text>
       </Pressable>
     </View>

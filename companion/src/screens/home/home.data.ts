@@ -1,5 +1,7 @@
 import { useStore } from '@nanostores/react'
-import { $device } from '@/modules/stores/$device'
+import { router } from 'expo-router'
+import { Alert } from 'react-native'
+import { $device, clearDevice } from '@/modules/stores/$device'
 import { $session } from '@/modules/stores/$session'
 import { autoConnect, disconnect } from '@/modules/wss/client'
 
@@ -43,6 +45,31 @@ export function useHomeData() {
     /** Kick the resolver ladder again from an "unreachable" state. */
     retry: () => {
       if (record) void autoConnect(record)
+    },
+    /**
+     * Escape from any bricked state (unreachable, or connecting-and-
+     * stuck). Confirms via native Alert because the token is destroyed
+     * and the user has to re-scan the QR to pair again. Called from
+     * UnreachableHome + the stuck-timer branch of ConnectingHome.
+     */
+    unpair: () => {
+      Alert.alert(
+        'Unpair from desktop?',
+        "You'll need to scan the QR from your desktop again to reconnect.",
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Unpair',
+            style: 'destructive',
+            onPress: () => {
+              disconnect()
+              void clearDevice().finally(() => {
+                router.replace('/pair')
+              })
+            },
+          },
+        ],
+      )
     },
   }
 }
