@@ -18,6 +18,7 @@
 pub mod amp;
 pub mod claude_code;
 pub mod codex;
+pub mod kilo;
 pub mod opencode;
 
 /// Coarse state derivable from an agent's OSC title/progress. Distinct from the
@@ -129,6 +130,7 @@ pub static AGENTS: &[&AgentProfile] = &[
     &codex::PROFILE,
     &opencode::PROFILE,
     &amp::PROFILE,
+    &kilo::PROFILE,
 ];
 
 /// Look up a profile by its stable id (e.g. `"claude-code"`).
