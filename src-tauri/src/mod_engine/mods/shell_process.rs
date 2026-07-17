@@ -20,8 +20,10 @@ struct InspectorTabState {
 /// its children) so launchers like `npx`, `bun run`, and `cargo run` report
 /// accurate totals rather than just the wrapper process's footprint.
 ///
-/// Port scanning also covers grandchildren so the actual listening server is
-/// detected even when the launcher forks before binding.
+/// Port scanning also covers every descendant of the shell (up to
+/// `MAX_DESCENDANT_DEPTH`) so the actual listening server is detected even
+/// when the tree is deep, e.g. an agent CLI spawning a subshell that spawns
+/// the server.
 ///
 /// Uses `ps -o args=` for command line args (sysinfo can't read cmd on macOS).
 /// Uses `sysinfo` for CPU/memory metrics (fast, no subprocess).
@@ -306,12 +308,14 @@ async fn scan_processes(shell_pid: u32) -> Vec<serde_json::Value> {
 
     // Step 3: build the subtree attribution map (pid → root direct-child pid).
     // This single ps scan is shared by both metric aggregation and port scanning
-    // so the system is only queried once per poll cycle for grandchildren.
+    // so the system is only queried once per poll cycle for the whole subtree.
     //
-    // Many launchers (npx, bun run, cargo run) fork the real work as a child:
-    //   shell → launcher (direct child) → server (grandchild)
-    // Without grandchild attribution, memory shows only the launcher's footprint
-    // and port scanning misses the server's bound port entirely.
+    // Real-world trees run several levels deep. Common cases:
+    //   shell → launcher (npx / bun run / cargo run) → server           (depth 2)
+    //   shell → agent CLI (claude / codex / opencode) → subshell → server (depth 3)
+    //   shell → tmux → shell → task-runner → server                     (depth 4+)
+    // Without descendant attribution, memory shows only the top launcher's
+    // footprint and port scanning misses the server's bound port entirely.
     let descendants = find_descendants(&pids).await;
     let mut attribution: HashMap<u32, u32> = pids.iter().map(|&p| (p, p)).collect();
     for (descendant, root) in &descendants {
@@ -319,8 +323,9 @@ async fn scan_processes(shell_pid: u32) -> Vec<serde_json::Value> {
     }
 
     // Step 4: get CPU/memory/elapsed via sysinfo (not Send — spawn_blocking).
-    // Memory and CPU are summed across direct child + grandchildren so the
-    // status bar reflects the full process tree footprint, not just the wrapper.
+    // Memory and CPU are summed across the direct child + every descendant in
+    // the attribution map so the status bar reflects the full process tree
+    // footprint, not just the wrapper.
     let pids_clone = pids.clone();
     let attribution_clone = attribution.clone();
     let raw = tokio::task::spawn_blocking(move || {
@@ -516,8 +521,8 @@ async fn get_process_args(pids: &[u32]) -> HashMap<u32, String> {
 ///
 /// - **name / elapsed**: taken from the direct child only (the process the user
 ///   invoked). The launcher's identity is what matters for display.
-/// - **memory_kb**: sum of the direct child + all grandchildren. Reflects the
-///   true memory footprint of the process tree.
+/// - **memory_kb**: sum of the direct child + every descendant in the
+///   attribution map. Reflects the true memory footprint of the process tree.
 /// - **cpu_percent**: sum across the subtree. May exceed 100% on multi-core
 ///   systems when the server is CPU-bound, which is accurate and expected.
 ///
@@ -567,7 +572,8 @@ fn get_process_metrics(
             let mut total_memory_kb: u64 = 0;
             let mut total_cpu: f32 = 0.0;
 
-            // Sum across every pid attributed to this root (includes grandchildren).
+            // Sum across every pid attributed to this root (includes every
+            // descendant up to MAX_DESCENDANT_DEPTH).
             for (&pid, &root) in attribution {
                 if root == root_pid {
                     if let Some((_, cpu, mem, _)) = raw.get(&pid) {
@@ -594,11 +600,12 @@ fn format_elapsed(secs: u64) -> String {
 }
 
 /// Scan listening TCP ports for `direct_pids` using the pre-built `attribution`
-/// map (pid → root direct-child pid) to include grandchildren without an extra
-/// ps call.
+/// map (pid → root direct-child pid) to include every descendant without an
+/// extra ps call.
 ///
-/// Grandchild ports are attributed to the direct-child PID so the status bar
-/// entry stays stable and correct.
+/// Descendant ports are attributed to the top-level direct-child PID so the
+/// status bar entry stays stable and correct, regardless of how deep the
+/// binding process actually sits.
 async fn find_listening_ports_per_pid(
     direct_pids: &[u32],
     attribution: &HashMap<u32, u32>,
