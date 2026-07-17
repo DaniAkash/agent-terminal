@@ -2,7 +2,7 @@ import {
   DarkTheme as RNDarkTheme,
   DefaultTheme as RNDefaultTheme,
   type Theme,
-} from '@react-navigation/native'
+} from 'expo-router/react-navigation'
 import { darkPalette, lightPalette, type Palette } from './palette'
 
 /**

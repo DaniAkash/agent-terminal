@@ -1,6 +1,6 @@
 import '../../global.css'
 import { ActionSheetProvider } from '@expo/react-native-action-sheet'
-import { ThemeProvider } from '@react-navigation/native'
+import { ThemeProvider } from 'expo-router/react-navigation'
 import { Stack } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
 import { useEffect } from 'react'
