@@ -44,9 +44,10 @@ export default function RootLayout() {
   }, [])
   // Reactively pick the react-navigation theme so the header + tab
   // bar chrome shares the same OS-driven light/dark preference the
-  // rest of the app follows via Uniwind. useColorScheme subscribes to
-  // Appearance under the hood; Uniwind also drives Appearance via
-  // setColorScheme, so the two sources agree by construction.
+  // rest of the app follows via Uniwind. Both signals (useColorScheme
+  // and Uniwind's `setTheme('system')`) resolve from React Native's
+  // Appearance module, so the header theme stays in sync with the app
+  // body without any extra wiring.
   const scheme = useColorScheme()
   const navTheme =
     scheme === 'dark' ? navigationDarkTheme : navigationLightTheme
