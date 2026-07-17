@@ -115,24 +115,209 @@ pub async fn ensure_hooks_installed() {
             );
         }
     }
-    install_plugin_agents(&home).await;
+    install_registry_hook_agents(&home).await;
 }
 
-/// Installs plugin-based hook integrations (opencode) from the registry.
-///
-/// A plugin is only written when the agent's config directory already exists,
-/// so we never create an agent's config tree for a user who does not have it.
-async fn install_plugin_agents(home: &Path) {
+const TOML_BLOCK_BEGIN: &str = "# >>> agent-terminal hooks";
+const TOML_BLOCK_END: &str = "# <<< agent-terminal hooks";
+
+/// Installs the registry's non-native hook integrations (plugin, TOML block,
+/// flat JSON). Each is only written when the agent's config directory already
+/// exists, so we never create an agent's config tree for a user who does not
+/// have it.
+async fn install_registry_hook_agents(home: &Path) {
     for a in agents::AGENTS {
         let Some(hook) = a.hook.as_ref() else { continue };
-        let HookInstall::Plugin { dir_tilde_path, install_name, asset } = &hook.install else {
-            continue;
+        let result = match &hook.install {
+            HookInstall::NativeConfig { .. } => continue, // handled via AGENT_HOOK_CONFIGS
+            HookInstall::Plugin { dir_tilde_path, install_name, asset } => {
+                install_plugin_asset(&expand_tilde(dir_tilde_path, home), install_name, asset).await
+            }
+            HookInstall::TomlBlock { config_tilde_path, hooks_dir_tilde_path, script_name, events } => {
+                install_toml_block(home, a.id, config_tilde_path, hooks_dir_tilde_path, script_name, events).await
+            }
+            HookInstall::FlatJson { config_tilde_path, hooks_dir_tilde_path, script_name, events } => {
+                install_flat_json(home, a.id, config_tilde_path, hooks_dir_tilde_path, script_name, events).await
+            }
         };
-        let plugin_dir = expand_tilde(dir_tilde_path, home);
-        if let Err(e) = install_plugin_asset(&plugin_dir, install_name, asset).await {
-            eprintln!("[hook_config] failed to install {} plugin: {e}", a.display_name);
+        if let Err(e) = result {
+            eprintln!("[hook_config] failed to install {} hook: {e}", a.display_name);
         }
     }
+}
+
+/// Generates a hook script for agents that report a resolved state as the first
+/// argument (Kimi, Mastra). Unlike `build_hook_script`, it does not read the
+/// agent's JSON from stdin: it emits a well-formed payload from `$1` and the tab
+/// env var alone. Fire-and-forget POST to the hook server.
+fn build_action_hook_script(agent_id: &str) -> String {
+    format!(
+        "#!/bin/sh\n\
+# Written by Agent Terminal. Do not edit; regenerated on each launch.\n\
+# Reports a resolved agent state (passed as $1) to the hook server.\n\
+EVENT=\"$1\"\n\
+case \"$AGENT_TERMINAL_TAB_ID\" in\n\
+  '') TAB_SUFFIX=\"\" ;;\n\
+  *[!A-Za-z0-9:_-]*) TAB_SUFFIX=\"\" ;;\n\
+  *) TAB_SUFFIX=\",\\\"tab_id\\\":\\\"$AGENT_TERMINAL_TAB_ID\\\"\" ;;\n\
+esac\n\
+PAYLOAD=\"{{\\\"agent\\\":\\\"{agent_id}\\\",\\\"event\\\":\\\"$EVENT\\\"${{TAB_SUFFIX}}}}\"\n\
+{{ curl -sf --max-time 5 -X POST http://127.0.0.1:{port}/hook \\\n\
+    -H 'Content-Type: application/json' \\\n\
+    -d \"$PAYLOAD\" \\\n\
+    >/dev/null 2>&1 & }} 2>/dev/null\n\
+exit 0\n",
+        agent_id = agent_id,
+        port = crate::identity::HOOK_PORT,
+    )
+}
+
+/// Writes the action hook script to `hooks_dir/name`, idempotently, chmod +x.
+async fn write_action_script(
+    hooks_dir: &Path,
+    name: &str,
+    agent_id: &str,
+) -> std::io::Result<PathBuf> {
+    tokio::fs::create_dir_all(hooks_dir).await?;
+    let path = hooks_dir.join(name);
+    let content = build_action_hook_script(agent_id);
+    let needs_write = match tokio::fs::read_to_string(&path).await {
+        Ok(existing) => existing != content,
+        Err(_) => true,
+    };
+    if needs_write {
+        tokio::fs::write(&path, &content).await?;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&path)?.permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&path, perms)?;
+    }
+    Ok(path)
+}
+
+/// Quotes a string as a TOML basic string.
+fn toml_basic_string(s: &str) -> String {
+    format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
+}
+
+/// Replaces the marker-delimited managed block in `existing` with `block`, or
+/// appends `block` when no managed block is present. `block` must include the
+/// begin/end markers and a trailing newline.
+fn replace_managed_block(existing: &str, begin: &str, end: &str, block: &str) -> String {
+    if let (Some(b), Some(e)) = (existing.find(begin), existing.find(end)) {
+        if e > b {
+            let mut tail = e + end.len();
+            if existing[tail..].starts_with('\n') {
+                tail += 1;
+            }
+            return format!("{}{block}{}", &existing[..b], &existing[tail..]);
+        }
+    }
+    if existing.is_empty() {
+        block.to_string()
+    } else if existing.ends_with('\n') {
+        format!("{existing}\n{block}")
+    } else {
+        format!("{existing}\n\n{block}")
+    }
+}
+
+/// Kimi: register hooks as a managed block of `[[hooks]]` tables in config.toml.
+async fn install_toml_block(
+    home: &Path,
+    agent_id: &str,
+    config_tilde: &str,
+    hooks_dir_tilde: &str,
+    script_name: &str,
+    events: &[(&str, &str)],
+) -> std::io::Result<()> {
+    let config_path = expand_tilde(config_tilde, home);
+    match config_path.parent() {
+        Some(dir) if dir.exists() => {}
+        _ => return Ok(()),
+    }
+    let script_path = write_action_script(&expand_tilde(hooks_dir_tilde, home), script_name, agent_id).await?;
+
+    let mut body = String::new();
+    for (event, action) in events {
+        let command = format!("bash {} {}", script_path.display(), action);
+        body.push_str(&format!(
+            "[[hooks]]\nevent = {}\ncommand = {}\ntimeout = 10\n\n",
+            toml_basic_string(event),
+            toml_basic_string(&command),
+        ));
+    }
+    let block = format!("{TOML_BLOCK_BEGIN}\n{body}{TOML_BLOCK_END}\n");
+
+    let existing = tokio::fs::read_to_string(&config_path).await.unwrap_or_default();
+    let updated = replace_managed_block(&existing, TOML_BLOCK_BEGIN, TOML_BLOCK_END, &block);
+    if updated != existing {
+        tokio::fs::write(&config_path, updated).await?;
+    }
+    Ok(())
+}
+
+/// Mastra: register hooks in a flat JSON hooks file, non-destructively.
+async fn install_flat_json(
+    home: &Path,
+    agent_id: &str,
+    config_tilde: &str,
+    hooks_dir_tilde: &str,
+    script_name: &str,
+    events: &[(&str, &str)],
+) -> std::io::Result<()> {
+    let config_path = expand_tilde(config_tilde, home);
+    match config_path.parent() {
+        Some(dir) if dir.exists() => {}
+        _ => return Ok(()),
+    }
+    let script_path = write_action_script(&expand_tilde(hooks_dir_tilde, home), script_name, agent_id).await?;
+
+    let raw = if config_path.exists() {
+        tokio::fs::read_to_string(&config_path).await?
+    } else {
+        "{}".to_string()
+    };
+    let mut root: Value = serde_json::from_str(&raw)
+        .map_err(|e| std::io::Error::other(format!("invalid JSON in {}: {e}", config_path.display())))?;
+    if !root.is_object() {
+        return Err(std::io::Error::other(format!("{} root is not a JSON object", config_path.display())));
+    }
+
+    let mut modified = false;
+    {
+        let obj = root.as_object_mut().unwrap();
+        for (event, action) in events {
+            let command = format!("bash {} {}", script_path.display(), action);
+            let arr = obj
+                .entry(event.to_string())
+                .or_insert_with(|| Value::Array(vec![]))
+                .as_array_mut()
+                .ok_or_else(|| std::io::Error::other(format!("hooks.{event} is not an array")))?;
+            let present = arr.iter().any(|e| {
+                e.get("type").and_then(Value::as_str) == Some("command")
+                    && e.get("command").and_then(Value::as_str) == Some(command.as_str())
+            });
+            if !present {
+                arr.push(serde_json::json!({
+                    "type": "command",
+                    "command": command,
+                    "timeout": 10000,
+                }));
+                modified = true;
+            }
+        }
+    }
+    if modified {
+        let serialized = serde_json::to_string_pretty(&root)?;
+        let tmp = config_path.with_extension(format!("agent-terminal-{}.tmp", std::process::id()));
+        tokio::fs::write(&tmp, format!("{serialized}\n")).await?;
+        tokio::fs::rename(&tmp, &config_path).await?;
+    }
+    Ok(())
 }
 
 /// Writes a plugin `asset` to `plugin_dir/name`, idempotently. Skips entirely
@@ -1020,5 +1205,111 @@ mod tests {
         let mtime_after = fs::metadata(&path).unwrap().modified().unwrap();
 
         assert_eq!(mtime_before, mtime_after, "unchanged asset must not be rewritten");
+    }
+
+    // ── Action hook script ───────────────────────────────────────────────────
+    #[test]
+    fn action_hook_script_is_well_formed() {
+        let s = build_action_hook_script("kimi");
+        assert!(s.contains("\\\"agent\\\":\\\"kimi\\\""), "must bake the agent id");
+        assert!(s.contains("$AGENT_TERMINAL_TAB_ID"), "must read the tab env var");
+        assert!(s.contains(&format!("127.0.0.1:{}", crate::identity::HOOK_PORT)));
+        // Tab suffix carries its own leading comma, so there is no trailing comma.
+        assert!(s.contains(",\\\"tab_id\\\":\\\"$AGENT_TERMINAL_TAB_ID\\\""));
+    }
+
+    // ── Kimi: TOML managed block ─────────────────────────────────────────────
+    fn kimi_events() -> &'static [(&'static str, &'static str)] {
+        &[("SessionStart", "session"), ("UserPromptSubmit", "working"), ("Stop", "idle")]
+    }
+
+    #[tokio::test]
+    async fn toml_block_installs_and_is_idempotent() {
+        let home = temp_dir("toml1");
+        fs::create_dir_all(home.join(".kimi-code")).unwrap(); // agent present
+        let cfg = home.join(".kimi-code/config.toml");
+
+        install_toml_block(&home, "kimi", "~/.kimi-code/config.toml", "~/.kimi-code/hooks", "agent-terminal-state", kimi_events())
+            .await
+            .unwrap();
+
+        let content = fs::read_to_string(&cfg).unwrap();
+        assert!(content.contains(TOML_BLOCK_BEGIN) && content.contains(TOML_BLOCK_END));
+        assert!(content.contains("event = \"UserPromptSubmit\""));
+        assert!(content.contains("working"));
+
+        // Second run must not change the file.
+        let before = content;
+        install_toml_block(&home, "kimi", "~/.kimi-code/config.toml", "~/.kimi-code/hooks", "agent-terminal-state", kimi_events())
+            .await
+            .unwrap();
+        assert_eq!(fs::read_to_string(&cfg).unwrap(), before, "idempotent");
+    }
+
+    #[tokio::test]
+    async fn toml_block_preserves_surrounding_config() {
+        let home = temp_dir("toml2");
+        fs::create_dir_all(home.join(".kimi-code")).unwrap();
+        let cfg = home.join(".kimi-code/config.toml");
+        fs::write(&cfg, "model = \"kimi-k2\"\n").unwrap();
+
+        install_toml_block(&home, "kimi", "~/.kimi-code/config.toml", "~/.kimi-code/hooks", "agent-terminal-state", kimi_events())
+            .await
+            .unwrap();
+
+        let content = fs::read_to_string(&cfg).unwrap();
+        assert!(content.contains("model = \"kimi-k2\""), "existing config preserved");
+        assert!(content.contains(TOML_BLOCK_BEGIN));
+    }
+
+    #[tokio::test]
+    async fn toml_block_skipped_when_agent_absent() {
+        let home = temp_dir("toml3"); // no ~/.kimi-code
+        install_toml_block(&home, "kimi", "~/.kimi-code/config.toml", "~/.kimi-code/hooks", "agent-terminal-state", kimi_events())
+            .await
+            .unwrap();
+        assert!(!home.join(".kimi-code/config.toml").exists(), "must not create the agent tree");
+    }
+
+    // ── Mastra: flat JSON ────────────────────────────────────────────────────
+    fn mastra_events() -> &'static [(&'static str, &'static str)] {
+        &[("SessionStart", "idle"), ("UserPromptSubmit", "working"), ("PermissionRequest", "blocked")]
+    }
+
+    #[tokio::test]
+    async fn flat_json_installs_and_preserves_existing() {
+        let home = temp_dir("flat1");
+        fs::create_dir_all(home.join(".mastracode")).unwrap();
+        let cfg = home.join(".mastracode/hooks.json");
+        fs::write(&cfg, r#"{"CustomEvent":[{"type":"command","command":"other"}]}"#).unwrap();
+
+        install_flat_json(&home, "mastracode", "~/.mastracode/hooks.json", "~/.mastracode/hooks", "agent-terminal-state", mastra_events())
+            .await
+            .unwrap();
+
+        let v: Value = serde_json::from_str(&fs::read_to_string(&cfg).unwrap()).unwrap();
+        // Existing untouched.
+        assert_eq!(v["CustomEvent"][0]["command"].as_str(), Some("other"));
+        // Ours added as flat command entries.
+        let arr = v["UserPromptSubmit"].as_array().unwrap();
+        assert!(arr.iter().any(|e| e["type"] == "command"
+            && e["command"].as_str().unwrap().ends_with(" working")));
+        assert!(v["PermissionRequest"][0]["command"].as_str().unwrap().ends_with(" blocked"));
+    }
+
+    #[tokio::test]
+    async fn flat_json_is_idempotent() {
+        let home = temp_dir("flat2");
+        fs::create_dir_all(home.join(".mastracode")).unwrap();
+        let cfg = home.join(".mastracode/hooks.json");
+
+        install_flat_json(&home, "mastracode", "~/.mastracode/hooks.json", "~/.mastracode/hooks", "agent-terminal-state", mastra_events())
+            .await
+            .unwrap();
+        let before = fs::read_to_string(&cfg).unwrap();
+        install_flat_json(&home, "mastracode", "~/.mastracode/hooks.json", "~/.mastracode/hooks", "agent-terminal-state", mastra_events())
+            .await
+            .unwrap();
+        assert_eq!(fs::read_to_string(&cfg).unwrap(), before, "idempotent");
     }
 }

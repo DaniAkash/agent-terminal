@@ -19,6 +19,8 @@ pub mod amp;
 pub mod claude_code;
 pub mod codex;
 pub mod kilo;
+pub mod kimi;
+pub mod mastracode;
 pub mod opencode;
 
 /// Coarse state derivable from an agent's OSC title/progress. Distinct from the
@@ -79,11 +81,31 @@ pub enum HookInstall {
     /// Patch the agent's own settings file with our hook command (Claude,
     /// Codex). The nested matcher+hooks JSON merge lives in `hook_config`.
     NativeConfig { config_tilde_path: &'static str },
-    /// Drop a plugin/extension asset into the agent's plugin dir (opencode).
+    /// Drop a plugin/extension asset into the agent's plugin dir (opencode,
+    /// kilo).
     Plugin {
         dir_tilde_path: &'static str,
         install_name: &'static str,
         asset: &'static str,
+    },
+    /// Register hooks in an agent's TOML config via a managed block of
+    /// `[[hooks]]` tables (Kimi). The action hook script posts the resolved
+    /// state (the second tuple field) as the event.
+    TomlBlock {
+        config_tilde_path: &'static str,
+        hooks_dir_tilde_path: &'static str,
+        script_name: &'static str,
+        /// (agent lifecycle event, action posted).
+        events: &'static [(&'static str, &'static str)],
+    },
+    /// Register hooks in an agent's flat JSON hooks file (Mastra): each event
+    /// maps to `[{ type: "command", command: "...", timeout, ... }]`.
+    FlatJson {
+        config_tilde_path: &'static str,
+        hooks_dir_tilde_path: &'static str,
+        script_name: &'static str,
+        /// (agent lifecycle event, action posted).
+        events: &'static [(&'static str, &'static str)],
     },
 }
 
@@ -135,6 +157,8 @@ pub static AGENTS: &[&AgentProfile] = &[
     &opencode::PROFILE,
     &amp::PROFILE,
     &kilo::PROFILE,
+    &kimi::PROFILE,
+    &mastracode::PROFILE,
 ];
 
 /// Look up a profile by its stable id (e.g. `"claude-code"`).
