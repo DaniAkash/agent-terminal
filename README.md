@@ -6,7 +6,7 @@
   **A terminal workspace built around AI coding agents.**
 
   [![Latest release](https://img.shields.io/github/v/release/DaniAkash/agent-terminal?include_prereleases&label=latest&color=blue)](https://github.com/DaniAkash/agent-terminal/releases)
-  [![Status](https://img.shields.io/badge/status-pre--alpha-orange)](#status)
+  [![Status](https://img.shields.io/badge/status-stable-brightgreen)](#status)
   [![Platform](https://img.shields.io/badge/platform-macOS-lightgrey)](https://github.com/DaniAkash/agent-terminal/releases)
 </div>
 
@@ -29,7 +29,7 @@
 
 ## Status
 
-> 🧪 **Pre-alpha.** Heavily tested on **macOS + Zsh** — that's the daily-driver setup. Other shells and platforms may work but aren't part of the test matrix yet. Things will change without warning.
+> ✅ **Stable on macOS + Zsh.** Daily-driven, safe to install, and used every day. See the platform matrix below for other shells and operating systems.
 
 ## Why this exists
 
