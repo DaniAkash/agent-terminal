@@ -207,8 +207,11 @@ fn toml_basic_string(s: &str) -> String {
 /// appends `block` when no managed block is present. `block` must include the
 /// begin/end markers and a trailing newline.
 fn replace_managed_block(existing: &str, begin: &str, end: &str, block: &str) -> String {
-    if let (Some(b), Some(e)) = (existing.find(begin), existing.find(end)) {
-        if e > b {
+    if let Some(b) = existing.find(begin) {
+        // Find the end marker AFTER the begin marker, so a stray end marker
+        // earlier in unrelated content can't cause a mismatch.
+        if let Some(rel) = existing[b..].find(end) {
+            let e = b + rel;
             let mut tail = e + end.len();
             if existing[tail..].starts_with('\n') {
                 tail += 1;
@@ -243,7 +246,8 @@ async fn install_toml_block(
 
     let mut body = String::new();
     for (event, action) in events {
-        let command = format!("bash {} {}", script_path.display(), action);
+        // Single-quote the path so a home dir with spaces does not split argv.
+        let command = format!("bash '{}' {}", script_path.display(), action);
         body.push_str(&format!(
             "[[hooks]]\nevent = {}\ncommand = {}\ntimeout = 10\n\n",
             toml_basic_string(event),
@@ -291,7 +295,8 @@ async fn install_flat_json(
     {
         let obj = root.as_object_mut().unwrap();
         for (event, action) in events {
-            let command = format!("bash {} {}", script_path.display(), action);
+            // Single-quote the path so a home dir with spaces does not split argv.
+            let command = format!("bash '{}' {}", script_path.display(), action);
             let arr = obj
                 .entry(event.to_string())
                 .or_insert_with(|| Value::Array(vec![]))

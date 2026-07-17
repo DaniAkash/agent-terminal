@@ -186,6 +186,10 @@ mod tests {
         assert_eq!(by_id("claude-code").map(|a| a.display_name), Some("Claude Code"));
         assert_eq!(by_id("codex").map(|a| a.id), Some("codex"));
         assert_eq!(by_id("opencode").map(|a| a.id), Some("opencode"));
+        assert_eq!(by_id("amp").map(|a| a.id), Some("amp"));
+        assert_eq!(by_id("kilo").map(|a| a.display_name), Some("Kilo Code"));
+        assert_eq!(by_id("kimi").map(|a| a.display_name), Some("Kimi CLI"));
+        assert_eq!(by_id("mastracode").map(|a| a.display_name), Some("Mastra"));
         assert!(by_id("nope").is_none());
     }
 
@@ -194,15 +198,19 @@ mod tests {
         assert_eq!(by_process_name("claude").map(|a| a.id), Some("claude-code"));
         assert_eq!(by_process_name("codex").map(|a| a.id), Some("codex"));
         assert_eq!(by_process_name("opencode").map(|a| a.id), Some("opencode"));
+        assert_eq!(by_process_name("amp").map(|a| a.id), Some("amp"));
+        assert_eq!(by_process_name("kilo").map(|a| a.id), Some("kilo"));
+        assert_eq!(by_process_name("kimi").map(|a| a.id), Some("kimi"));
+        assert_eq!(by_process_name("mastracode").map(|a| a.id), Some("mastracode"));
         assert!(by_process_name("bash").is_none());
     }
 
     #[test]
     fn known_process_names_covers_all_agents() {
         let names: HashSet<&str> = known_process_names().collect();
-        assert!(names.contains("claude"));
-        assert!(names.contains("codex"));
-        assert!(names.contains("opencode"));
+        for name in ["claude", "codex", "opencode", "amp", "kilo", "kimi", "mastracode"] {
+            assert!(names.contains(name), "missing process name: {name}");
+        }
     }
 
     #[test]
