@@ -44,6 +44,47 @@ function OpenCodeMark({ size }: { size: number }) {
   )
 }
 
+function KiloMark({ size }: { size: number }) {
+  // Kilo Code brand mark (svgl.app), rendered in currentColor.
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 32 32"
+      fill="currentColor"
+      style={{ display: 'block' }}
+      aria-hidden="true"
+    >
+      <path d="M23,26v-2h3v-5l-2-2h-4v2h-3v5l2,2h4ZM20,20h3v3h-3v-3Z" />
+      <rect x="12" y="17" width="3" height="3" />
+      <polygon points="26 12 23 12 23 9 20 6 17 6 17 9 20 9 20 12 17 12 17 15 26 15 26 12" />
+      <path d="M0,0v32h32V0H0ZM29,29H3V3h26v26Z" />
+      <polygon points="15 26 15 23 9 23 9 17 6 17 6 23.1875 8.8125 26 15 26" />
+      <rect x="12" y="6" width="3" height="3" />
+      <polygon points="9 12 12 12 12 15 15 15 15 12 12 9 9 9 9 6 6 6 6 15 9 15 9 12" />
+    </svg>
+  )
+}
+
+function KimiMark({ size }: { size: number }) {
+  // Kimi brand mark (svgl.app), reduced to the inner K/M silhouette in
+  // currentColor (the app-icon background and accent dot are dropped).
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 512 512"
+      fill="currentColor"
+      fillRule="evenodd"
+      clipRule="evenodd"
+      style={{ display: 'block' }}
+      aria-hidden="true"
+    >
+      <path d="M321.512 144.254h-50.064l-39.637 90.384h-56.036v-89.99H131v232.868h44.787v-98.103h78.973c13.598 0 26.015-7.927 31.744-20.252v118.355h44.787v-98.103c0-23.342-18.239-42.97-41.523-44.671v-.116h-24.593a45.577 45.577 0 0026.884-24.534l29.453-65.838z" />
+    </svg>
+  )
+}
+
 function CodexMark({ size }: { size: number }) {
   return (
     <svg
@@ -71,6 +112,8 @@ const BRAND: Record<string, { color: string; glow: string }> = {
   'claude-code': { color: '#D97757', glow: 'rgba(217,119,87,0.55)' },
   codex: { color: '#e6e8eb', glow: 'rgba(230,232,235,0.45)' },
   opencode: { color: '#ebe9e6', glow: 'rgba(235,233,230,0.45)' },
+  kilo: { color: '#cbd5e1', glow: 'rgba(203,213,225,0.45)' },
+  kimi: { color: '#027aff', glow: 'rgba(2,122,255,0.5)' },
 }
 
 /**
@@ -82,6 +125,8 @@ const MARKS: Record<string, React.ComponentType<{ size: number }>> = {
   'claude-code': ClaudeMark,
   codex: CodexMark,
   opencode: OpenCodeMark,
+  kilo: KiloMark,
+  kimi: KimiMark,
 }
 
 /* ---------------------------------------------------------------------------
