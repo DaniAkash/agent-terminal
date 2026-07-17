@@ -15,6 +15,7 @@
 //! The state engine fuses the hook and OSC signals with an agent-agnostic
 //! process/prompt floor; see the agent-state mod.
 
+pub mod amp;
 pub mod claude_code;
 pub mod codex;
 pub mod opencode;
@@ -127,6 +128,7 @@ pub static AGENTS: &[&AgentProfile] = &[
     &claude_code::PROFILE,
     &codex::PROFILE,
     &opencode::PROFILE,
+    &amp::PROFILE,
 ];
 
 /// Look up a profile by its stable id (e.g. `"claude-code"`).
