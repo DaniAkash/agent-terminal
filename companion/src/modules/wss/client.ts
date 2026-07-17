@@ -227,6 +227,19 @@ const pendingOps = new Map<number, PendingOp>()
 
 const OP_TIMEOUT_MS = 10_000
 
+/**
+ * Reject every in-flight CRUD op with `err`. Called on any hard close
+ * so callers don't sit spinning for the 10-second op timeout when the
+ * socket is already gone.
+ */
+function rejectAllPending(err: Error): void {
+  for (const [, pending] of pendingOps) {
+    clearTimeout(pending.timer)
+    pending.reject(err)
+  }
+  pendingOps.clear()
+}
+
 // Shared pending-op plumbing: register the op_id in the pending map,
 // arm the timeout, then send the fully-typed frame. Every caller passes
 // a `ClientFrame` built from the generated union — no casts, no escape
@@ -344,11 +357,14 @@ function openSocket(): void {
   }
   ws.onclose = (event) => {
     if (!isCurrentGeneration(generation)) return
-    handleClose(event.code, event.reason)
+    forceCloseAndReconnect(event.reason || `socket closed (${event.code})`)
   }
   ws.onerror = (event) => {
     if (!isCurrentGeneration(generation)) return
-    console.error('[wss.client] socket error event', event.message)
+    // Route through forceCloseAndReconnect so a zombie socket that
+    // fires onerror without a matching onclose still tears down.
+    // Idempotent via the generation bump inside forceCloseAndReconnect.
+    forceCloseAndReconnect(event.message || 'socket error')
   }
 }
 
@@ -385,10 +401,30 @@ function handleOpen(): void {
   send({ op: 'auth', body: { token: state.token ?? '' } })
 }
 
-function handleClose(code: number, reason: string): void {
-  console.log('[wss.client] socket closed', { code, reason })
-  clearTimers()
+/**
+ * Single teardown path for every "this socket is dead" signal:
+ * onclose from the underlying socket, onerror from an already-half-
+ * dead socket, or a synthesised close from lifecycle / probe code
+ * that noticed the socket is a zombie. Bumps the generation so any
+ * further callbacks from the doomed socket are ignored, rejects
+ * in-flight ops so callers fail fast, and schedules a reconnect
+ * unless the disconnect was intentional (user unpair, revoke).
+ *
+ * Idempotent: safe to call more than once; the generation bump makes
+ * subsequent callbacks from the same socket no-ops and the pending-op
+ * map is emptied on the first call.
+ */
+function forceCloseAndReconnect(reason: string): void {
+  console.log('[wss.client] forceClose:', reason)
+  state.socketGeneration += 1
+  try {
+    state.socket?.close()
+  } catch {
+    /* best-effort; a truly dead socket may throw */
+  }
   state.socket = null
+  clearTimers()
+  rejectAllPending(new Error(`connection lost: ${reason}`))
   if (state.intentionallyDisconnected) return
   if ($session.get().status !== 'auth_failed') {
     $session.setKey('status', 'unreachable')
