@@ -65,6 +65,54 @@ export interface NetInfoLike {
 export type NetInfoAction = 'skip' | 'force-close' | 'reconnect'
 
 /**
+ * Side-effect deps executeForegroundAction and executeNetInfoAction
+ * dispatch to. Real production wiring passes the real client.ts
+ * exports; tests pass fakes that record what got called.
+ */
+export interface LifecycleDeps<TRecord> {
+  autoConnect: (record: TRecord) => Promise<void>
+  probeConnection: () => Promise<'alive' | 'dead'>
+  forceClose: (reason: string) => void
+}
+
+/**
+ * Execute the foreground action chosen by decideForegroundAction. Pure
+ * with respect to deps: does not touch $device / $session / imports
+ * itself; everything flows in through the deps arg. Kept here (rather
+ * than as another switch in lifecycle.ts) so the branching is unit-
+ * testable without mocking react-native.
+ */
+export async function executeForegroundAction<TRecord>(
+  action: ForegroundAction,
+  record: TRecord | null,
+  deps: LifecycleDeps<TRecord>,
+): Promise<void> {
+  if (action === 'skip' || record === null) return
+  if (action === 'reconnect') {
+    await deps.autoConnect(record)
+    return
+  }
+  // action === 'probe'
+  const verdict = await deps.probeConnection()
+  if (verdict === 'dead') await deps.autoConnect(record)
+}
+
+/** Same shape as executeForegroundAction, for the NetInfo path. */
+export function executeNetInfoAction<TRecord>(
+  action: NetInfoAction,
+  record: TRecord | null,
+  deps: LifecycleDeps<TRecord>,
+): void {
+  if (action === 'force-close') {
+    deps.forceClose('network unreachable')
+    return
+  }
+  if (action === 'reconnect' && record !== null) {
+    void deps.autoConnect(record)
+  }
+}
+
+/**
  * Decide what to do on a NetInfo change.
  *
  * - isInternetReachable=false while we think we're connected -> close;

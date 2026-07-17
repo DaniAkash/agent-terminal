@@ -2,6 +2,7 @@ import NetInfo from '@react-native-community/netinfo'
 import type { NetInfoState } from '@react-native-community/netinfo'
 import { AppState } from 'react-native'
 import type { AppStateStatus } from 'react-native'
+import type { DeviceRecord } from '@/modules/stores/$device'
 import { $device } from '@/modules/stores/$device'
 import { $session } from '@/modules/stores/$session'
 import { autoConnect, forceCloseFromLifecycle, probeConnection } from './client'
@@ -9,8 +10,22 @@ import {
   classifyAppStateTransition,
   classifyNetInfoChange,
   decideForegroundAction,
+  executeForegroundAction,
+  executeNetInfoAction,
+  type LifecycleDeps,
   type SessionStatusHint,
 } from './lifecycle.helpers'
+
+/**
+ * Real production side-effect wiring. Static per module load: the
+ * executors are stateless, so a single frozen deps object is safe to
+ * share across every handler invocation.
+ */
+const deps: LifecycleDeps<DeviceRecord> = {
+  autoConnect,
+  probeConnection,
+  forceClose: forceCloseFromLifecycle,
+}
 
 let initialized = false
 let currentAppState: AppStateStatus = AppState.currentState
@@ -57,20 +72,16 @@ export function resetLifecycleWiring(): void {
 function handleAppStateChange(next: AppStateStatus): void {
   const transition = classifyAppStateTransition(currentAppState, next)
   currentAppState = next
-  switch (transition) {
-    case 'background':
-      backgroundedAt = Date.now()
-      console.log('[wss.lifecycle] backgrounded')
-      return
-    case 'foreground': {
-      const elapsed = backgroundedAt ? Date.now() - backgroundedAt : 0
-      backgroundedAt = null
-      console.log(`[wss.lifecycle] foregrounded after ${elapsed} ms`)
-      void handleForegroundResume(elapsed)
-      return
-    }
-    case 'none':
-      return
+  if (transition === 'background') {
+    backgroundedAt = Date.now()
+    console.log('[wss.lifecycle] backgrounded')
+    return
+  }
+  if (transition === 'foreground') {
+    const elapsed = backgroundedAt ? Date.now() - backgroundedAt : 0
+    backgroundedAt = null
+    console.log(`[wss.lifecycle] foregrounded after ${elapsed} ms`)
+    void handleForegroundResume(elapsed)
   }
 }
 
@@ -79,32 +90,13 @@ async function handleForegroundResume(elapsedMs: number): Promise<void> {
   const status = $session.get().status as SessionStatusHint
   const action = decideForegroundAction(elapsedMs, status, record !== null)
   console.log('[wss.lifecycle] resume action:', action, { elapsedMs, status })
-  if (action === 'skip') return
-  if (action === 'reconnect') {
-    if (record) await autoConnect(record)
-    return
-  }
-  // action === 'probe'. record is non-null here (decide would have skipped).
-  const verdict = await probeConnection()
-  console.log('[wss.lifecycle] resume probe:', verdict)
-  if (verdict === 'dead' && record) await autoConnect(record)
+  await executeForegroundAction(action, record, deps)
 }
 
 function handleNetInfoChange(net: NetInfoState): void {
   const record = $device.get().record
   const status = $session.get().status as SessionStatusHint
   const action = classifyNetInfoChange(net, status, record !== null)
-  switch (action) {
-    case 'skip':
-      return
-    case 'force-close':
-      console.log('[wss.lifecycle] network unreachable, force-closing')
-      forceCloseFromLifecycle('network unreachable')
-      return
-    case 'reconnect':
-      if (!record) return
-      console.log('[wss.lifecycle] network back, reconnecting')
-      void autoConnect(record)
-      return
-  }
+  if (action !== 'skip') console.log('[wss.lifecycle] net action:', action)
+  executeNetInfoAction(action, record, deps)
 }
