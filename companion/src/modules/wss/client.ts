@@ -605,7 +605,10 @@ function scheduleReconnect(): void {
 
 function startHeartbeat(): void {
   clearTimers()
-  state.heartbeatTimer = setInterval(heartbeatAndWatchdogTick, HEARTBEAT_INTERVAL_MS)
+  state.heartbeatTimer = setInterval(
+    heartbeatAndWatchdogTick,
+    HEARTBEAT_INTERVAL_MS,
+  )
 }
 
 /**

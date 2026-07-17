@@ -5,6 +5,7 @@ import {
 } from '@/modules/stores/$device'
 import { $session } from '@/modules/stores/$session'
 import { autoConnect, disconnect } from './client'
+import { initLifecycleWiring, resetLifecycleWiring } from './lifecycle'
 
 /**
  * WSS boot-time wiring. Idempotent; safe to call multiple times but
@@ -86,18 +87,24 @@ export async function initWssBootstrap(): Promise<void> {
     void clearDevice()
   })
 
+  // AppState + NetInfo wiring. Attaches listeners that force-close the
+  // socket on network drops and probe / reconnect on app foreground so
+  // a backgrounded-app-with-dead-socket case never bricks the client.
+  initLifecycleWiring()
+
   // Cold-start read. Fires the device subscriber above as a side
   // effect of `$device.set(...)` inside; if the phone was previously
   // paired, that immediately kicks the resolver ladder.
   await loadDeviceFromSecureStore()
 }
 
-/** Test / hot-reload seam: tears down both subscriptions. */
+/** Test / hot-reload seam: tears down every subscription + listener. */
 // fallow-ignore-next-line unused-export
 export function resetWssBootstrap(): void {
   unsubscribeDevice?.()
   unsubscribeSession?.()
   unsubscribeDevice = null
   unsubscribeSession = null
+  resetLifecycleWiring()
   initialized = false
 }
