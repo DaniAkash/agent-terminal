@@ -66,6 +66,16 @@
       }
     },
     {
+      "includes": ["src-tauri/src/agents/assets/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noProcessEnv": "off"
+          }
+        }
+      }
+    },
+    {
       "includes": ["src/index.css"],
       "linter": {
         "rules": {
