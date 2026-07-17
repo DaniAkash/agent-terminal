@@ -60,6 +60,10 @@ pub enum EventRole {
     SessionStart,
     Working,
     Blocked,
+    /// Return to the idle baseline without ending the session. Used by agents
+    /// whose hook reports a resolved `idle` state (Kimi, Mastra) rather than a
+    /// `Stop`-style completion.
+    Idle,
     Completed,
     SessionEnd,
 }
