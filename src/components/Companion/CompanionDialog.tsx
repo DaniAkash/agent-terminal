@@ -202,23 +202,10 @@ function PairingSection({ payload, error, loading }: PairingSectionProps) {
         <QRCodeSVG value={qrValue} size={192} level="M" />
       </div>
       <div className="w-full space-y-1 text-center">
-        {payload.fingerprint === '' ? (
-          // Empty-string fingerprint = dev-only `tls_enabled: false`
-          // path. Surface as a clear warning banner rather than an
-          // empty compare block; TLS will be re-required once native
-          // cert pinning lands on the mobile side (Phase 2B / PR D).
-          <div className="mx-auto w-full rounded-md border border-amber-500/50 bg-amber-500/10 p-3 text-[11px] text-amber-500">
-            TLS is off (dev only). Traffic is unencrypted; there is no
-            fingerprint to verify.
-          </div>
-        ) : (
-          <>
-            <div className="text-[11px] text-muted-foreground">
-              Fingerprint (verify matches on your phone)
-            </div>
-            <Fingerprint value={payload.fingerprint} />
-          </>
-        )}
+        <div className="text-[11px] text-muted-foreground">
+          Fingerprint (verify matches on your phone)
+        </div>
+        <Fingerprint value={payload.fingerprint} />
       </div>
     </div>
   )

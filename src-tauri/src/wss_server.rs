@@ -266,15 +266,12 @@ pub async fn run_with_listener(
 }
 
 /// Serve the WSS router over TLS using axum-server + tokio-rustls.
-/// Called from lib.rs::run when `auth.tls_enabled` is true. Mobile
-/// clients connect via `wss://` and their TLS stack accepts the
-/// self-signed cert either through user trust (dev client) or through
-/// platform local-network exceptions
-/// (`NSAllowsLocalNetworking` on iOS, network security config on
-/// Android). Production callers bind their addr here; integration tests
-/// bind an ephemeral port themselves and hand it to
-/// `run_with_tls_from_listener` — same drop-then-rebind-race avoidance
-/// as the plain-TCP `run_with_listener`.
+/// Mobile clients connect via `wss://` and their native PinnedWebSocket
+/// module verifies the leaf cert's SHA-256 against the fingerprint the
+/// QR carried. Production callers bind their addr here; integration
+/// tests bind an ephemeral port themselves and hand it to
+/// `run_with_tls_from_listener`, avoiding the same drop-then-rebind
+/// race as the plain-TCP `run_with_listener`.
 pub async fn run_with_tls(
     addr: SocketAddr,
     state: Arc<ServerState>,
@@ -315,16 +312,17 @@ pub async fn run_with_tls_from_listener(
 /// axum handler for `/stream`. Just performs the WebSocket upgrade and
 /// hands off to `connection_task`; all the interesting logic lives there.
 ///
-/// The eprintln! log at the entry is a diagnostic hook for the pairing
-/// smoke: if this line does NOT appear when a phone tries to connect,
-/// the TLS handshake or TCP path failed before axum saw the request
-/// (usually iOS rejecting the self-signed cert). Confirmed reach means
-/// the failure is inside the auth flow itself.
+/// Debug builds emit an accept-time log line per upgrade attempt as a
+/// diagnostic hook: if it does not appear when a phone tries to
+/// connect, the TLS handshake failed before axum saw the request. In
+/// release builds the log is compiled out so a busy production terminal
+/// does not spew a line per connection.
 async fn handle_stream_upgrade(
     State(state): State<Arc<ServerState>>,
     axum::extract::ConnectInfo(peer): axum::extract::ConnectInfo<SocketAddr>,
     ws: WebSocketUpgrade,
 ) -> Response {
+    #[cfg(debug_assertions)]
     eprintln!("[wss] /stream upgrade requested from {peer}");
     ws.on_upgrade(move |socket| connection_task(socket, state, peer))
 }
