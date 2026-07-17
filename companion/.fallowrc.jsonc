@@ -19,14 +19,16 @@
   // react-native-web is required by expo/dom's `.web.tsx` files that
   // Metro pulls in when bundling `'use dom'` components. No source
   // file directly imports it; the bundler wires it transparently.
-  // expo-build-properties + expo-dev-client are autolinked / config-
-  // plugin loaded, so nothing imports them directly. @expo/config-
-  // plugins is a transitive Expo dep required from the local Gradle
-  // wrapper plugin (a build-time module fallow does not scan).
+  // expo-build-properties + expo-dev-client + expo-system-ui are
+  // autolinked / config-plugin loaded, so nothing imports them
+  // directly. @expo/config-plugins is a transitive Expo dep required
+  // from the local Gradle wrapper plugin (a build-time module fallow
+  // does not scan).
   "ignoreDependencies": [
     "react-native-web",
     "expo-build-properties",
     "expo-dev-client",
+    "expo-system-ui",
     "@expo/config-plugins"
   ],
   "rules": {
