@@ -1,7 +1,7 @@
 {
   "name": "agent-terminal",
   "private": true,
-  "version": "0.1.5",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -13,7 +13,8 @@
     "lint:rust": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets",
     "typecheck": "tsc --noEmit",
     "test": "bun test src/ && cargo test --manifest-path src-tauri/Cargo.toml --lib && cargo test --manifest-path src-tauri/Cargo.toml --test hook_integration -- --test-threads=1",
-    "lint:fix": "biome check --write --unsafe && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --fix --allow-dirty --allow-staged"
+    "lint:fix": "biome check --write --unsafe && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --fix --allow-dirty --allow-staged",
+    "postinstall": "cd src-tauri/sidecar && bun install --frozen-lockfile"
   },
   "dependencies": {
     "@base-ui/react": "^1.3.0",

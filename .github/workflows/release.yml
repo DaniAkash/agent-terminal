@@ -137,11 +137,11 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            src-tauri/target
+            target
           # Cache key carries the target triple so the two matrix entries
           # keep separate caches. Different triples = different compiled
           # artifacts; sharing the cache would just cause misses every time.
-          key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ matrix.target }}-${{ hashFiles('src-tauri/Cargo.lock') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-cargo-${{ matrix.target }}-
 
@@ -183,7 +183,7 @@ jobs:
         # download for the release page, the stable filename for the README.
         run: |
           set -euo pipefail
-          cd src-tauri/target/${{ matrix.target }}/release/bundle/dmg
+          cd target/${{ matrix.target }}/release/bundle/dmg
           case "${{ matrix.target }}" in
             aarch64-apple-darwin) STABLE=agent-terminal-aarch64.dmg ;;
             x86_64-apple-darwin)  STABLE=agent-terminal-x64.dmg ;;
@@ -204,7 +204,7 @@ jobs:
         # generation) can all rely on a stable arch suffix.
         run: |
           set -euo pipefail
-          cd src-tauri/target/${{ matrix.target }}/release/bundle/macos
+          cd target/${{ matrix.target }}/release/bundle/macos
           case "${{ matrix.target }}" in
             aarch64-apple-darwin) ARCH=aarch64 ;;
             x86_64-apple-darwin)  ARCH=x64 ;;
@@ -236,9 +236,9 @@ jobs:
         with:
           name: bundles-${{ matrix.target }}
           path: |
-            src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
-            src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz
-            src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz.sig
+            target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+            target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz
+            target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz.sig
           if-no-files-found: error
           retention-days: 7
 
