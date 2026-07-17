@@ -1,3 +1,9 @@
+/* biome-ignore-all lint/suspicious/noDuplicateCustomProperties: uniwind
+ * `@variant light` and `@variant dark` blocks intentionally redefine
+ * the same custom-property names; they are mutually exclusive at
+ * runtime. Suppressing this rule file-wide so the theme variables can
+ * live where uniwind expects them.
+ */
 @import 'tailwindcss';
 @import 'uniwind';
 
@@ -20,37 +26,47 @@
   --radius-lg: var(--radius);
 }
 
-:root {
-  --background: #ffffff;
-  --foreground: rgba(20, 22, 25, 0.9);
-  --card: var(--background);
-  --card-foreground: var(--foreground);
-  --muted: rgba(0, 0, 0, 0.03);
-  --muted-foreground: rgba(0, 0, 0, 0.55);
-  --accent: oklch(0.55 0.18 225);
-  --accent-foreground: #ffffff;
-  --accent-soft: oklch(0.55 0.18 225 / 0.1);
-  --border: rgba(0, 0, 0, 0.08);
-  --input: rgba(0, 0, 0, 0.08);
-  --destructive: #c23648;
-  --success: #2e8b3d;
-  --radius: 0.5rem;
-}
-
-@media (prefers-color-scheme: dark) {
+/*
+ * Uniwind theme variables. Uniwind does not evaluate
+ * `@media (prefers-color-scheme: dark)` in imported CSS. It swaps
+ * variables per active theme via `@variant light`/`@variant dark`
+ * inside `@layer theme`. The active theme is chosen by
+ * `Uniwind.setTheme('system')`, wired at app boot in `_layout.tsx`.
+ */
+@layer theme {
   :root {
-    --background: #0e0f10;
-    --foreground: rgba(230, 232, 235, 0.92);
-    --card: var(--background);
-    --card-foreground: var(--foreground);
-    --muted: rgba(255, 255, 255, 0.04);
-    --muted-foreground: rgba(255, 255, 255, 0.55);
-    --accent: oklch(0.68 0.15 225);
-    --accent-foreground: #000000;
-    --accent-soft: oklch(0.68 0.15 225 / 0.14);
-    --border: rgba(255, 255, 255, 0.08);
-    --input: rgba(255, 255, 255, 0.08);
-    --destructive: #f7768e;
-    --success: #9ece6a;
+    --radius: 0.5rem;
+
+    @variant light {
+      --background: #ffffff;
+      --foreground: rgba(20, 22, 25, 0.9);
+      --card: var(--background);
+      --card-foreground: var(--foreground);
+      --muted: rgba(0, 0, 0, 0.03);
+      --muted-foreground: rgba(0, 0, 0, 0.55);
+      --accent: oklch(0.55 0.18 225);
+      --accent-foreground: #ffffff;
+      --accent-soft: oklch(0.55 0.18 225 / 0.1);
+      --border: rgba(0, 0, 0, 0.08);
+      --input: rgba(0, 0, 0, 0.08);
+      --destructive: #c23648;
+      --success: #2e8b3d;
+    }
+
+    @variant dark {
+      --background: #0e0f10;
+      --foreground: rgba(230, 232, 235, 0.92);
+      --card: var(--background);
+      --card-foreground: var(--foreground);
+      --muted: rgba(255, 255, 255, 0.04);
+      --muted-foreground: rgba(255, 255, 255, 0.55);
+      --accent: oklch(0.68 0.15 225);
+      --accent-foreground: #000000;
+      --accent-soft: oklch(0.68 0.15 225 / 0.14);
+      --border: rgba(255, 255, 255, 0.08);
+      --input: rgba(255, 255, 255, 0.08);
+      --destructive: #f7768e;
+      --success: #9ece6a;
+    }
   }
 }

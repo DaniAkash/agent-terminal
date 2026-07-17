@@ -3,7 +3,16 @@ import { ActionSheetProvider } from '@expo/react-native-action-sheet'
 import { Stack } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
 import { useEffect } from 'react'
+import { Uniwind } from 'uniwind'
 import { initWssBootstrap } from '@/modules/wss/bootstrap'
+
+// Follow the OS light/dark preference. Uniwind ignores
+// `@media (prefers-color-scheme)` in CSS; the active theme is chosen
+// via this API. `'system'` re-evaluates on every OS setting change
+// (Appearance.addChangeListener under the hood) so no other wiring
+// is needed. Called at module load so the first render already sees
+// the right theme instead of flashing light then swapping.
+Uniwind.setTheme('system')
 
 // ActionSheetProvider wraps any component that uses useActionSheet()
 // from @expo/react-native-action-sheet (Phase B long-press menus on
@@ -28,10 +37,10 @@ export default function RootLayout() {
     void initWssBootstrap()
   }, [])
   return (
-    // biome-ignore lint/complexity/noUselessFragments: ActionSheetProvider
-    // uses React.Children.only internally, so the sibling StatusBar +
-    // Stack must be wrapped as a single fragment child.
     <ActionSheetProvider>
+      {/* biome-ignore lint/complexity/noUselessFragments: ActionSheetProvider */}
+      {/* uses React.Children.only internally, so the sibling StatusBar + */}
+      {/* Stack must be wrapped as a single fragment child. */}
       <>
         <StatusBar style="auto" />
         <Stack>
