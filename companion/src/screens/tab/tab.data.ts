@@ -23,18 +23,26 @@ export function useTabData(tabId: string) {
   // Single funnel for input coming from either xterm.js's onData path
   // (soft keyboard capture) or the ExtraKeysBar. Applies any armed
   // modifier, sends the byte sequence over the WSS, then disarms.
-  // Rewritten on every render to close over the latest state; consumers
+  // Rewritten on every commit to close over the latest state; consumers
   // reach it through the ref so their callback identity stays stable.
+  //
+  // Sync inside an effect (no deps → runs after every commit) instead of
+  // direct render-time mutation. Refs are only read from onData /
+  // onKey which fire from user events after commit, so the one-render-
+  // cycle latency between a state change (arm/disarm) and the next
+  // input read is invisible.
   const sendInputRef = useRef<(seq: string) => void>(() => {})
-  // fallow-ignore-next-line complexity
-  sendInputRef.current = (seq: string) => {
-    let out = seq
-    if (ctrlArmed) out = applyCtrl(out)
-    if (altArmed) out = applyAlt(out)
-    writeToTab(tabId, out)
-    if (ctrlArmed) setCtrlArmed(false)
-    if (altArmed) setAltArmed(false)
-  }
+  useEffect(() => {
+    // fallow-ignore-next-line complexity
+    sendInputRef.current = (seq: string) => {
+      let out = seq
+      if (ctrlArmed) out = applyCtrl(out)
+      if (altArmed) out = applyAlt(out)
+      writeToTab(tabId, out)
+      if (ctrlArmed) setCtrlArmed(false)
+      if (altArmed) setAltArmed(false)
+    }
+  })
 
   useEffect(() => {
     if (!ready) return
