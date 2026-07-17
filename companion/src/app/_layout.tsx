@@ -1,9 +1,15 @@
 import '../../global.css'
 import { ActionSheetProvider } from '@expo/react-native-action-sheet'
+import { ThemeProvider } from '@react-navigation/native'
 import { Stack } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
 import { useEffect } from 'react'
+import { useColorScheme } from 'react-native'
 import { Uniwind } from 'uniwind'
+import {
+  navigationDarkTheme,
+  navigationLightTheme,
+} from '@/modules/theme/navigation'
 import { initWssBootstrap } from '@/modules/wss/bootstrap'
 
 // Follow the OS light/dark preference. Uniwind ignores
@@ -36,32 +42,48 @@ export default function RootLayout() {
   useEffect(() => {
     void initWssBootstrap()
   }, [])
+  // Reactively pick the react-navigation theme so the header + tab
+  // bar chrome shares the same OS-driven light/dark preference the
+  // rest of the app follows via Uniwind. useColorScheme subscribes to
+  // Appearance under the hood; Uniwind also drives Appearance via
+  // setColorScheme, so the two sources agree by construction.
+  const scheme = useColorScheme()
+  const navTheme =
+    scheme === 'dark' ? navigationDarkTheme : navigationLightTheme
   return (
     <ActionSheetProvider>
-      {/* biome-ignore lint/complexity/noUselessFragments: ActionSheetProvider */}
-      {/* uses React.Children.only internally, so the sibling StatusBar + */}
-      {/* Stack must be wrapped as a single fragment child. */}
-      <>
-        <StatusBar style="auto" />
-        <Stack>
-          <Stack.Screen name="index" options={{ title: 'Agent Terminal' }} />
-          <Stack.Screen name="pair" options={{ title: 'Pair with desktop' }} />
-          <Stack.Screen name="connect" options={{ title: 'Manual connect' }} />
-          <Stack.Screen
-            name="projects"
-            options={{
-              title: 'Projects',
-              presentation: 'modal',
-            }}
-          />
-          <Stack.Screen
-            name="tab/[tabid]"
-            options={{
-              headerBackTitle: 'Back',
-            }}
-          />
-        </Stack>
-      </>
+      <ThemeProvider value={navTheme}>
+        {/* biome-ignore lint/complexity/noUselessFragments: ActionSheetProvider */}
+        {/* uses React.Children.only internally, so the sibling StatusBar + */}
+        {/* Stack must be wrapped as a single fragment child. */}
+        <>
+          <StatusBar style="auto" />
+          <Stack>
+            <Stack.Screen name="index" options={{ title: 'Agent Terminal' }} />
+            <Stack.Screen
+              name="pair"
+              options={{ title: 'Pair with desktop' }}
+            />
+            <Stack.Screen
+              name="connect"
+              options={{ title: 'Manual connect' }}
+            />
+            <Stack.Screen
+              name="projects"
+              options={{
+                title: 'Projects',
+                presentation: 'modal',
+              }}
+            />
+            <Stack.Screen
+              name="tab/[tabid]"
+              options={{
+                headerBackTitle: 'Back',
+              }}
+            />
+          </Stack>
+        </>
+      </ThemeProvider>
     </ActionSheetProvider>
   )
 }
