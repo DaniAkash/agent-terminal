@@ -44,6 +44,7 @@
     "@types/react": "~19.2.2",
     "concurrently": "^10.0.3",
     "fallow": "^2.102.0",
+    "react-doctor": "0.7.6",
     "typescript": "~6.0.3"
   },
   "scripts": {
@@ -60,7 +61,8 @@
     "fallow:dead-code": "fallow dead-code",
     "fallow:dupes": "fallow dupes",
     "fallow:health": "fallow health",
-    "check": "concurrently --group --names fmt,lint,typecheck,test,fallow --prefix-colors auto \"bun run fmt\" \"bun run lint\" \"bun run typecheck\" \"bun run test\" \"bun run fallow\""
+    "doctor": "react-doctor",
+    "check": "concurrently --group --names fmt,lint,typecheck,test,fallow,doctor --prefix-colors auto \"bun run fmt\" \"bun run lint\" \"bun run typecheck\" \"bun run test\" \"bun run fallow\" \"bun run doctor\""
   },
   "private": true
 }
