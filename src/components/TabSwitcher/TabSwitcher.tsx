@@ -1,7 +1,7 @@
 import { useStore } from '@nanostores/react'
 import { useEffect, useMemo, useState } from 'react'
 import { useHotkeys } from 'react-hotkeys-hook'
-import { TabStatusIcon } from '@/components/TabStatusIcon'
+import { TabChip } from '@/components/TabChip/TabChip'
 import {
   buildSwitcherRows,
   filterSwitcherRows,
@@ -163,11 +163,18 @@ export function TabSwitcher() {
                 {row.rank > 0 ? row.rank : ''}
               </span>
 
-              {/* Status icon slot — fixed 16px square. AgentGlyph (14px)
-                  centres inside; dot icons sit centred too. Keeps the
-                  label column origin stable across icon types. */}
+              {/* Status icon slot, fixed 16px square. TabChip's AgentGlyph
+                  (14px) centres inside; dot icons sit centred too. Keeps
+                  the label column origin stable across icon types.
+                  DangerBadge intentionally omitted (default false); the
+                  palette is dense enough without it, and the sidebar
+                  already carries that signal. */}
               <div className="flex size-4 shrink-0 items-center justify-center">
-                <TabStatusIcon tabId={row.tabKey} active={row.isCurrent} />
+                <TabChip
+                  tabId={row.tabKey}
+                  density="comfortable"
+                  active={row.isCurrent}
+                />
               </div>
 
               {/* Label + meta — two lines, comfortable leading. */}

@@ -14,7 +14,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { useStore } from '@nanostores/react'
 import { Pin, X } from 'lucide-react'
-import { TabStatusIcon } from '@/components/TabStatusIcon'
+import { TabChip } from '@/components/TabChip/TabChip'
 import {
   ContextMenu,
   ContextMenuContent,
@@ -96,16 +96,18 @@ function TabItem({ tab, projectId }: { tab: Tab; projectId: string }) {
               className="flex flex-1 cursor-pointer items-center gap-1.5 overflow-hidden pr-1 pl-3"
               onClick={() => navigateToTab(projectId, tab.id)}
             >
-              <TabStatusIcon
+              {/* Danger indicator (DangerBadge) intentionally omitted here.
+                  TabChip's showDanger prop defaults to false; the sidebar is
+                  the trust surface and opts in, the top tab bar stays quiet
+                  because the same signal is already one glance to the left. */}
+              <TabChip
                 tabId={makeTabKey(projectId, tab.id)}
+                density="medium"
                 active={isActive}
               />
               <span className="truncate" style={{ fontFamily: MONO_FONT }}>
                 {resolveTabLabel(tab, tabMeta?.cwd)}
               </span>
-              {/* Danger indicator intentionally omitted here — the sidebar
-                  already shows it for the same tab; duplicating it on the
-                  top tab bar adds visual noise without new information. */}
             </button>
 
             {/* Pin / close action — sibling of nav button, not nested */}

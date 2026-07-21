@@ -4,9 +4,7 @@ import { useStore } from '@nanostores/react'
 import { Pin } from 'lucide-react'
 import type React from 'react'
 import { useEffect, useRef, useState } from 'react'
-import { hasDangerFlag } from '@/components/agent.helpers'
-import { DangerBadge } from '@/components/DangerBadge'
-import { TabStatusIcon } from '@/components/TabStatusIcon'
+import { TabChip } from '@/components/TabChip/TabChip'
 import {
   ContextMenu,
   ContextMenuContent,
@@ -140,8 +138,9 @@ export function SidebarTabItem({
             )}
 
             {/*
-             * Right-side indicators, left to right:
-             *   DangerBadge → StatusIcon
+             * Right-side indicators, delegated to TabChip. The sidebar
+             * opts in to the DangerBadge (this is the trust surface);
+             * other surfaces omit it by default.
              *
              * Recency information (which tabs the user was just in) is
              * now exclusively a Cmd+P concern. Earlier we surfaced 1..10
@@ -149,10 +148,14 @@ export function SidebarTabItem({
              * found them distracting more than helpful. The header pill
              * advertises the Cmd+P chord; the palette does the recall.
              */}
-            {!renaming &&
-              tabMeta?.type === 'agent' &&
-              hasDangerFlag(tabMeta.agentCmd) && <DangerBadge size={11} />}
-            {!renaming && <TabStatusIcon tabId={tabKey} active={isActive} />}
+            {!renaming && (
+              <TabChip
+                tabId={tabKey}
+                density="compact"
+                showDanger
+                active={isActive}
+              />
+            )}
           </button>
         </div>
       </ContextMenuTrigger>

@@ -8,6 +8,12 @@ import { $tabMeta, updateTabMeta } from '@/modules/stores/$tabMeta'
 type Props = {
   tabId: string
   active?: boolean
+  /**
+   * Icon size in pixels for the AgentGlyph. Default 14 matches the current
+   * uniform density across sidebar / tab bar / command palette. Callers can
+   * bump per surface without touching this file when densities diverge.
+   */
+  size?: number
 }
 
 /**
@@ -49,7 +55,7 @@ type Props = {
  *   AgentTurnMod will unlock them when it writes agentState to TabMeta.
  */
 
-export function TabStatusIcon({ tabId, active = false }: Props) {
+export function TabStatusIcon({ tabId, active = false, size = 14 }: Props) {
   const allMeta = useStore($tabMeta)
   const meta = allMeta[tabId]
   const status = meta?.status ?? 'idle'
@@ -71,7 +77,7 @@ export function TabStatusIcon({ tabId, active = false }: Props) {
       <AgentGlyph
         agent={meta?.agentId ?? ''}
         state={deriveAgentState(meta)}
-        size={14}
+        size={size}
         active={active}
       />
     )
