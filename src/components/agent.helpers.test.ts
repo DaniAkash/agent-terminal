@@ -42,19 +42,23 @@ describe('parseModelFlag', () => {
 })
 
 describe('shouldShowDangerBadge', () => {
+  // Fixtures mirror the shape ProcessTrackerMod + ClaudeCodeMod emit;
+  // `status` is required on TabMeta and non-agent tabs have `type: 'shell'`.
   const agentDanger: TabMeta = {
+    status: 'idle',
     type: 'agent',
     agentId: 'claude-code',
     agentCmd: 'claude --dangerously-skip-permissions',
   }
   const agentSafe: TabMeta = {
+    status: 'idle',
     type: 'agent',
     agentId: 'claude-code',
     agentCmd: 'claude',
   }
   const shellTab: TabMeta = {
-    type: 'shell',
     status: 'running',
+    type: 'shell',
   }
 
   test('true when opted in AND agent AND has flag', () => {

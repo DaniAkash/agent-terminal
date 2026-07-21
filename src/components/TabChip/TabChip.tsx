@@ -34,8 +34,14 @@ type Props = {
 
 /**
  * Composite tab indicator used by the sidebar, tab bar, and command
- * palette. Reads `$tabMeta[tabId]` once and composes every per-tab
- * badge from that snapshot.
+ * palette. Reads `$tabMeta[tabId]` and composes every per-tab badge
+ * from that snapshot.
+ *
+ * Note: `TabStatusIcon` (rendered internally) subscribes to `$tabMeta`
+ * separately. Two subscriptions per instance in total. Nanostores
+ * dedupes dispatch by identity so the runtime cost is negligible; the
+ * duplication stays until TabStatusIcon accepts an optional `meta`
+ * prop or is inlined here.
  *
  * Future badges (GitBadge, ModelBadge, PortsBadge) plug in here as
  * additional `show*` props. Callers opt in per surface; there is no
@@ -54,7 +60,10 @@ export function TabChip({
   const danger = shouldShowDangerBadge(meta, showDanger)
 
   return (
-    <span className="inline-flex items-center gap-1">
+    // gap-2 matches the sidebar's original button-level spacing between
+    // DangerBadge and TabStatusIcon (8px). Invisible for surfaces that
+    // opt out of DangerBadge (only one child renders, gap does not apply).
+    <span className="inline-flex items-center gap-2">
       {danger && <DangerBadge size={11} />}
       <TabStatusIcon tabId={tabId} active={active} size={size} />
     </span>
