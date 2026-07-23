@@ -34,6 +34,7 @@ import {
   reorderTabs,
   toggleTabPin,
 } from '@/modules/stores/$projects'
+import { $sidebarVisible } from '@/modules/stores/$sidebarVisible'
 import { $tabMeta } from '@/modules/stores/$tabMeta'
 import {
   MONO_FONT,
@@ -171,6 +172,7 @@ export function TabBar({ project }: { project: Project }) {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
   )
+  const sidebarVisible = useStore($sidebarVisible)
 
   const orderedTabs = [
     ...project.tabs.filter((t) => t.pinned),
@@ -193,7 +195,14 @@ export function TabBar({ project }: { project: Project }) {
   return (
     <div
       data-tauri-drag-region
-      className="flex h-[38px] shrink-0 items-end border-[var(--tab-border)] border-b bg-tab-bar px-2"
+      className={cn(
+        'flex h-[38px] shrink-0 items-end border-[var(--tab-border)] border-b bg-tab-bar pr-2',
+        // Reserve the ~78px macOS traffic-light row when the TabBar is
+        // the window's top-left component (sidebar hidden). When the
+        // sidebar is visible, the sidebar owns that reservation via its
+        // own pl-[78px], so the TabBar starts at its natural left edge.
+        sidebarVisible ? 'pl-2' : 'pl-[80px]',
+      )}
       style={{ gap: 2 }}
     >
       {/* Sidebar reveal / hide toggle — always the leftmost affordance in

@@ -1,5 +1,4 @@
 import { useStore } from '@nanostores/react'
-import { CommandShortcut } from '@/components/ui/command'
 import { $sidebarView } from '@/modules/stores/$sidebarView'
 import { $sidebarVisible } from '@/modules/stores/$sidebarVisible'
 import { SidebarRecent } from './SidebarRecent'
@@ -9,9 +8,9 @@ import { SidebarWorkspaces } from './SidebarWorkspaces'
 /* ---------------------------------------------------------------------------
  * Sidebar — thin composer.
  *
- * Renders the sidebar chrome (drag-region header, view toggle, Cmd+P
- * hint, scroll-clip container with bottom shadow) and swaps the body
- * between SidebarWorkspaces / SidebarRecent based on `$sidebarView`.
+ * Renders the sidebar chrome (drag-region header, view toggle,
+ * scroll-clip container with bottom shadow) and swaps the body between
+ * SidebarWorkspaces / SidebarRecent based on `$sidebarView`.
  *
  * Returns `null` when `$sidebarVisible` is false — the sidebar is
  * fully hidden, not a minified icon rail. The reveal affordance
@@ -27,19 +26,15 @@ export function Sidebar() {
 
   return (
     <div className="flex h-full w-[var(--sidebar-width)] min-w-[var(--sidebar-width)] flex-col border-sidebar-border border-r bg-sidebar">
-      {/* Header — drag region, reserves traffic-light space, hosts the
-          view toggle and the Cmd+P hint. */}
+      {/* Header — drag region hosting the view toggle. Reserves the
+          macOS traffic-light row (~78px) on the left; the Tauri config
+          also sets trafficLightPosition so the buttons vertically
+          centre inside the 38px header instead of sitting near the top. */}
       <div
         data-tauri-drag-region
-        className="flex h-[38px] shrink-0 items-center gap-2 border-sidebar-border border-b pr-3 pl-[78px]"
+        className="flex h-[38px] shrink-0 items-center justify-end border-sidebar-border border-b pr-3 pl-[80px]"
       >
         <SidebarViewToggle />
-        <CommandShortcut
-          className="ml-auto opacity-50"
-          title="Open the tab switcher (⌘P)"
-        >
-          ⌘P
-        </CommandShortcut>
       </div>
 
       {/* Body — scrolls vertically; scrollbar hidden, bottom shadow
