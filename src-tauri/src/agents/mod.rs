@@ -15,8 +15,12 @@
 //! The state engine fuses the hook and OSC signals with an agent-agnostic
 //! process/prompt floor; see the agent-state mod.
 
+pub mod amp;
 pub mod claude_code;
 pub mod codex;
+pub mod kilo;
+pub mod kimi;
+pub mod mastracode;
 pub mod opencode;
 
 /// Coarse state derivable from an agent's OSC title/progress. Distinct from the
@@ -58,6 +62,10 @@ pub enum EventRole {
     SessionStart,
     Working,
     Blocked,
+    /// Return to the idle baseline without ending the session. Used by agents
+    /// whose hook reports a resolved `idle` state (Kimi, Mastra) rather than a
+    /// `Stop`-style completion.
+    Idle,
     Completed,
     SessionEnd,
 }
@@ -73,11 +81,31 @@ pub enum HookInstall {
     /// Patch the agent's own settings file with our hook command (Claude,
     /// Codex). The nested matcher+hooks JSON merge lives in `hook_config`.
     NativeConfig { config_tilde_path: &'static str },
-    /// Drop a plugin/extension asset into the agent's plugin dir (opencode).
+    /// Drop a plugin/extension asset into the agent's plugin dir (opencode,
+    /// kilo).
     Plugin {
         dir_tilde_path: &'static str,
         install_name: &'static str,
         asset: &'static str,
+    },
+    /// Register hooks in an agent's TOML config via a managed block of
+    /// `[[hooks]]` tables (Kimi). The action hook script posts the resolved
+    /// state (the second tuple field) as the event.
+    TomlBlock {
+        config_tilde_path: &'static str,
+        hooks_dir_tilde_path: &'static str,
+        script_name: &'static str,
+        /// (agent lifecycle event, action posted).
+        events: &'static [(&'static str, &'static str)],
+    },
+    /// Register hooks in an agent's flat JSON hooks file (Mastra): each event
+    /// maps to `[{ type: "command", command: "...", timeout, ... }]`.
+    FlatJson {
+        config_tilde_path: &'static str,
+        hooks_dir_tilde_path: &'static str,
+        script_name: &'static str,
+        /// (agent lifecycle event, action posted).
+        events: &'static [(&'static str, &'static str)],
     },
 }
 
@@ -127,6 +155,10 @@ pub static AGENTS: &[&AgentProfile] = &[
     &claude_code::PROFILE,
     &codex::PROFILE,
     &opencode::PROFILE,
+    &amp::PROFILE,
+    &kilo::PROFILE,
+    &kimi::PROFILE,
+    &mastracode::PROFILE,
 ];
 
 /// Look up a profile by its stable id (e.g. `"claude-code"`).
@@ -154,6 +186,10 @@ mod tests {
         assert_eq!(by_id("claude-code").map(|a| a.display_name), Some("Claude Code"));
         assert_eq!(by_id("codex").map(|a| a.id), Some("codex"));
         assert_eq!(by_id("opencode").map(|a| a.id), Some("opencode"));
+        assert_eq!(by_id("amp").map(|a| a.id), Some("amp"));
+        assert_eq!(by_id("kilo").map(|a| a.display_name), Some("Kilo Code"));
+        assert_eq!(by_id("kimi").map(|a| a.display_name), Some("Kimi CLI"));
+        assert_eq!(by_id("mastracode").map(|a| a.display_name), Some("Mastra"));
         assert!(by_id("nope").is_none());
     }
 
@@ -162,15 +198,19 @@ mod tests {
         assert_eq!(by_process_name("claude").map(|a| a.id), Some("claude-code"));
         assert_eq!(by_process_name("codex").map(|a| a.id), Some("codex"));
         assert_eq!(by_process_name("opencode").map(|a| a.id), Some("opencode"));
+        assert_eq!(by_process_name("amp").map(|a| a.id), Some("amp"));
+        assert_eq!(by_process_name("kilo").map(|a| a.id), Some("kilo"));
+        assert_eq!(by_process_name("kimi").map(|a| a.id), Some("kimi"));
+        assert_eq!(by_process_name("mastracode").map(|a| a.id), Some("mastracode"));
         assert!(by_process_name("bash").is_none());
     }
 
     #[test]
     fn known_process_names_covers_all_agents() {
         let names: HashSet<&str> = known_process_names().collect();
-        assert!(names.contains("claude"));
-        assert!(names.contains("codex"));
-        assert!(names.contains("opencode"));
+        for name in ["claude", "codex", "opencode", "amp", "kilo", "kimi", "mastracode"] {
+            assert!(names.contains(name), "missing process name: {name}");
+        }
     }
 
     #[test]

@@ -64,7 +64,16 @@ Always-on context for the focused tab — refreshed every couple of seconds, nev
 | [Claude Code](https://claude.ai/code) | ✅ Supported |
 | [Codex CLI](https://github.com/openai/codex) | ✅ Supported |
 | [opencode](https://github.com/sst/opencode) | ✅ Supported |
+| [Amp](https://ampcode.com) | 🧪 Experimental |
+| [Kilo Code](https://kilo.ai) | 🧪 Experimental |
+| [Kimi CLI](https://www.kimi.com) | 🧪 Experimental |
+| [Mastra](https://mastra.ai) | 🧪 Experimental |
 | [Cursor](https://www.cursor.com) | 🔜 Planned |
+| [GitHub Copilot CLI](https://github.com/features/copilot) | 🔜 Planned |
+| [Factory Droid](https://factory.ai) | 🔜 Planned |
+| [Qoder](https://qoder.com) | 🔜 Planned |
+
+**Status key:** ✅ Supported = primary, well tested. 🧪 Experimental = detection works, still being tested. 🔜 Planned = coming soon.
 
 Want support for another agent? [Open an issue](https://github.com/DaniAkash/agent-terminal/issues/new) or [tell me on X](https://x.com/dani_akash_).
 

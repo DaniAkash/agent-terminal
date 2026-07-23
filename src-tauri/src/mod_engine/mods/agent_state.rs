@@ -466,6 +466,11 @@ impl Mod for AgentStateMod {
                 st.awaiting_message = message;
                 st.hook_state = AgentState::Blocked;
             }
+            EventRole::Idle => {
+                st.proc_alive = true;
+                st.awaiting_message = None;
+                st.hook_state = AgentState::Idle;
+            }
             EventRole::SessionEnd => {
                 st.hook_state = AgentState::Idle;
                 st.awaiting_message = None;
