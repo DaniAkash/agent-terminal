@@ -32,6 +32,7 @@ import {
   removeTab,
   restoreTabLabel,
 } from '@/modules/stores/$projects'
+import { toggleSidebarVisible } from '@/modules/stores/$sidebarVisible'
 import { useMetaHeldTracker } from '@/modules/stores/useMetaHeldTracker'
 import { useUpdaterWiring } from '@/modules/updater/useUpdaterWiring'
 import { WorkspaceView } from '@/screens/workspace/WorkspaceView'
@@ -208,6 +209,11 @@ export function WorkspaceLayout() {
     () => getActiveTerminalHandle()?.clear(),
     hotkeyOpts,
   )
+
+  // ⌘B — toggle sidebar visibility. Matches VS Code / Cursor / most
+  // editors' "toggle primary side bar" chord. Same handler as the
+  // reveal button in TabBar so both paths stay in sync.
+  useHotkeys(`${Mod.Meta}+${Keys.B}`, () => toggleSidebarVisible(), hotkeyOpts)
 
   // ⌘A — select all in the active terminal
   useHotkeys(

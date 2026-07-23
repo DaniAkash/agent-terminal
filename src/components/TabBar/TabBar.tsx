@@ -14,6 +14,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { useStore } from '@nanostores/react'
 import { Pin, X } from 'lucide-react'
+import { SidebarRevealButton } from '@/components/Sidebar/SidebarRevealButton'
 import { TabChip } from '@/components/TabChip/TabChip'
 import {
   ContextMenu,
@@ -195,6 +196,11 @@ export function TabBar({ project }: { project: Project }) {
       className="flex h-[38px] shrink-0 items-end border-[var(--tab-border)] border-b bg-tab-bar px-2"
       style={{ gap: 2 }}
     >
+      {/* Sidebar reveal / hide toggle — always the leftmost affordance in
+          the TabBar so the user has one stable place to find it in both
+          visible and hidden states. Duplicated by ⌘B. */}
+      <SidebarRevealButton />
+
       {/* Tab strip — content-sized, capped so the add-button is never hidden.
           `shrink-0` keeps it at content width; max-w caps it when tabs overflow. */}
       <div
