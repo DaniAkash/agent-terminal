@@ -104,6 +104,40 @@ function CodexMark({ size }: { size: number }) {
   )
 }
 
+function AmpMark({ size }: { size: number }) {
+  // Amp brand mark (ampcode.com/amp-mark-color.svg) in currentColor.
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 21 21"
+      fill="currentColor"
+      style={{ display: 'block' }}
+      aria-hidden="true"
+    >
+      <path d="M3.76879 18.3015L8.49839 13.505L10.2196 20.0399L12.72 19.3561L10.2288 9.86749L0.890876 7.33844L0.22594 9.89331L6.65134 11.6388L1.94138 16.4282L3.76879 18.3015Z" />
+      <path d="M17.4074 12.7414L19.9078 12.0575L17.4167 2.56897L8.07873 0.0399246L7.4138 2.5948L15.2992 4.73685L17.4074 12.7414Z" />
+      <path d="M13.8184 16.3883L16.3188 15.7044L13.8276 6.21588L4.48971 3.68683L3.82477 6.24171L11.7101 8.38376L13.8184 16.3883Z" />
+    </svg>
+  )
+}
+
+function MastraMark({ size }: { size: number }) {
+  // Mastra brand mark (code.mastra.ai/img/mastra.svg) in currentColor.
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 34 21"
+      fill="currentColor"
+      style={{ display: 'block' }}
+      aria-hidden="true"
+    >
+      <path d="M4.5 11.7a4.5 4.5 0 1 1 0 9 4.5 4.5 0 0 1 0-9M10.4 0a4.5 4.5 0 0 1 4.4 5.5c-.3 1.4-.6 3 .2 4.2l1.3 1.8.3.2q.2 0 .3-.2l1.3-1.9c.8-1.1.5-2.7.2-4a4.5 4.5 0 1 1 8.8 0c-.3 1.3-.6 2.8 0 4l1.3 2a4.5 4.5 0 1 1-4.3 3.5c.3-1.3.6-2.8 0-4l-1.2-2h-.2L21.5 11c-.8 1.2-.5 2.8-.2 4.2a4.5 4.5 0 1 1-8.8.2q.5-2-.4-3.8l-.9-1.3q-.9-1.1-2.4-1.6A4.5 4.5 0 0 1 10.4 0" />
+    </svg>
+  )
+}
+
 /* ---------------------------------------------------------------------------
  * Per-agent brand colours — fixed (not theme-aware, they are brand colours)
  * -------------------------------------------------------------------------*/
@@ -112,8 +146,10 @@ const BRAND: Record<string, { color: string; glow: string }> = {
   'claude-code': { color: '#D97757', glow: 'rgba(217,119,87,0.55)' },
   codex: { color: '#e6e8eb', glow: 'rgba(230,232,235,0.45)' },
   opencode: { color: '#ebe9e6', glow: 'rgba(235,233,230,0.45)' },
-  kilo: { color: '#cbd5e1', glow: 'rgba(203,213,225,0.45)' },
+  kilo: { color: '#cddc39', glow: 'rgba(205,220,57,0.45)' },
   kimi: { color: '#027aff', glow: 'rgba(2,122,255,0.5)' },
+  amp: { color: '#f34e3f', glow: 'rgba(243,78,63,0.5)' },
+  mastracode: { color: '#e6e8eb', glow: 'rgba(230,232,235,0.45)' },
 }
 
 /**
@@ -127,6 +163,8 @@ const MARKS: Record<string, React.ComponentType<{ size: number }>> = {
   opencode: OpenCodeMark,
   kilo: KiloMark,
   kimi: KimiMark,
+  amp: AmpMark,
+  mastracode: MastraMark,
 }
 
 /* ---------------------------------------------------------------------------
