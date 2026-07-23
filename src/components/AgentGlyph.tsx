@@ -12,7 +12,11 @@ function ClaudeMark({ size }: { size: number }) {
       height={size}
       viewBox="0 0 256 257"
       preserveAspectRatio="xMidYMid"
-      style={{ display: 'block' }}
+      // Inline width/height style guards against ancestor CSS that force-
+      // sizes descendant SVGs. cmdk's `[cmdk-item]` styles include
+      // `[&_svg:not([class*='size-'])]:size-4`, which would otherwise
+      // hijack this mark's dimensions to 16px inside the TabSwitcher.
+      style={{ display: 'block', width: size, height: size }}
       aria-hidden="true"
     >
       <path
@@ -33,7 +37,9 @@ function OpenCodeMark({ size }: { size: number }) {
       viewBox="0 0 512 512"
       fill="currentColor"
       fillRule="evenodd"
-      style={{ display: 'block' }}
+      // Inline width/height for the same cmdk-force-sizing reason
+      // documented on ClaudeMark above.
+      style={{ display: 'block', width: size, height: size }}
       aria-hidden="true"
     >
       <path
@@ -52,7 +58,9 @@ function CodexMark({ size }: { size: number }) {
       viewBox="0 0 24 24"
       fill="currentColor"
       fillRule="evenodd"
-      style={{ display: 'block' }}
+      // Inline width/height for the same cmdk-force-sizing reason
+      // documented on ClaudeMark above.
+      style={{ display: 'block', width: size, height: size }}
       aria-hidden="true"
     >
       <path
@@ -237,6 +245,16 @@ export function AgentGlyph({
             strokeWidth="3.5"
             strokeLinecap="round"
             strokeLinejoin="round"
+            // Inline width/height style pins the size against ancestor CSS
+            // that would otherwise hijack it. cmdk's `[cmdk-item]` styles
+            // include `[&_svg:not([class*='size-'])]:size-4`, which without
+            // this style would inflate the check to 16px inside an 8px
+            // badge circle (the exact shape of the "huge check" bug fixed
+            // in this file when the TabSwitcher first got AgentGlyph icons).
+            style={{
+              width: Math.round(badgeSize * 0.65),
+              height: Math.round(badgeSize * 0.65),
+            }}
             aria-hidden="true"
           >
             <path d="M20 6 9 17l-5-5" />
@@ -267,6 +285,10 @@ export function AgentGlyph({
             stroke="var(--background)"
             strokeWidth="1.4"
             strokeLinejoin="round"
+            // Same inline-size pin as the completed badge above:
+            // the cmdk force-sizing rule would inflate this awaiting
+            // chat-bubble to 16px inside the TabSwitcher.
+            style={{ width: badgeSize, height: badgeSize }}
             aria-hidden="true"
           >
             <path d="M3.2 4.5 A 1.8 1.8 0 0 1 5 2.7 h 14 A 1.8 1.8 0 0 1 20.8 4.5 v 10 A 1.8 1.8 0 0 1 19 16.3 H 10.3 l -4.6 3.8 a 0.5 0.5 0 0 1 -0.8 -0.4 v -3.4 H 5 A 1.8 1.8 0 0 1 3.2 14.5 z" />
