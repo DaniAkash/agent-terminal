@@ -224,7 +224,14 @@ export function AgentGlyph({
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
-            boxShadow: '0 0 0 1.5px var(--background)',
+            // Semi-transparent light stroke instead of a background-color
+            // "cut-out" ring. The old version painted var(--background) on
+            // top of whatever row the badge sat on, which produced a wrong-
+            // color halo the moment the row background diverged from
+            // --background (e.g. TabSwitcher's --accent-soft selected row).
+            // rgba(255,255,255,0.35) reads as a subtle chip border on any
+            // surface color and disappears cleanly against bright badges.
+            boxShadow: '0 0 0 1.5px rgba(255, 255, 255, 0.35)',
             color: 'var(--background)',
           }}
         >
