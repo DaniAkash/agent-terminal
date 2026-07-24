@@ -1,0 +1,187 @@
+import type React from 'react'
+
+/* ---------------------------------------------------------------------------
+ * Brand marks — exact SVG paths from the official brand assets, each
+ * reduced to a single-colour `currentColor` silhouette so the composite
+ * `AgentGlyph` can tint them from the brand palette.
+ *
+ * Extracted from AgentGlyph.tsx so the composite file stays under the
+ * per-file line cap.
+ * -------------------------------------------------------------------------*/
+
+function ClaudeMark({ size }: { size: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 256 257"
+      preserveAspectRatio="xMidYMid"
+      // Inline width/height style guards against ancestor CSS that force-
+      // sizes descendant SVGs. cmdk's `[cmdk-item]` styles include
+      // `[&_svg:not([class*='size-'])]:size-4`, which would otherwise
+      // hijack this mark's dimensions to 16px inside the TabSwitcher.
+      style={{ display: 'block', width: size, height: size }}
+      aria-hidden="true"
+    >
+      <path
+        fill="currentColor"
+        d="m50.228 170.321 50.357-28.257.843-2.463-.843-1.361h-2.462l-8.426-.518-28.775-.778-24.952-1.037-24.175-1.296-6.092-1.297L0 125.796l.583-3.759 5.12-3.434 7.324.648 16.202 1.101 24.304 1.685 17.629 1.037 26.118 2.722h4.148l.583-1.685-1.426-1.037-1.101-1.037-25.147-17.045-27.22-18.017-14.258-10.37-7.713-5.25-3.888-4.925-1.685-10.758 7-7.713 9.397.649 2.398.648 9.527 7.323 20.35 15.75L94.817 91.9l3.889 3.24 1.555-1.102.195-.777-1.75-2.917-14.453-26.118-15.425-26.572-6.87-11.018-1.814-6.61c-.648-2.723-1.102-4.991-1.102-7.778l7.972-10.823L71.42 0 82.05 1.426l4.472 3.888 6.61 15.101 10.694 23.786 16.591 32.34 4.861 9.592 2.592 8.879.973 2.722h1.685v-1.556l1.36-18.211 2.528-22.36 2.463-28.776.843-8.1 4.018-9.722 7.971-5.25 6.222 2.981 5.12 7.324-.713 4.73-3.046 19.768-5.962 30.98-3.889 20.739h2.268l2.593-2.593 10.499-13.934 17.628-22.036 7.778-8.749 9.073-9.657 5.833-4.601h11.018l8.1 12.055-3.628 12.443-11.342 14.388-9.398 12.184-13.48 18.147-8.426 14.518.778 1.166 2.01-.194 30.46-6.481 16.462-2.982 19.637-3.37 8.88 4.148.971 4.213-3.5 8.62-20.998 5.184-24.628 4.926-36.682 8.685-.454.324.519.648 16.526 1.555 7.065.389h17.304l32.21 2.398 8.426 5.574 5.055 6.805-.843 5.184-12.962 6.611-17.498-4.148-40.83-9.721-14-3.5h-1.944v1.167l11.666 11.406 21.387 19.314 26.767 24.887 1.36 6.157-3.434 4.86-3.63-.518-23.526-17.693-9.073-7.972-20.545-17.304h-1.36v1.814l4.73 6.935 25.017 37.59 1.296 11.536-1.814 3.76-6.481 2.268-7.13-1.297-14.647-20.544-15.1-23.138-12.185-20.739-1.49.843-7.194 77.448-3.37 3.953-7.778 2.981-6.48-4.925-3.436-7.972 3.435-15.749 4.148-20.544 3.37-16.333 3.046-20.285 1.815-6.74-.13-.454-1.49.194-15.295 20.999-23.267 31.433-18.406 19.702-4.407 1.75-7.648-3.954.713-7.064 4.277-6.286 25.47-32.405 15.36-20.092 9.917-11.6-.065-1.686h-.583L44.07 198.125l-12.055 1.555-5.185-4.86.648-7.972 2.463-2.593 20.35-13.999-.064.065Z"
+      />
+    </svg>
+  )
+}
+
+function OpenCodeMark({ size }: { size: number }) {
+  // opencode brand mark (svgl.app), reduced to a single currentColor
+  // silhouette: the framed monitor glyph with its notch cut out.
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 512 512"
+      fill="currentColor"
+      fillRule="evenodd"
+      // Inline width/height for the same cmdk-force-sizing reason
+      // documented on ClaudeMark above.
+      style={{ display: 'block', width: size, height: size }}
+      aria-hidden="true"
+    >
+      <path
+        clipRule="evenodd"
+        d="M384 416H128V96H384V416ZM320 160H192V352H320V160Z"
+      />
+    </svg>
+  )
+}
+
+function KiloMark({ size }: { size: number }) {
+  // Kilo Code brand mark (svgl.app), rendered in currentColor.
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 32 32"
+      fill="currentColor"
+      style={{ display: 'block' }}
+      aria-hidden="true"
+    >
+      <path d="M23,26v-2h3v-5l-2-2h-4v2h-3v5l2,2h4ZM20,20h3v3h-3v-3Z" />
+      <rect x="12" y="17" width="3" height="3" />
+      <polygon points="26 12 23 12 23 9 20 6 17 6 17 9 20 9 20 12 17 12 17 15 26 15 26 12" />
+      <path d="M0,0v32h32V0H0ZM29,29H3V3h26v26Z" />
+      <polygon points="15 26 15 23 9 23 9 17 6 17 6 23.1875 8.8125 26 15 26" />
+      <rect x="12" y="6" width="3" height="3" />
+      <polygon points="9 12 12 12 12 15 15 15 15 12 12 9 9 9 9 6 6 6 6 15 9 15 9 12" />
+    </svg>
+  )
+}
+
+function KimiMark({ size }: { size: number }) {
+  // Kimi brand mark (svgl.app), reduced to the inner K/M silhouette in
+  // currentColor (the app-icon background and accent dot are dropped).
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 512 512"
+      fill="currentColor"
+      fillRule="evenodd"
+      clipRule="evenodd"
+      style={{ display: 'block' }}
+      aria-hidden="true"
+    >
+      <path d="M321.512 144.254h-50.064l-39.637 90.384h-56.036v-89.99H131v232.868h44.787v-98.103h78.973c13.598 0 26.015-7.927 31.744-20.252v118.355h44.787v-98.103c0-23.342-18.239-42.97-41.523-44.671v-.116h-24.593a45.577 45.577 0 0026.884-24.534l29.453-65.838z" />
+    </svg>
+  )
+}
+
+function CodexMark({ size }: { size: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      fillRule="evenodd"
+      // Inline width/height for the same cmdk-force-sizing reason
+      // documented on ClaudeMark above.
+      style={{ display: 'block', width: size, height: size }}
+      aria-hidden="true"
+    >
+      <path
+        clipRule="evenodd"
+        d="M8.086.457a6.105 6.105 0 013.046-.415c1.333.153 2.521.72 3.564 1.7a.117.117 0 00.107.029c1.408-.346 2.762-.224 4.061.366l.063.03.154.076c1.357.703 2.33 1.77 2.918 3.198.278.679.418 1.388.421 2.126a5.655 5.655 0 01-.18 1.631.167.167 0 00.04.155 5.982 5.982 0 011.578 2.891c.385 1.901-.01 3.615-1.183 5.14l-.182.22a6.063 6.063 0 01-2.934 1.851.162.162 0 00-.108.102c-.255.736-.511 1.364-.987 1.992-1.199 1.582-2.962 2.462-4.948 2.451-1.583-.008-2.986-.587-4.21-1.736a.145.145 0 00-.14-.032c-.518.167-1.04.191-1.604.185a5.924 5.924 0 01-2.595-.622 6.058 6.058 0 01-2.146-1.781c-.203-.269-.404-.522-.551-.821a7.74 7.74 0 01-.495-1.283 6.11 6.11 0 01-.017-3.064.166.166 0 00.008-.074.115.115 0 00-.037-.064 5.958 5.958 0 01-1.38-2.202 5.196 5.196 0 01-.333-1.589 6.915 6.915 0 01.188-2.132c.45-1.484 1.309-2.648 2.577-3.493.282-.188.55-.334.802-.438.286-.12.573-.22.861-.304a.129.129 0 00.087-.087A6.016 6.016 0 015.635 2.31C6.315 1.464 7.132.846 8.086.457zm-.804 7.85a.848.848 0 00-1.473.842l1.694 2.965-1.688 2.848a.849.849 0 001.46.864l1.94-3.272a.849.849 0 00.007-.854l-1.94-3.393zm5.446 6.24a.849.849 0 000 1.695h4.848a.849.849 0 000-1.696h-4.848z"
+      />
+    </svg>
+  )
+}
+
+function AmpMark({ size }: { size: number }) {
+  // Amp brand mark (ampcode.com/amp-mark-color.svg) in currentColor.
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 21 21"
+      fill="currentColor"
+      style={{ display: 'block' }}
+      aria-hidden="true"
+    >
+      <path d="M3.76879 18.3015L8.49839 13.505L10.2196 20.0399L12.72 19.3561L10.2288 9.86749L0.890876 7.33844L0.22594 9.89331L6.65134 11.6388L1.94138 16.4282L3.76879 18.3015Z" />
+      <path d="M17.4074 12.7414L19.9078 12.0575L17.4167 2.56897L8.07873 0.0399246L7.4138 2.5948L15.2992 4.73685L17.4074 12.7414Z" />
+      <path d="M13.8184 16.3883L16.3188 15.7044L13.8276 6.21588L4.48971 3.68683L3.82477 6.24171L11.7101 8.38376L13.8184 16.3883Z" />
+    </svg>
+  )
+}
+
+function MastraMark({ size }: { size: number }) {
+  // Mastra brand mark (code.mastra.ai/img/mastra.svg) in currentColor.
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 34 21"
+      fill="currentColor"
+      style={{ display: 'block' }}
+      aria-hidden="true"
+    >
+      <path d="M4.5 11.7a4.5 4.5 0 1 1 0 9 4.5 4.5 0 0 1 0-9M10.4 0a4.5 4.5 0 0 1 4.4 5.5c-.3 1.4-.6 3 .2 4.2l1.3 1.8.3.2q.2 0 .3-.2l1.3-1.9c.8-1.1.5-2.7.2-4a4.5 4.5 0 1 1 8.8 0c-.3 1.3-.6 2.8 0 4l1.3 2a4.5 4.5 0 1 1-4.3 3.5c.3-1.3.6-2.8 0-4l-1.2-2h-.2L21.5 11c-.8 1.2-.5 2.8-.2 4.2a4.5 4.5 0 1 1-8.8.2q.5-2-.4-3.8l-.9-1.3q-.9-1.1-2.4-1.6A4.5 4.5 0 0 1 10.4 0" />
+    </svg>
+  )
+}
+
+/* ---------------------------------------------------------------------------
+ * Per-agent brand colours — fixed (not theme-aware, they are brand colours)
+ * -------------------------------------------------------------------------*/
+
+export const BRAND: Record<string, { color: string; glow: string }> = {
+  'claude-code': { color: '#D97757', glow: 'rgba(217,119,87,0.55)' },
+  codex: { color: '#e6e8eb', glow: 'rgba(230,232,235,0.45)' },
+  opencode: { color: '#ebe9e6', glow: 'rgba(235,233,230,0.45)' },
+  kilo: { color: '#cddc39', glow: 'rgba(205,220,57,0.45)' },
+  kimi: { color: '#027aff', glow: 'rgba(2,122,255,0.5)' },
+  amp: { color: '#f34e3f', glow: 'rgba(243,78,63,0.5)' },
+  mastracode: { color: '#e6e8eb', glow: 'rgba(230,232,235,0.45)' },
+}
+
+/**
+ * Maps agent name → its Mark component.
+ * Must stay in sync with BRAND — every key in BRAND needs an entry here.
+ * Adding a new agent: add to BRAND above AND add to MARKS here.
+ */
+export const MARKS: Record<string, React.ComponentType<{ size: number }>> = {
+  'claude-code': ClaudeMark,
+  codex: CodexMark,
+  opencode: OpenCodeMark,
+  kilo: KiloMark,
+  kimi: KimiMark,
+  amp: AmpMark,
+  mastracode: MastraMark,
+}
+
+/**
+ * Default fallback mark. Exported so consumers that get an unknown
+ * agent still have a concrete component to render — kept identical
+ * to the pre-split behaviour which fell back to ClaudeMark.
+ */
+export const DEFAULT_MARK = ClaudeMark
