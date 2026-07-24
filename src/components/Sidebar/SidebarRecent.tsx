@@ -100,6 +100,7 @@ export function SidebarRecent() {
                 <TabChip
                   tabId={row.tabKey}
                   density="compact"
+                  showDanger
                   active={row.isCurrent}
                 />
               </button>
