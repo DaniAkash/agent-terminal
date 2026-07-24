@@ -27,9 +27,9 @@ export function Sidebar() {
   return (
     <div className="flex h-full w-[var(--sidebar-width)] min-w-[var(--sidebar-width)] flex-col border-sidebar-border border-r bg-sidebar">
       {/* Header — drag region hosting the view toggle. Reserves the
-          macOS traffic-light row (~78px) on the left; the Tauri config
-          also sets trafficLightPosition so the buttons vertically
-          centre inside the 38px header instead of sitting near the top. */}
+          macOS traffic-light row (~80px) on the left. Traffic lights
+          keep their default Tauri Overlay placement (looked correct
+          before we started fiddling). */}
       <div
         data-tauri-drag-region
         className="flex h-[38px] shrink-0 items-center justify-end border-sidebar-border border-b pr-3 pl-[80px]"
