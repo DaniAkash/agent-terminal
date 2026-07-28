@@ -20,8 +20,10 @@ struct InspectorTabState {
 /// its children) so launchers like `npx`, `bun run`, and `cargo run` report
 /// accurate totals rather than just the wrapper process's footprint.
 ///
-/// Port scanning also covers grandchildren so the actual listening server is
-/// detected even when the launcher forks before binding.
+/// Port scanning also covers every descendant of the shell (up to
+/// `MAX_DESCENDANT_DEPTH`) so the actual listening server is detected even
+/// when the tree is deep, e.g. an agent CLI spawning a subshell that spawns
+/// the server.
 ///
 /// Uses `ps -o args=` for command line args (sysinfo can't read cmd on macOS).
 /// Uses `sysinfo` for CPU/memory metrics (fast, no subprocess).
@@ -161,7 +163,8 @@ fn is_runtime_wrapper(name: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::identify_agent;
+    use super::{identify_agent, walk_descendants};
+    use std::collections::HashMap;
 
     #[test]
     fn direct_process_names_resolve() {
@@ -191,6 +194,87 @@ mod tests {
         // claude is not runtime_wrapped, so a bun-wrapped `claude` token must
         // not match through the argv walk (direct name match is the only path).
         assert_eq!(identify_agent("bun", "bun /x/claude"), None);
+    }
+
+    // ---- walk_descendants ----
+
+    #[test]
+    fn walk_descendants_handles_deep_agent_subtree() {
+        // Regression test for the port-visibility bug: an agent-nested server
+        // sits 4 levels below the shell (shell → agent → subshell → server).
+        // Every descendant must map back to the direct-child root so lsof
+        // attribution finds it.
+        //
+        // Synthetic tree:
+        //   shell (100)  ← not passed as root; the caller passes direct children
+        //     node/claude (200)   ← ROOT (direct child of shell)
+        //       bash (300)        ← depth 1 below root
+        //         bun/dev (400)   ← depth 2, opens port
+        //           node/vite (500) ← depth 3, real listener
+        let mut edges = HashMap::new();
+        edges.insert(100, vec![200]);
+        edges.insert(200, vec![300]);
+        edges.insert(300, vec![400]);
+        edges.insert(400, vec![500]);
+
+        let mut got = walk_descendants(&[200], &edges, 8);
+        got.sort();
+        assert_eq!(got, vec![(300, 200), (400, 200), (500, 200)]);
+    }
+
+    #[test]
+    fn walk_descendants_respects_depth_cap() {
+        // Chain of 10 processes with cap=3 must yield exactly 3 descendants.
+        let mut edges = HashMap::new();
+        let chain: Vec<u32> = (1..=10).map(|i| i * 10).collect();
+        for pair in chain.windows(2) {
+            edges.insert(pair[0], vec![pair[1]]);
+        }
+
+        let out = walk_descendants(&[chain[0]], &edges, 3);
+        assert_eq!(out.len(), 3, "depth cap should stop the walk after 3 levels");
+        assert!(
+            out.iter().all(|(_, root)| *root == chain[0]),
+            "every descendant should attribute to the single root",
+        );
+    }
+
+    #[test]
+    fn walk_descendants_handles_multiple_roots_and_siblings() {
+        // root A (100) fans out to two children, each with one child.
+        // root B (200) is a chain of 3.
+        let mut edges = HashMap::new();
+        edges.insert(100, vec![110, 120]);
+        edges.insert(110, vec![111]);
+        edges.insert(120, vec![121]);
+        edges.insert(200, vec![210]);
+        edges.insert(210, vec![211]);
+        edges.insert(211, vec![212]);
+
+        let out = walk_descendants(&[100, 200], &edges, 8);
+        let root_of = |pid: u32| out.iter().find(|(d, _)| *d == pid).map(|(_, r)| *r);
+        assert_eq!(root_of(110), Some(100));
+        assert_eq!(root_of(111), Some(100));
+        assert_eq!(root_of(120), Some(100));
+        assert_eq!(root_of(121), Some(100));
+        assert_eq!(root_of(210), Some(200));
+        assert_eq!(root_of(211), Some(200));
+        assert_eq!(root_of(212), Some(200));
+    }
+
+    #[test]
+    fn walk_descendants_ignores_cycles_defensively() {
+        // Real `ps` output cannot produce cycles, but if the parser saw one,
+        // the `seen` set should prevent an infinite walk.
+        let mut edges = HashMap::new();
+        edges.insert(100, vec![200]);
+        edges.insert(200, vec![300]);
+        edges.insert(300, vec![100]); // cycle back to root
+
+        let out = walk_descendants(&[100], &edges, 8);
+        // 200 and 300 attributed to 100; 100 itself never re-attributed.
+        assert_eq!(out.len(), 2);
+        assert!(out.iter().all(|(_, r)| *r == 100));
     }
 }
 
@@ -224,21 +308,24 @@ async fn scan_processes(shell_pid: u32) -> Vec<serde_json::Value> {
 
     // Step 3: build the subtree attribution map (pid → root direct-child pid).
     // This single ps scan is shared by both metric aggregation and port scanning
-    // so the system is only queried once per poll cycle for grandchildren.
+    // so the system is only queried once per poll cycle for the whole subtree.
     //
-    // Many launchers (npx, bun run, cargo run) fork the real work as a child:
-    //   shell → launcher (direct child) → server (grandchild)
-    // Without grandchild attribution, memory shows only the launcher's footprint
-    // and port scanning misses the server's bound port entirely.
-    let grandchildren = find_grandchildren(&pids).await;
+    // Real-world trees run several levels deep. Common cases:
+    //   shell → launcher (npx / bun run / cargo run) → server           (depth 2)
+    //   shell → agent CLI (claude / codex / opencode) → subshell → server (depth 3)
+    //   shell → tmux → shell → task-runner → server                     (depth 4+)
+    // Without descendant attribution, memory shows only the top launcher's
+    // footprint and port scanning misses the server's bound port entirely.
+    let descendants = find_descendants(&pids).await;
     let mut attribution: HashMap<u32, u32> = pids.iter().map(|&p| (p, p)).collect();
-    for (grandchild, parent) in &grandchildren {
-        attribution.insert(*grandchild, *parent);
+    for (descendant, root) in &descendants {
+        attribution.insert(*descendant, *root);
     }
 
     // Step 4: get CPU/memory/elapsed via sysinfo (not Send — spawn_blocking).
-    // Memory and CPU are summed across direct child + grandchildren so the
-    // status bar reflects the full process tree footprint, not just the wrapper.
+    // Memory and CPU are summed across the direct child + every descendant in
+    // the attribution map so the status bar reflects the full process tree
+    // footprint, not just the wrapper.
     let pids_clone = pids.clone();
     let attribution_clone = attribution.clone();
     let raw = tokio::task::spawn_blocking(move || {
@@ -308,13 +395,27 @@ async fn find_children_of_shell(shell_pid: u32) -> Vec<u32> {
     pids
 }
 
-/// Return (grandchild_pid, direct_child_pid) pairs for one level below `pids`.
+/// Bounded recursion cap for descendant walk. Covers real-world agent stacks
+/// (agent CLI → wrapper → shell → task-runner → server ≈ 5 levels) with
+/// headroom for tmux-inside-tmux and future architectures. Any process tree
+/// deeper than this is diagnosing itself; capping here hard-stops a malformed
+/// `ps` stream from turning into a runaway walk.
+const MAX_DESCENDANT_DEPTH: usize = 8;
+
+/// Return (descendant_pid, root_direct_child_pid) pairs for every descendant
+/// of `pids` up to `MAX_DESCENDANT_DEPTH` levels deep.
 ///
-/// One level of expansion covers the common launcher pattern:
-///   shell → launcher → server
-/// Deeper nesting (great-grandchildren) is not tracked — add another pass here
-/// if needed.
-async fn find_grandchildren(pids: &[u32]) -> Vec<(u32, u32)> {
+/// A single `ps -ax -o pid=,ppid=` scan captures every parent → child edge in
+/// the system; BFS from each root walks the subtree without further process-
+/// list queries. Attribution collapses each descendant to the top-level
+/// ancestor in `pids` (the direct child of the shell), so downstream callers
+/// (memory aggregation, port scanning) can group by that root.
+///
+/// Replaces the pre-2026-07 `find_grandchildren` which only expanded one
+/// level. That was fine for the shell → launcher → server pattern but missed
+/// servers spawned inside a Claude Code, Codex, or OpenCode subtree, where
+/// the actual listener sits at depth 3+ (shell → agent → subshell → server).
+async fn find_descendants(pids: &[u32]) -> Vec<(u32, u32)> {
     if pids.is_empty() {
         return Vec::new();
     }
@@ -330,21 +431,52 @@ async fn find_grandchildren(pids: &[u32]) -> Vec<(u32, u32)> {
 
     let Some(output) = output else { return Vec::new() };
     let text = String::from_utf8_lossy(&output.stdout);
-    let parent_set: std::collections::HashSet<u32> = pids.iter().cloned().collect();
 
-    let mut pairs = Vec::new();
+    let mut children_by_parent: HashMap<u32, Vec<u32>> = HashMap::new();
     for line in text.lines() {
         let mut parts = line.split_whitespace();
-        let child: u32 = match parts.next().and_then(|s| s.parse().ok()) {
-            Some(p) => p,
-            None => continue,
+        let Some(child) = parts.next().and_then(|s| s.parse::<u32>().ok()) else {
+            continue;
         };
-        let ppid: u32 = match parts.next().and_then(|s| s.parse().ok()) {
-            Some(p) => p,
-            None => continue,
+        let Some(ppid) = parts.next().and_then(|s| s.parse::<u32>().ok()) else {
+            continue;
         };
-        if parent_set.contains(&ppid) {
-            pairs.push((child, ppid));
+        children_by_parent.entry(ppid).or_default().push(child);
+    }
+
+    walk_descendants(pids, &children_by_parent, MAX_DESCENDANT_DEPTH)
+}
+
+/// Pure BFS core, extracted so tests can drive it with synthetic edge sets
+/// without going through `ps`. See `find_descendants` for callsite semantics.
+fn walk_descendants(
+    roots: &[u32],
+    children_by_parent: &HashMap<u32, Vec<u32>>,
+    max_depth: usize,
+) -> Vec<(u32, u32)> {
+    let mut pairs = Vec::new();
+    // `seen` includes the roots themselves so a root that (impossibly) shows
+    // up as a child of another PID is not re-attributed.
+    let mut seen: std::collections::HashSet<u32> = roots.iter().cloned().collect();
+    for &root in roots {
+        let mut frontier: Vec<u32> = vec![root];
+        for _ in 0..max_depth {
+            let mut next = Vec::new();
+            for parent in &frontier {
+                if let Some(kids) = children_by_parent.get(parent) {
+                    for &child in kids {
+                        if !seen.insert(child) {
+                            continue;
+                        }
+                        pairs.push((child, root));
+                        next.push(child);
+                    }
+                }
+            }
+            if next.is_empty() {
+                break;
+            }
+            frontier = next;
         }
     }
     pairs
@@ -389,8 +521,8 @@ async fn get_process_args(pids: &[u32]) -> HashMap<u32, String> {
 ///
 /// - **name / elapsed**: taken from the direct child only (the process the user
 ///   invoked). The launcher's identity is what matters for display.
-/// - **memory_kb**: sum of the direct child + all grandchildren. Reflects the
-///   true memory footprint of the process tree.
+/// - **memory_kb**: sum of the direct child + every descendant in the
+///   attribution map. Reflects the true memory footprint of the process tree.
 /// - **cpu_percent**: sum across the subtree. May exceed 100% on multi-core
 ///   systems when the server is CPU-bound, which is accurate and expected.
 ///
@@ -440,7 +572,8 @@ fn get_process_metrics(
             let mut total_memory_kb: u64 = 0;
             let mut total_cpu: f32 = 0.0;
 
-            // Sum across every pid attributed to this root (includes grandchildren).
+            // Sum across every pid attributed to this root (includes every
+            // descendant up to MAX_DESCENDANT_DEPTH).
             for (&pid, &root) in attribution {
                 if root == root_pid {
                     if let Some((_, cpu, mem, _)) = raw.get(&pid) {
@@ -467,11 +600,12 @@ fn format_elapsed(secs: u64) -> String {
 }
 
 /// Scan listening TCP ports for `direct_pids` using the pre-built `attribution`
-/// map (pid → root direct-child pid) to include grandchildren without an extra
-/// ps call.
+/// map (pid → root direct-child pid) to include every descendant without an
+/// extra ps call.
 ///
-/// Grandchild ports are attributed to the direct-child PID so the status bar
-/// entry stays stable and correct.
+/// Descendant ports are attributed to the top-level direct-child PID so the
+/// status bar entry stays stable and correct, regardless of how deep the
+/// binding process actually sits.
 async fn find_listening_ports_per_pid(
     direct_pids: &[u32],
     attribution: &HashMap<u32, u32>,
