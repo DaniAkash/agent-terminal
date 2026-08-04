@@ -177,26 +177,26 @@ jobs:
       # dependency compilation — required even for `cargo check`, not just
       # build. Apt list mirrors Tauri 2's prerequisites doc.
       #
-      # awalsh128/cache-apt-pkgs-action caches the installed .deb files
-      # (plus their transitive tree) under the given `version` key and
-      # replays them on cache hit. First cold run installs normally
-      # (~30s of apt-get update + download + dpkg). Subsequent runs
-      # restore from cache in ~2s. Bump `version` when the package list
-      # changes to force a fresh install.
+      # NOTE: previously wrapped in awalsh128/cache-apt-pkgs-action to cut
+      # ~29s of install time, but that action installs the listed packages
+      # without their transitive -dev tree, so libwebkit2gtk-4.1-dev landed
+      # without libglib2.0-dev and glib-sys build.rs failed the whole
+      # Rust/Tauri job with pkg-config errors. Reverted to raw apt-get. If
+      # apt caching is revisited, either enumerate every -dev dep by hand
+      # or move to a Docker image with the deps pre-installed.
       - name: Install Tauri Linux dependencies
-        uses: awalsh128/cache-apt-pkgs-action@v1
-        with:
-          packages: >-
-            libwebkit2gtk-4.1-dev
-            build-essential
-            curl
-            wget
-            file
-            libxdo-dev
-            libssl-dev
-            libayatana-appindicator3-dev
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
             librsvg2-dev
-          version: 1.0
 
       - uses: dtolnay/rust-toolchain@stable
         with:
