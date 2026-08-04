@@ -34,7 +34,7 @@ export type AgentState = 'idle' | 'in-progress' | 'completed' | 'awaiting'
  * revisit when AgentTurnMod provides richer exit metadata.
  */
 export function deriveAgentState(meta: TabMeta | undefined): AgentState {
-  if (!meta || meta.type !== 'agent') return 'idle'
+  if (meta?.type !== 'agent') return 'idle'
   // Hook data from AgentTurnMod takes priority — richer and more accurate.
   if (meta.agentState) return meta.agentState
   // Fallback: OSC 133 process exit signals a completed session.

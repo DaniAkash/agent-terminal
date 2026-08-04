@@ -14,8 +14,8 @@ import {
 import type { ProjectSummary, TabSummary } from '@/modules/wss/protocol.gen'
 import { NewProjectSheet } from './NewProjectSheet'
 import { NewTabSheet } from './NewTabSheet'
-import { RenameSheet, type RenameTarget } from './RenameSheet'
 import { useProjectsData } from './projects.data'
+import { RenameSheet, type RenameTarget } from './RenameSheet'
 
 // fallow-ignore-next-line complexity
 export function ProjectsScreen() {
