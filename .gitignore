@@ -11,6 +11,15 @@ node_modules
 dist
 dist-ssr
 *.local
+
+# Other package managers' lockfiles. bun is the standard here (bun.lock
+# is committed); yarn / npm / pnpm lockfiles should never be checked in
+# because they'd fight the bun lockfile for source-of-truth. Tools like
+# Next.js occasionally auto-install a fallback if their TS/eslint probe
+# fails — this catches those artifacts before they can be committed.
+yarn.lock
+package-lock.json
+pnpm-lock.yaml
 # Cargo build artifacts for the xtask crate at the repo root. src-tauri
 # has its own .gitignore for its target/. Keeping target/ ignored at
 # root also matters for biome, which honours the root .gitignore via
