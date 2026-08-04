@@ -1,4 +1,9 @@
-# PR CI, gated behind manual approval.
+# PR CI, gated behind manual approval. Also runs on push to main so the
+# per-branch caches (Swatinem rust-cache, typeshare-cli, apt-pkgs) get
+# populated under `refs/heads/main`. GitHub Actions cache scope only lets
+# a PR restore caches from its own ref or its base branch, so without a
+# main cache every new PR pays the cold-compile cost on its first run
+# (~5 min of cargo check + test).
 #
 # One-time setup (otherwise the `approve` gate is a no-op):
 #   Repo Settings → Environments → New environment → name `ci-approval`
@@ -17,6 +22,11 @@ on:
     branches:
       - main
       - feat/desktop-sidecar-substrate
+  push:
+    # Cache-warming trigger only. Main pushes go through PR review already,
+    # so re-running the same checks is defensive, not a second gate.
+    branches:
+      - main
   workflow_dispatch:
 
 concurrency:
@@ -28,6 +38,10 @@ permissions:
 
 jobs:
   approve:
+    # PR-only gate. On push to main, the merge itself is the review, so
+    # the approval step is skipped and downstream jobs run unconditionally
+    # via their `if:` guards.
+    if: github.event_name == 'pull_request'
     name: Wait for manual approval
     runs-on: ubuntu-latest
     environment: ci-approval
@@ -42,6 +56,10 @@ jobs:
   js-checks:
     name: JS / TypeScript
     needs: approve
+    # Runs when approve succeeds (PR path) or is skipped (push-to-main
+    # path). always() is required so the job evaluates its condition
+    # instead of inheriting `skipped` from a skipped dependency.
+    if: always() && (needs.approve.result == 'success' || needs.approve.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -147,6 +165,7 @@ jobs:
   rust-checks:
     name: Rust / Tauri
     needs: approve
+    if: always() && (needs.approve.result == 'success' || needs.approve.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -157,19 +176,27 @@ jobs:
       # tauri-runtime-wry's build script links against WebKitGTK during
       # dependency compilation — required even for `cargo check`, not just
       # build. Apt list mirrors Tauri 2's prerequisites doc.
+      #
+      # awalsh128/cache-apt-pkgs-action caches the installed .deb files
+      # (plus their transitive tree) under the given `version` key and
+      # replays them on cache hit. First cold run installs normally
+      # (~30s of apt-get update + download + dpkg). Subsequent runs
+      # restore from cache in ~2s. Bump `version` when the package list
+      # changes to force a fresh install.
       - name: Install Tauri Linux dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            build-essential \
-            curl \
-            wget \
-            file \
-            libxdo-dev \
-            libssl-dev \
-            libayatana-appindicator3-dev \
+        uses: awalsh128/cache-apt-pkgs-action@v1
+        with:
+          packages: >-
+            libwebkit2gtk-4.1-dev
+            build-essential
+            curl
+            wget
+            file
+            libxdo-dev
+            libssl-dev
+            libayatana-appindicator3-dev
             librsvg2-dev
+          version: 1.0
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -219,6 +246,7 @@ jobs:
   companion-checks:
     name: Companion (Expo)
     needs: approve
+    if: always() && (needs.approve.result == 'success' || needs.approve.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
