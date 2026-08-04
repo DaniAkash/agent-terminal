@@ -47,7 +47,7 @@
     "concurrently": "^10.0.3",
     "fallow": "^2.102.0",
     "react-doctor": "0.7.6",
-    "typescript": "~6.0.3"
+    "typescript": "^7.0.2"
   },
   "scripts": {
     "start": "expo start",
