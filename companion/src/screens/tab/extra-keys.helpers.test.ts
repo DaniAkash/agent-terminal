@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { SEQ, applyAlt, applyCtrl } from './extra-keys.helpers'
+import { applyAlt, applyCtrl, SEQ } from './extra-keys.helpers'
 
 describe('SEQ', () => {
   test('arrow keys are the standard CSI sequences', () => {

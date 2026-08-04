@@ -34,16 +34,26 @@ export default function TerminalDom({
   const termRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
 
-  // Live refs to the latest callbacks. The useEffect below reads these
-  // during xterm.js events without needing the props themselves in its
-  // deps array. Keeps the effect (and the WebView-backed Terminal) mounted
-  // across parent state changes, e.g. modifier arm/disarm in TabScreen.
+  // Live refs to the latest callbacks. The setup useEffect below reads
+  // these during xterm.js events without needing the props themselves in
+  // its deps array. Keeps the effect (and the WebView-backed Terminal)
+  // mounted across parent state changes, e.g. modifier arm/disarm in
+  // TabScreen.
+  //
+  // Sync happens inside an effect (no deps → runs after every commit)
+  // rather than direct render-time mutation so we stay safe against
+  // React's concurrent-render replay semantics. Latency between prop
+  // change and ref update is one render cycle, invisible here because
+  // the refs are only read from later-fired xterm events + ResizeObserver
+  // callbacks, both of which happen after commit anyway.
   const onDataRef = useRef(onData)
   const onResizeRef = useRef(onResize)
   const onReadyRef = useRef(onReady)
-  onDataRef.current = onData
-  onResizeRef.current = onResize
-  onReadyRef.current = onReady
+  useEffect(() => {
+    onDataRef.current = onData
+    onResizeRef.current = onResize
+    onReadyRef.current = onReady
+  })
 
   useDOMImperativeHandle(ref, () => ({
     write: (...args: Args) => {

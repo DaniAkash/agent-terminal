@@ -48,3 +48,10 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# Gradle build output inside local Expo modules. Ephemeral, regenerated
+# on every `expo run:android`, never committed. Also keeps biome + fallow
+# from scanning it via their `useIgnoreFile` integration.
+modules/*/android/build/
+modules/*/android/.gradle/
+modules/*/android/local.properties

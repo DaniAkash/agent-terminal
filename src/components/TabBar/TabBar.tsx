@@ -14,7 +14,8 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { useStore } from '@nanostores/react'
 import { Pin, X } from 'lucide-react'
-import { TabStatusIcon } from '@/components/TabStatusIcon'
+import { SidebarRevealButton } from '@/components/Sidebar/SidebarRevealButton'
+import { TabChip } from '@/components/TabChip/TabChip'
 import {
   ContextMenu,
   ContextMenuContent,
@@ -33,6 +34,7 @@ import {
   reorderTabs,
   toggleTabPin,
 } from '@/modules/stores/$projects'
+import { $sidebarVisible } from '@/modules/stores/$sidebarVisible'
 import { $tabMeta } from '@/modules/stores/$tabMeta'
 import {
   MONO_FONT,
@@ -96,16 +98,18 @@ function TabItem({ tab, projectId }: { tab: Tab; projectId: string }) {
               className="flex flex-1 cursor-pointer items-center gap-1.5 overflow-hidden pr-1 pl-3"
               onClick={() => navigateToTab(projectId, tab.id)}
             >
-              <TabStatusIcon
+              {/* Danger indicator (DangerBadge) intentionally omitted here.
+                  TabChip's showDanger prop defaults to false; the sidebar is
+                  the trust surface and opts in, the top tab bar stays quiet
+                  because the same signal is already one glance to the left. */}
+              <TabChip
                 tabId={makeTabKey(projectId, tab.id)}
+                density="medium"
                 active={isActive}
               />
               <span className="truncate" style={{ fontFamily: MONO_FONT }}>
                 {resolveTabLabel(tab, tabMeta?.cwd)}
               </span>
-              {/* Danger indicator intentionally omitted here — the sidebar
-                  already shows it for the same tab; duplicating it on the
-                  top tab bar adds visual noise without new information. */}
             </button>
 
             {/* Pin / close action — sibling of nav button, not nested */}
@@ -168,6 +172,7 @@ export function TabBar({ project }: { project: Project }) {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
   )
+  const sidebarVisible = useStore($sidebarVisible)
 
   const orderedTabs = [
     ...project.tabs.filter((t) => t.pinned),
@@ -190,9 +195,21 @@ export function TabBar({ project }: { project: Project }) {
   return (
     <div
       data-tauri-drag-region
-      className="flex h-[38px] shrink-0 items-end border-[var(--tab-border)] border-b bg-tab-bar px-2"
+      className={cn(
+        'flex h-[38px] shrink-0 items-end border-[var(--tab-border)] border-b bg-tab-bar pr-2',
+        // Reserve the ~78px macOS traffic-light row when the TabBar is
+        // the window's top-left component (sidebar hidden). When the
+        // sidebar is visible, the sidebar owns that reservation via its
+        // own pl-[78px], so the TabBar starts at its natural left edge.
+        sidebarVisible ? 'pl-2' : 'pl-[80px]',
+      )}
       style={{ gap: 2 }}
     >
+      {/* Sidebar reveal / hide toggle — always the leftmost affordance in
+          the TabBar so the user has one stable place to find it in both
+          visible and hidden states. Duplicated by ⌘B. */}
+      <SidebarRevealButton />
+
       {/* Tab strip — content-sized, capped so the add-button is never hidden.
           `shrink-0` keeps it at content width; max-w caps it when tabs overflow. */}
       <div

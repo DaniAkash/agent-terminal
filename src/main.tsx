@@ -7,6 +7,8 @@ import { startNotificationsBridge } from '@/modules/notifications/notificationsB
 import { syncNotificationsEnabledToBackend } from '@/modules/notifications/preferences'
 import { initNavigation } from '@/modules/stores/$navigation'
 import { $projects } from '@/modules/stores/$projects'
+import { initSidebarViewFromStorage } from '@/modules/stores/$sidebarView'
+import { initSidebarVisibleFromStorage } from '@/modules/stores/$sidebarVisible'
 import { initTabRecencySubscriber } from '@/modules/stores/$tabRecency.init'
 import { initThemeFromStorage } from '@/modules/stores/$theme'
 import { installMobileOpsListener } from '@/modules/wss-bridge/mobile-ops'
@@ -40,6 +42,8 @@ async function bootstrap() {
 
   initNavigation()
   initThemeFromStorage()
+  initSidebarVisibleFromStorage()
+  initSidebarViewFromStorage()
 
   // Recency tracker subscribes to navigation; must run after initNavigation
   // so the first bump captures the project/tab restored from disk.

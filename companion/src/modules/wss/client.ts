@@ -1,3 +1,4 @@
+import { $device } from '@/modules/stores/$device'
 import { $session, resetSession } from '@/modules/stores/$session'
 import type {
   ClientFrame,
@@ -11,6 +12,7 @@ import type {
   ServerFrame,
   TabStateSummary,
 } from '@/modules/wss/protocol.gen'
+import { PinnedWebSocket } from '../../../modules/pinned-websocket'
 import { computeBackoffDelay } from './client.helpers'
 
 export type TabHandlers = {
@@ -28,7 +30,7 @@ type TabSubscription = TabHandlers & {
 const subscriptions = new Map<string, TabSubscription>()
 
 type ConnectionState = {
-  socket: WebSocket | null
+  socket: PinnedWebSocket | null
   socketGeneration: number
   url: string | null
   token: string | null
@@ -36,7 +38,14 @@ type ConnectionState = {
   reconnectTimer: ReturnType<typeof setTimeout> | null
   heartbeatTimer: ReturnType<typeof setInterval> | null
   pongDeadline: number | null
+  /**
+   * Wall-clock ms of the last inbound frame of any kind. Feeds the
+   * watchdog (receive-side liveness) and probeConnection (foreground
+   * probe waits for lastFrameAt to bump past a captured baseline).
+   */
+  lastFrameAt: number | null
   intentionallyDisconnected: boolean
+  probing: boolean
 }
 
 const state: ConnectionState = {
@@ -48,17 +57,29 @@ const state: ConnectionState = {
   reconnectTimer: null,
   heartbeatTimer: null,
   pongDeadline: null,
+  lastFrameAt: null,
   intentionallyDisconnected: false,
+  probing: false,
 }
 
 const HEARTBEAT_INTERVAL_MS = 15_000
 const PONG_TIMEOUT_MS = 30_000
+// Watchdog: force-close if no inbound frame in this window. Sized just
+// above heartbeat's worst-case round-trip (15 s ping cadence + 30 s
+// pong window) so a normal missed pong doesn't trip it, but a truly
+// silent socket doesn't linger past ~45 s.
+const FRAME_STALE_MS = 45_000
+// probeConnection budget: on foreground / network transition we send
+// a ping and wait for ANY inbound frame this long before declaring the
+// socket dead.
+const PROBE_TIMEOUT_MS = 3_000
+const PROBE_POLL_MS = 100
 
 export function connect(url: string, token: string): void {
-  // Scheme is caller-owned. The desktop ships TLS-on by default so the
-  // paired URL is `wss://`; a user who deliberately disabled TLS on the
-  // desktop for debugging pastes a `ws://` URL and we honour it. Silent
-  // scheme rewriting here would defeat that escape hatch.
+  // Every connection is TLS-pinned end-to-end. The PinnedWebSocket
+  // constructor rejects non-wss:// URLs synchronously so a stale ws://
+  // URL from a legacy paired record fails loudly at construction rather
+  // than silently downgrading the transport.
   console.log('[wss.client] connect()', {
     url,
     tokenLen: token.length,
@@ -120,34 +141,41 @@ function probeSocket(url: string, timeoutMs: number): Promise<boolean> {
       done = true
       resolve(ok)
     }
+    const fingerprint = $device.get().record?.fingerprint
+    if (!fingerprint) {
+      finish(false)
+      return
+    }
+    let ws: PinnedWebSocket
     try {
-      const ws = new WebSocket(url)
-      const timer = setTimeout(() => {
-        try {
-          ws.close()
-        } catch {
-          /* ignore */
-        }
-        finish(false)
-      }, timeoutMs)
-      ws.onopen = () => {
-        clearTimeout(timer)
-        try {
-          ws.close()
-        } catch {
-          /* ignore */
-        }
-        finish(true)
-      }
-      ws.onerror = () => {
-        clearTimeout(timer)
-        finish(false)
-      }
-      ws.onclose = () => {
-        clearTimeout(timer)
-        finish(false)
-      }
+      ws = new PinnedWebSocket(url, { fingerprint })
     } catch {
+      finish(false)
+      return
+    }
+    const timer = setTimeout(() => {
+      try {
+        ws.close()
+      } catch {
+        /* ignore */
+      }
+      finish(false)
+    }, timeoutMs)
+    ws.onopen = () => {
+      clearTimeout(timer)
+      try {
+        ws.close()
+      } catch {
+        /* ignore */
+      }
+      finish(true)
+    }
+    ws.onerror = () => {
+      clearTimeout(timer)
+      finish(false)
+    }
+    ws.onclose = () => {
+      clearTimeout(timer)
       finish(false)
     }
   })
@@ -218,6 +246,19 @@ const pendingOps = new Map<number, PendingOp>()
 
 const OP_TIMEOUT_MS = 10_000
 
+/**
+ * Reject every in-flight CRUD op with `err`. Called on any hard close
+ * so callers don't sit spinning for the 10-second op timeout when the
+ * socket is already gone.
+ */
+function rejectAllPending(err: Error): void {
+  for (const [, pending] of pendingOps) {
+    clearTimeout(pending.timer)
+    pending.reject(err)
+  }
+  pendingOps.clear()
+}
+
 // Shared pending-op plumbing: register the op_id in the pending map,
 // arm the timeout, then send the fully-typed frame. Every caller passes
 // a `ClientFrame` built from the generated union — no casts, no escape
@@ -231,7 +272,7 @@ function sendPending(opId: number, frame: ClientFrame): Promise<void> {
     // the pending entry armed and the caller waiting the full 10 s
     // timeout for a misleading "timed out" error when the actual state
     // is "not connected".
-    if (state.socket?.readyState !== WebSocket.OPEN) {
+    if (state.socket?.readyState !== PinnedWebSocket.OPEN) {
       reject(new Error(`${frame.op} failed: not connected`))
       return
     }
@@ -309,7 +350,7 @@ function sendSubscribeOrResume(tabId: string, sub: TabSubscription): void {
 }
 
 function send(frame: ClientFrame): void {
-  if (state.socket?.readyState !== WebSocket.OPEN) return
+  if (state.socket?.readyState !== PinnedWebSocket.OPEN) return
   state.socket.send(JSON.stringify(frame))
 }
 
@@ -325,21 +366,27 @@ function openSocket(): void {
   state.socketGeneration += 1
   const generation = state.socketGeneration
   state.socket = ws
+  // Fresh socket, no history. Watchdog needs a baseline so it doesn't
+  // fire on the first tick before any frame has arrived.
+  state.lastFrameAt = Date.now()
   ws.onopen = () => {
     if (!isCurrentGeneration(generation)) return
     handleOpen()
   }
   ws.onmessage = (event) => {
     if (!isCurrentGeneration(generation)) return
-    handleFrame(event.data as string)
+    handleFrame(event.data)
   }
   ws.onclose = (event) => {
     if (!isCurrentGeneration(generation)) return
-    handleClose(event)
+    forceCloseAndReconnect(event.reason || `socket closed (${event.code})`)
   }
   ws.onerror = (event) => {
     if (!isCurrentGeneration(generation)) return
-    console.error('[wss.client] socket error event', event)
+    // Route through forceCloseAndReconnect so a zombie socket that
+    // fires onerror without a matching onclose still tears down.
+    // Idempotent via the generation bump inside forceCloseAndReconnect.
+    forceCloseAndReconnect(event.message || 'socket error')
   }
 }
 
@@ -347,11 +394,20 @@ function isCurrentGeneration(generation: number): boolean {
   return generation === state.socketGeneration
 }
 
-function tryConstructSocket(url: string): WebSocket | null {
+function tryConstructSocket(url: string): PinnedWebSocket | null {
+  const fingerprint = $device.get().record?.fingerprint
+  if (!fingerprint) {
+    console.error(
+      '[wss.client] openSocket blocked: no paired device fingerprint in $device',
+    )
+    $session.setKey('status', 'auth_failed')
+    $session.setKey('lastError', 'not paired')
+    return null
+  }
   try {
-    return new WebSocket(url)
+    return new PinnedWebSocket(url, { fingerprint })
   } catch (err) {
-    console.error('[wss.client] WebSocket constructor threw:', err)
+    console.error('[wss.client] PinnedWebSocket constructor threw:', err)
     $session.setKey('status', 'unreachable')
     $session.setKey(
       'lastError',
@@ -367,22 +423,43 @@ function handleOpen(): void {
   send({ op: 'auth', body: { token: state.token ?? '' } })
 }
 
-function handleClose(event: CloseEvent): void {
-  console.log('[wss.client] socket closed', {
-    code: event.code,
-    reason: event.reason,
-  })
-  clearTimers()
+/**
+ * Single teardown path for every "this socket is dead" signal:
+ * onclose from the underlying socket, onerror from an already-half-
+ * dead socket, or a synthesised close from lifecycle / probe code
+ * that noticed the socket is a zombie. Bumps the generation so any
+ * further callbacks from the doomed socket are ignored, rejects
+ * in-flight ops so callers fail fast, and schedules a reconnect
+ * unless the disconnect was intentional (user unpair, revoke).
+ *
+ * Idempotent: safe to call more than once; the generation bump makes
+ * subsequent callbacks from the same socket no-ops and the pending-op
+ * map is emptied on the first call.
+ */
+function forceCloseAndReconnect(reason: string): void {
+  console.log('[wss.client] forceClose:', reason)
+  state.socketGeneration += 1
+  try {
+    state.socket?.close()
+  } catch {
+    /* best-effort; a truly dead socket may throw */
+  }
   state.socket = null
+  clearTimers()
+  rejectAllPending(new Error(`connection lost: ${reason}`))
   if (state.intentionallyDisconnected) return
   if ($session.get().status !== 'auth_failed') {
     $session.setKey('status', 'unreachable')
-    if (event.reason) $session.setKey('lastError', event.reason)
+    if (reason) $session.setKey('lastError', reason)
   }
   scheduleReconnect()
 }
 
 function handleFrame(raw: string): void {
+  // Stamp the receive-side liveness clock BEFORE parsing so even a
+  // malformed frame from the desktop still counts as "the peer is
+  // alive". Watchdog + probeConnection both key off this timestamp.
+  state.lastFrameAt = Date.now()
   let frame: ServerFrame
   try {
     frame = JSON.parse(raw) as ServerFrame
@@ -528,11 +605,32 @@ function scheduleReconnect(): void {
 
 function startHeartbeat(): void {
   clearTimers()
-  state.heartbeatTimer = setInterval(heartbeatTick, HEARTBEAT_INTERVAL_MS)
+  state.heartbeatTimer = setInterval(
+    heartbeatAndWatchdogTick,
+    HEARTBEAT_INTERVAL_MS,
+  )
 }
 
-function heartbeatTick(): void {
-  if (state.socket?.readyState !== WebSocket.OPEN) return
+/**
+ * Runs once per HEARTBEAT_INTERVAL_MS. Combines two liveness checks:
+ *
+ * - Heartbeat (send-side): fire a ping, expect a pong within
+ *   PONG_TIMEOUT_MS. Detects "server never replied to us".
+ * - Watchdog (receive-side): if we haven't seen ANY inbound frame in
+ *   FRAME_STALE_MS, the peer went silent. Detects "server stopped
+ *   saying anything at all, including broadcasts we should be seeing".
+ *
+ * Different failure modes, different latencies, both worth catching.
+ */
+function heartbeatAndWatchdogTick(): void {
+  if (state.socket?.readyState !== PinnedWebSocket.OPEN) return
+  const last = state.lastFrameAt
+  if (last !== null && Date.now() - last > FRAME_STALE_MS) {
+    forceCloseAndReconnect(
+      `no frames for ${Math.round((Date.now() - last) / 1000)}s`,
+    )
+    return
+  }
   send({ op: 'ping' })
   updatePongDeadline()
 }
@@ -543,8 +641,45 @@ function updatePongDeadline(): void {
     return
   }
   if (Date.now() > state.pongDeadline) {
-    state.socket?.close()
+    forceCloseAndReconnect('pong deadline exceeded')
   }
+}
+
+/**
+ * Active liveness check for lifecycle events (app foreground, network
+ * transition). Sends a ping and polls lastFrameAt for up to
+ * PROBE_TIMEOUT_MS looking for ANY inbound frame. Returns 'alive' if
+ * we saw one, 'dead' otherwise.
+ *
+ * Callers (lifecycle.ts) reconnect on 'dead'. Concurrent probes short-
+ * circuit to 'alive' rather than stacking pings.
+ */
+export async function probeConnection(): Promise<'alive' | 'dead'> {
+  if (state.socket?.readyState !== PinnedWebSocket.OPEN) return 'dead'
+  if (state.probing) return 'alive'
+  state.probing = true
+  const before = state.lastFrameAt ?? 0
+  send({ op: 'ping' })
+  const startedAt = Date.now()
+  try {
+    while (Date.now() - startedAt < PROBE_TIMEOUT_MS) {
+      if ((state.lastFrameAt ?? 0) > before) return 'alive'
+      await new Promise((r) => setTimeout(r, PROBE_POLL_MS))
+    }
+    return 'dead'
+  } finally {
+    state.probing = false
+  }
+}
+
+/**
+ * Public entry point for lifecycle.ts to force-close a suspected-dead
+ * socket. Thin wrapper around the internal helper; keeps the export
+ * surface intentional so callers can't accidentally invoke the raw
+ * internals.
+ */
+export function forceCloseFromLifecycle(reason: string): void {
+  forceCloseAndReconnect(reason)
 }
 
 function clearTimers(): void {

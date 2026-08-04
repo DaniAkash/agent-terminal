@@ -360,23 +360,25 @@ pub fn run() {
                             path.display()
                         );
 
-                        // TLS material.
-                        let tls_material_result = if auth.tls_enabled {
-                            let tls_dir = dir.join("tls");
-                            let sans = build_tls_sans();
-                            eprintln!("[wss] TLS SANs: {sans:?}");
-                            tls::TlsMaterial::load_or_generate(&tls_dir, sans)
-                                .map_err(|e| e.to_string())
-                        } else {
-                            Err(String::from("tls_enabled=false in config"))
-                        };
-                        let tls_bundle = tls_material_result.and_then(|mat| {
-                            let server_cfg = mat.to_server_config().map_err(|e| e.to_string())?;
-                            let rustls_cfg = Arc::new(
-                                axum_server::tls_rustls::RustlsConfig::from_config(Arc::new(server_cfg)),
-                            );
-                            Ok((mat.sha256_fingerprint.clone(), rustls_cfg))
-                        });
+                        // TLS material. TLS is mandatory; if generation
+                        // fails we still install managed state stubs so
+                        // Tauri commands resolve cleanly, but the WSS
+                        // server never starts — pairing + connect show
+                        // "unavailable" instead of downgrading to plain
+                        // ws://, which would silently drop the pin
+                        // enforcement the mobile client requires.
+                        let tls_dir = dir.join("tls");
+                        let sans = build_tls_sans();
+                        eprintln!("[wss] TLS SANs: {sans:?}");
+                        let tls_bundle = tls::TlsMaterial::load_or_generate(&tls_dir, sans)
+                            .map_err(|e| e.to_string())
+                            .and_then(|mat| {
+                                let server_cfg = mat.to_server_config().map_err(|e| e.to_string())?;
+                                let rustls_cfg = Arc::new(
+                                    axum_server::tls_rustls::RustlsConfig::from_config(Arc::new(server_cfg)),
+                                );
+                                Ok((mat.sha256_fingerprint.clone(), rustls_cfg))
+                            });
                         let tls_fingerprint = tls_bundle
                             .as_ref()
                             .ok()
@@ -499,50 +501,23 @@ pub fn run() {
                             pairing_window,
                             paired_conns,
                         });
-                        let tls_enabled = auth.tls_enabled;
                         app.manage(auth);
+                        let rustls_cfg = match tls_bundle {
+                            Ok((_, cfg)) => cfg,
+                            Err(e) => {
+                                eprintln!(
+                                    "[wss] TLS material unavailable: {e}. WSS server not started; pairing + connect will report unavailable."
+                                );
+                                break 'wss_setup;
+                            }
+                        };
                         tauri::async_runtime::spawn(async move {
-                            let result = if tls_enabled {
-                                match tls_bundle {
-                                    Ok((_, rustls_cfg)) => {
-                                        wss_server::run_with_tls_from_listener(
-                                            bound_std_listener,
-                                            server_state,
-                                            rustls_cfg,
-                                        )
-                                        .await
-                                    }
-                                    Err(e) => {
-                                        eprintln!(
-                                            "[wss] TLS enabled in config but material load failed: {e}. Falling back to plain ws://"
-                                        );
-                                        // `bind_first_available`
-                                        // returns a non-blocking
-                                        // listener per its contract, so
-                                        // `TcpListener::from_std` (which
-                                        // requires non-blocking mode per
-                                        // tokio docs) is safe here.
-                                        match tokio::net::TcpListener::from_std(bound_std_listener) {
-                                            Ok(l) => wss_server::run_with_listener(l, server_state).await,
-                                            Err(e2) => {
-                                                eprintln!("[wss] listener conversion failed: {e2}");
-                                                return;
-                                            }
-                                        }
-                                    }
-                                }
-                            } else {
-                                // Same non-blocking guarantee from
-                                // `bind_first_available` as the
-                                // TLS-fallback branch above.
-                                match tokio::net::TcpListener::from_std(bound_std_listener) {
-                                    Ok(l) => wss_server::run_with_listener(l, server_state).await,
-                                    Err(e) => {
-                                        eprintln!("[wss] listener conversion failed: {e}");
-                                        return;
-                                    }
-                                }
-                            };
+                            let result = wss_server::run_with_tls_from_listener(
+                                bound_std_listener,
+                                server_state,
+                                rustls_cfg,
+                            )
+                            .await;
                             if let Err(e) = result {
                                 eprintln!("[wss] server crashed: {e}");
                             }

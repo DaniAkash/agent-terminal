@@ -34,7 +34,7 @@ export type AgentState = 'idle' | 'in-progress' | 'completed' | 'awaiting'
  * revisit when AgentTurnMod provides richer exit metadata.
  */
 export function deriveAgentState(meta: TabMeta | undefined): AgentState {
-  if (!meta || meta.type !== 'agent') return 'idle'
+  if (meta?.type !== 'agent') return 'idle'
   // Hook data from AgentTurnMod takes priority — richer and more accurate.
   if (meta.agentState) return meta.agentState
   // Fallback: OSC 133 process exit signals a completed session.
@@ -68,4 +68,23 @@ export function parseModelFlag(agentCmd: string | undefined): string | null {
   if (!agentCmd) return null
   const match = agentCmd.match(/--model\s+(\S+)/)
   return match?.[1] ?? null
+}
+
+/**
+ * Composed decision for whether TabChip should render the DangerBadge for
+ * a given tab. All three inputs must line up:
+ *   1. The consuming surface opted in via `showDanger`
+ *   2. The tab is an agent tab (shell tabs never show a danger badge)
+ *   3. The agent was launched with a full-permissions flag
+ *
+ * Split out from the render body so it stays pure and testable, and so the
+ * combinatorics live in one place rather than at every consuming site.
+ */
+export function shouldShowDangerBadge(
+  meta: TabMeta | undefined,
+  showDanger: boolean,
+): boolean {
+  if (!showDanger) return false
+  if (meta?.type !== 'agent') return false
+  return hasDangerFlag(meta.agentCmd)
 }

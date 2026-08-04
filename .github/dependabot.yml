@@ -1,0 +1,101 @@
+# Weekly dependency PRs across every package.json, the Cargo workspace, and
+# the GitHub Actions workflows. Major bumps are opt-in only via security
+# advisories; the routine queue is minor + patch grouped so it stays
+# actionable. A security update that requires a major bump still gets opened
+# by Dependabot: `ignore` rules do not apply to security updates.
+#
+# Directory coverage:
+#   bun            -> /, /companion, /website, /src-tauri/sidecar (4 apps)
+#   cargo          -> / (workspace root; picks up src-tauri + xtask)
+#   github-actions -> / (all workflows under .github/workflows/)
+
+version: 2
+
+updates:
+  # Bun-managed JavaScript apps: desktop frontend (Tauri React), companion
+  # (Expo React Native), website (marketing), and src-tauri/sidecar
+  # (headless xterm host). Shared cadence + ignore + group policy.
+  - package-ecosystem: "bun"
+    directories:
+      - "/"
+      - "/companion"
+      - "/website"
+      - "/src-tauri/sidecar"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Kolkata"
+    open-pull-requests-limit: 10
+    cooldown:
+      default-days: 3
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
+    groups:
+      minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    labels:
+      - "dependencies"
+
+  # Cargo workspace: root Cargo.toml aggregates src-tauri + xtask. Dependabot
+  # walks the workspace natively so a single entry rooted at `/` is enough.
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Kolkata"
+    open-pull-requests-limit: 10
+    cooldown:
+      default-days: 3
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
+    groups:
+      minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "rust"
+
+  # GitHub Actions bumps for release.yml, ci.yml, tap-dispatch.yml. Lower PR
+  # cap since the surface area is small.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Kolkata"
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 3
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
+    groups:
+      minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+    commit-message:
+      prefix: "chore(ci)"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "github-actions"

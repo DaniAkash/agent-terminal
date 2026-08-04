@@ -106,14 +106,12 @@ jobs:
           if ! command -v typeshare >/dev/null 2>&1; then
             cargo install typeshare-cli --version 1.13.4 --locked
           fi
-      # xtask shells out to `bunx @biomejs/biome format --write ...` from
-      # cwd=`companion/`. Without companion's own node_modules present,
-      # bunx walks up to the root's node_modules and picks up whatever
-      # biome version lives there — currently 2.4.15, which does not
-      # recognise companion/biome.json's 2.5.x-shape `preset` rules key
-      # and refuses to load the config. Installing companion's deps here
-      # gives bunx the right biome (2.5.1) via companion/node_modules.
-      - name: Install companion deps (for bunx biome inside xtask)
+      # xtask invokes companion/node_modules/.bin/biome directly (whatever
+      # version companion/package.json pins), so companion's deps must be
+      # installed first. A previous `bunx --bun @biomejs/biome@<version>`
+      # approach was non-deterministic across CI runs because bunx
+      # resolution touches the network + a per-runner cache.
+      - name: Install companion deps (for biome inside xtask)
         if: ${{ !cancelled() }}
         working-directory: companion
         run: bun install --frozen-lockfile
