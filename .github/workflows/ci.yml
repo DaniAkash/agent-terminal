@@ -100,6 +100,12 @@ jobs:
         with:
           path: ~/.cargo/bin/typeshare
           key: typeshare-cli-1.13.4-${{ runner.os }}
+          # Persist the cache even when a later step in this job fails.
+          # Without this, actions/cache's post-step no-ops on job failure,
+          # so any red run leaves the cache empty and the next run rebuilds
+          # typeshare-cli from source again (~90s). save-always keeps that
+          # from happening.
+          save-always: true
       - name: Install typeshare-cli
         if: ${{ !cancelled() }}
         run: |
