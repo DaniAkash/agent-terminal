@@ -1,4 +1,3 @@
-import { PinnedWebSocket } from '../../../modules/pinned-websocket'
 import { $device } from '@/modules/stores/$device'
 import { $session, resetSession } from '@/modules/stores/$session'
 import type {
@@ -13,6 +12,7 @@ import type {
   ServerFrame,
   TabStateSummary,
 } from '@/modules/wss/protocol.gen'
+import { PinnedWebSocket } from '../../../modules/pinned-websocket'
 import { computeBackoffDelay } from './client.helpers'
 
 export type TabHandlers = {

@@ -3,8 +3,8 @@ import { useEffect, useImperativeHandle, useRef } from 'react'
 import type { WebViewMessageEvent } from 'react-native-webview'
 import { WebView } from 'react-native-webview'
 import {
-  DEFAULT_TERMINAL_HTML_CONFIG,
   buildTerminalHtml,
+  DEFAULT_TERMINAL_HTML_CONFIG,
 } from './terminal-html.helpers'
 
 // Mirrors TerminalDom.tsx's imperative surface. Different underlying

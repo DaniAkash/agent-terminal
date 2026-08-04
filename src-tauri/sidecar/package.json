@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@xterm/headless": "^5.5.0",
-    "@xterm/addon-serialize": "^0.13.0"
+    "@xterm/addon-serialize": "^0.14.0"
   },
   "engines": {
     "node": ">=18"

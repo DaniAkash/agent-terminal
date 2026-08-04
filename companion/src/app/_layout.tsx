@@ -1,7 +1,7 @@
 import '../../global.css'
 import { ActionSheetProvider } from '@expo/react-native-action-sheet'
-import { ThemeProvider } from 'expo-router/react-navigation'
 import { Stack } from 'expo-router'
+import { ThemeProvider } from 'expo-router/react-navigation'
 import { StatusBar } from 'expo-status-bar'
 import { useEffect } from 'react'
 import { useColorScheme } from 'react-native'
@@ -54,9 +54,7 @@ export default function RootLayout() {
   return (
     <ActionSheetProvider>
       <ThemeProvider value={navTheme}>
-        {/* biome-ignore lint/complexity/noUselessFragments: ActionSheetProvider */}
-        {/* uses React.Children.only internally, so the sibling StatusBar + */}
-        {/* Stack must be wrapped as a single fragment child. */}
+        {/* biome-ignore lint/complexity/noUselessFragments: ActionSheetProvider uses React.Children.only internally, so the sibling StatusBar + Stack must be wrapped as a single fragment child. */}
         <>
           <StatusBar style="auto" />
           <Stack>

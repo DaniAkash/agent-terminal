@@ -1,5 +1,5 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.4.15/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.5.6/schema.json",
   "root": true,
   "vcs": {
     "enabled": true,
@@ -18,7 +18,7 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": true,
+      "preset": "recommended",
       "correctness": {
         "noUnusedImports": "error",
         "noUnusedVariables": "error"
@@ -35,16 +35,16 @@
         "noConsole": "error"
       },
       "style": {
-        "noProcessEnv": "error"
-      },
-      "nursery": {
-        "useSortedClasses": "error",
+        "noProcessEnv": "error",
         "noExcessiveLinesPerFile": {
           "level": "error",
           "options": {
             "maxLines": 300
           }
         }
+      },
+      "nursery": {
+        "useSortedClasses": "error"
       }
     }
   },
@@ -79,7 +79,8 @@
       "includes": ["src/index.css"],
       "linter": {
         "rules": {
-          "nursery": {
+          "nursery": {},
+          "style": {
             "noExcessiveLinesPerFile": "off"
           }
         }

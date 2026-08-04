@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
-  DEFAULT_TERMINAL_HTML_CONFIG,
   buildTerminalHtml,
+  DEFAULT_TERMINAL_HTML_CONFIG,
   safeCssColor,
 } from './terminal-html.helpers'
 
