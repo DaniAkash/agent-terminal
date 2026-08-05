@@ -5,20 +5,22 @@
 # by Dependabot: `ignore` rules do not apply to security updates.
 #
 # Directory coverage:
-#   bun            -> /, /companion, /website, /src-tauri/sidecar (4 apps)
+#   bun            -> /, /website, /src-tauri/sidecar (3 apps sharing policy)
+#   bun            -> /companion (separate entry; Expo packages are ignored)
 #   cargo          -> / (workspace root; picks up src-tauri + xtask)
 #   github-actions -> / (all workflows under .github/workflows/)
 
 version: 2
 
 updates:
-  # Bun-managed JavaScript apps: desktop frontend (Tauri React), companion
-  # (Expo React Native), website (marketing), and src-tauri/sidecar
-  # (headless xterm host). Shared cadence + ignore + group policy.
+  # Non-Expo bun apps: desktop frontend (Tauri React), website (marketing),
+  # and src-tauri/sidecar (headless xterm host). Shared cadence + ignore +
+  # group policy. Companion is handled by its own entry below because
+  # bun-driven bumps of Expo-managed packages cross the Hermes ABI
+  # boundary and blow up iOS at launch.
   - package-ecosystem: "bun"
     directories:
       - "/"
-      - "/companion"
       - "/website"
       - "/src-tauri/sidecar"
     schedule:
@@ -43,6 +45,54 @@ updates:
       include: "scope"
     labels:
       - "dependencies"
+
+  # Companion (Expo React Native). Expo-managed packages must be updated
+  # via `expo install` (which respects bundledNativeModules.json), not
+  # raw dependabot bumps. Skipping this rule crashes iOS at launch with a
+  # dyld "Symbol not found" for a JSI method that the pinned hermesvm
+  # xcframework does not export. Android does not hit this because Gradle
+  # recompiles Hermes from source; iOS uses a prebuilt xcframework.
+  #
+  # https://docs.expo.dev/more/glossary-of-terms/#versioned-package
+  - package-ecosystem: "bun"
+    directory: "/companion"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Kolkata"
+    open-pull-requests-limit: 10
+    cooldown:
+      default-days: 3
+    ignore:
+      # Major bumps opt-in only, as elsewhere.
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
+      # Expo core + all Expo modules. Upgrade via `expo upgrade` locally.
+      - dependency-name: "expo"
+      - dependency-name: "expo-*"
+      - dependency-name: "@expo/*"
+      # React and React DOM are pinned by each Expo SDK release.
+      - dependency-name: "react"
+      - dependency-name: "react-dom"
+      # React Native core + community packages Expo curates in
+      # bundledNativeModules.json.
+      - dependency-name: "react-native"
+      - dependency-name: "react-native-*"
+      - dependency-name: "@react-native-*"
+      - dependency-name: "@shopify/react-native-*"
+    groups:
+      minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "companion"
 
   # Cargo workspace: root Cargo.toml aggregates src-tauri + xtask. Dependabot
   # walks the workspace natively so a single entry rooted at `/` is enough.
