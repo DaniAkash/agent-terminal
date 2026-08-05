@@ -1,0 +1,22 @@
+# Hoisted linker for Expo compatibility.
+#
+# Bun defaults workspace installs to the `isolated` linker, which
+# creates `node_modules/<pkg>` symlinks only for a package's direct
+# dependencies. Expo, Metro, Babel, and their plugin ecosystems do
+# runtime `require('<transitive>')` walks from arbitrary caller
+# locations (`plugins/*.js`, babel presets, config plugins), and
+# those walks only find packages that live at a hoistable
+# `node_modules/<pkg>` path. Isolated linker breaks them one at a
+# time — `@expo/config-plugins`, then `babel-preset-expo`, then the
+# next, then the next.
+#
+# The hoisted linker uses a flat `node_modules/` layout the way npm
+# and yarn classic do, so every transitive is resolvable from any
+# caller. This is the layout React Native and Expo tooling was
+# designed for.
+#
+# All other workspaces (desktop Vite/React, website Next.js, sidecar
+# @xterm/headless) are equally happy with hoisted; they don't rely on
+# isolation. So one setting for the whole workspace is fine.
+[install]
+linker = "hoisted"
