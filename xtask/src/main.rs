@@ -20,7 +20,7 @@ struct Cli {
 enum Cmd {
     /// Regenerate the TypeScript wire-protocol bindings from
     /// `src-tauri/src/protocol.rs`. Run this after editing that file so
-    /// `companion/src/modules/wss/protocol.gen.ts` stays in sync.
+    /// `apps/companion/src/modules/wss/protocol.gen.ts` stays in sync.
     RegenProtocol,
 }
 
@@ -34,6 +34,7 @@ fn regen_protocol() -> Result<()> {
     let root = repo_root()?;
     let input_dir = root.join("src-tauri").join("src");
     let output = root
+        .join("apps")
         .join("companion")
         .join("src")
         .join("modules")
