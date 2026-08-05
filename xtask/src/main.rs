@@ -77,10 +77,12 @@ fn regen_protocol() -> Result<()> {
     // Two nuances after the bun-monorepo migration:
     //   1. Bun's `hoisted` linker (set in bunfig.toml for Expo compat)
     //      hoists biome to the repo-root node_modules/.bin.
-    //   2. Root biome.json excludes `apps/companion` because companion
-    //      has its own biome config. Running root's biome on the .gen.ts
-    //      file would be ignored. Pass `--config-path` to force biome to
-    //      read companion's biome.json for this one file.
+    //   2. Both root biome.json and apps/companion/biome.json declare
+    //      `root: true`, so biome errors on "nested root configuration"
+    //      if invoked from the repo root pointing at apps/companion/….
+    //      Running with cwd=apps/companion means biome discovers only
+    //      companion's config (walks upward, stops at the first root).
+    //      The output path passed to biome is relative to that cwd.
     let biome_bin = root.join("node_modules").join(".bin").join("biome");
     if !biome_bin.exists() {
         bail!(
@@ -88,18 +90,17 @@ fn regen_protocol() -> Result<()> {
             biome_bin.display()
         );
     }
-    // Run from apps/companion so biome discovers its config (marked
-    // root: true) and stops walking. Running from repo root would see
-    // both root biome.json and companion biome.json as competing roots.
-    // The output path is relative to cwd (apps/companion).
     let companion_dir = root.join("apps").join("companion");
     let relative_output = output
         .strip_prefix(&companion_dir)
         .unwrap_or(&output);
+    // Bind the temporary String to a local so the &str reference passed
+    // into the args slice isn't hanging off a rvalue-extended temporary.
+    let relative_output_str = relative_output.display().to_string();
     run_in(
         &companion_dir,
         biome_bin.to_str().unwrap(),
-        &["format", "--write", &relative_output.display().to_string()],
+        &["format", "--write", &relative_output_str],
     )
     .context("failed to invoke biome")?;
 
