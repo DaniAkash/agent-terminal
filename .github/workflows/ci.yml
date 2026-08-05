@@ -74,7 +74,10 @@ jobs:
         run: bunx biome check
       - name: tsc --noEmit
         if: ${{ !cancelled() }}
-        run: bunx tsc --noEmit
+        # `bunx tsc --noEmit` at repo root has no tsconfig to find in the
+        # bun-monorepo layout (tsconfig lives in apps/desktop/). Use the
+        # workspace filter so tsc runs in the right cwd.
+        run: bun run --filter @agent-terminal/desktop typecheck
       - name: bun test (desktop)
         if: ${{ !cancelled() }}
         # Scoped to apps/desktop/src/ because bare `bun test` recurses
