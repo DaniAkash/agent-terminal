@@ -75,31 +75,25 @@ jobs:
       - name: tsc --noEmit
         if: ${{ !cancelled() }}
         run: bunx tsc --noEmit
-      - name: bun test
+      - name: bun test (desktop)
         if: ${{ !cancelled() }}
-        # Scoped to src/ because bare `bun test` recurses cwd and would
-        # discover src-tauri/sidecar/test/*.test.ts. Those tests import
-        # @xterm/headless from src-tauri/sidecar/node_modules/, which is
-        # installed by the dedicated step below. Root deps and sidecar
-        # deps live in separate trees on purpose. Matches the local
-        # `bun run test` script.
-        run: bun test src/
+        # Scoped to apps/desktop/src/ because bare `bun test` recurses
+        # cwd and would discover src-tauri/sidecar/test/*.test.ts +
+        # apps/companion tests. Sidecar tests run in a separate step
+        # below.
+        run: bun test apps/desktop/src/
 
-      # Sidecar substrate has its own dep tree (src-tauri/sidecar/node_modules)
-      # because @xterm/headless and addon-serialize are server-side only and
-      # have no business in the Tauri frontend bundle. Install + test as a
-      # separate step so a failure here is attributed correctly in CI.
-      - name: Install sidecar deps
-        if: ${{ !cancelled() }}
-        working-directory: src-tauri/sidecar
-        run: bun install --frozen-lockfile
+      # Sidecar substrate has server-only deps (@xterm/headless, addon-
+      # serialize) that have no business in the Tauri frontend bundle.
+      # In the bun-monorepo layout its node_modules is populated by the
+      # workspace root install above, so no separate `bun install` here.
       - name: Sidecar bun test
         if: ${{ !cancelled() }}
         working-directory: src-tauri/sidecar
         run: bun test
 
       # Wire-protocol drift check: the committed
-      # companion/src/modules/wss/protocol.gen.ts must be byte-identical to
+      # apps/companion/src/modules/wss/protocol.gen.ts must be byte-identical to
       # what `cargo xtask regen-protocol` produces from the current
       # src-tauri/src/protocol.rs. If a contributor edits protocol.rs
       # without regenerating, CI fails here with a clear "run
@@ -130,15 +124,11 @@ jobs:
           if ! command -v typeshare >/dev/null 2>&1; then
             cargo install typeshare-cli --version 1.13.4 --locked
           fi
-      # xtask invokes companion/node_modules/.bin/biome directly (whatever
-      # version companion/package.json pins), so companion's deps must be
-      # installed first. A previous `bunx --bun @biomejs/biome@<version>`
-      # approach was non-deterministic across CI runs because bunx
-      # resolution touches the network + a per-runner cache.
-      - name: Install companion deps (for biome inside xtask)
-        if: ${{ !cancelled() }}
-        working-directory: companion
-        run: bun install --frozen-lockfile
+      # xtask invokes apps/companion/node_modules/.bin/biome directly
+      # (whatever version apps/companion/package.json pins). In the
+      # bun-monorepo layout the workspace root install above populates
+      # every workspace's node_modules including apps/companion, so no
+      # separate install step is needed here.
       - name: Regenerate protocol bindings
         if: ${{ !cancelled() }}
         run: cargo xtask regen-protocol
@@ -150,11 +140,11 @@ jobs:
         # spelling with `error: invalid option`, which we could not
         # reproduce elsewhere.
         run: |
-          if ! git diff --quiet companion/src/modules/wss/protocol.gen.ts; then
-            echo "::error::companion/src/modules/wss/protocol.gen.ts is out of sync with src-tauri/src/protocol.rs."
+          if ! git diff --quiet apps/companion/src/modules/wss/protocol.gen.ts; then
+            echo "::error::apps/companion/src/modules/wss/protocol.gen.ts is out of sync with src-tauri/src/protocol.rs."
             echo "::error::Run 'cargo xtask regen-protocol' locally and commit the result."
             echo "::group::Actual drift (from committed to CI-regenerated)"
-            git --no-pager diff companion/src/modules/wss/protocol.gen.ts
+            git --no-pager diff apps/companion/src/modules/wss/protocol.gen.ts
             echo "::endgroup::"
             exit 1
           fi
@@ -254,10 +244,10 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
-      - name: Install companion deps
-        working-directory: companion
+      # Root workspace install covers apps/companion via bun workspaces.
+      - name: Install workspace deps
         run: bun install --frozen-lockfile
       - name: bun run check
         if: ${{ !cancelled() }}
-        working-directory: companion
+        working-directory: apps/companion
         run: bun run check

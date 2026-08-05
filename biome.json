@@ -8,7 +8,7 @@
   },
   "files": {
     "ignoreUnknown": false,
-    "includes": ["**", "!designs", "!companion", "!website"]
+    "includes": ["**", "!designs", "!apps/companion", "!apps/website"]
   },
   "formatter": {
     "enabled": true,
@@ -56,7 +56,7 @@
   },
   "overrides": [
     {
-      "includes": ["vite.config.ts"],
+      "includes": ["apps/desktop/vite.config.ts"],
       "linter": {
         "rules": {
           "style": {
@@ -76,7 +76,7 @@
       }
     },
     {
-      "includes": ["src/index.css"],
+      "includes": ["apps/desktop/src/index.css"],
       "linter": {
         "rules": {
           "nursery": {},
@@ -87,7 +87,7 @@
       }
     },
     {
-      "includes": ["src/components/ui/**"],
+      "includes": ["apps/desktop/src/components/ui/**"],
       "linter": {
         "rules": {
           "complexity": {
