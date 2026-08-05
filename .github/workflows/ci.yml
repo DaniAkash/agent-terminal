@@ -1,9 +1,17 @@
 # PR CI, gated behind manual approval. Also runs on push to main so the
-# per-branch caches (Swatinem rust-cache, typeshare-cli, apt-pkgs) get
-# populated under `refs/heads/main`. GitHub Actions cache scope only lets
-# a PR restore caches from its own ref or its base branch, so without a
-# main cache every new PR pays the cold-compile cost on its first run
+# per-branch caches (Swatinem rust-cache, typeshare-cli) get populated
+# under `refs/heads/main`. GitHub Actions cache scope only lets a PR
+# restore caches from its own ref or its base branch, so without a main
+# cache every new PR pays the cold-compile cost on its first run
 # (~5 min of cargo check + test).
+#
+# The whole check surface runs via one `bun run check` invocation, which
+# fans out via `concurrently --group` to every check across the monorepo
+# (biome, desktop tsc + test, sidecar test, cargo clippy, cargo test,
+# companion's own 7-sub-check chain, and the protocol drift verifier).
+# Local and CI parity is the design goal: whatever `bun run check` does
+# on a laptop is exactly what CI does. No CI-only steps, no
+# laptop-only steps.
 #
 # One-time setup (otherwise the `approve` gate is a no-op):
 #   Repo Settings → Environments → New environment → name `ci-approval`
@@ -50,120 +58,11 @@ jobs:
       - name: Approved
         run: echo "CI approved by ${{ github.actor }}"
 
-  # `if: ${{ !cancelled() }}` on every check below is deliberate: one CI run
-  # surfaces every failure in the diff (lint + typecheck + tests, both langs),
-  # so the next push can fix all of them at once instead of one-per-cycle.
-  js-checks:
-    name: JS / TypeScript
-    needs: approve
-    # Runs when approve succeeds (PR path) or is skipped (push-to-main
-    # path). always() is required so the job evaluates its condition
-    # instead of inheriting `skipped` from a skipped dependency.
-    if: always() && (needs.approve.result == 'success' || needs.approve.result == 'skipped')
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-      - run: bun install --frozen-lockfile
-
-      - name: Biome
-        if: ${{ !cancelled() }}
-        run: bunx biome check
-      - name: tsc --noEmit
-        if: ${{ !cancelled() }}
-        run: bunx tsc --noEmit
-      - name: bun test
-        if: ${{ !cancelled() }}
-        # Scoped to src/ because bare `bun test` recurses cwd and would
-        # discover src-tauri/sidecar/test/*.test.ts. Those tests import
-        # @xterm/headless from src-tauri/sidecar/node_modules/, which is
-        # installed by the dedicated step below. Root deps and sidecar
-        # deps live in separate trees on purpose. Matches the local
-        # `bun run test` script.
-        run: bun test src/
-
-      # Sidecar substrate has its own dep tree (src-tauri/sidecar/node_modules)
-      # because @xterm/headless and addon-serialize are server-side only and
-      # have no business in the Tauri frontend bundle. Install + test as a
-      # separate step so a failure here is attributed correctly in CI.
-      - name: Install sidecar deps
-        if: ${{ !cancelled() }}
-        working-directory: src-tauri/sidecar
-        run: bun install --frozen-lockfile
-      - name: Sidecar bun test
-        if: ${{ !cancelled() }}
-        working-directory: src-tauri/sidecar
-        run: bun test
-
-      # Wire-protocol drift check: the committed
-      # companion/src/modules/wss/protocol.gen.ts must be byte-identical to
-      # what `cargo xtask regen-protocol` produces from the current
-      # src-tauri/src/protocol.rs. If a contributor edits protocol.rs
-      # without regenerating, CI fails here with a clear "run
-      # `cargo xtask regen-protocol`" message instead of a confusing
-      # tsc-side type error later.
-      #
-      # Lives in js-checks (not rust-checks) because the codegen path
-      # needs BOTH cargo AND bun (for biome format on the output). This
-      # job already has both.
-      - name: Rust toolchain (for xtask)
-        if: ${{ !cancelled() }}
-        uses: dtolnay/rust-toolchain@stable
-      - name: Cache typeshare-cli install
-        if: ${{ !cancelled() }}
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/bin/typeshare
-          key: typeshare-cli-1.13.4-${{ runner.os }}
-          # Persist the cache even when a later step in this job fails.
-          # Without this, actions/cache's post-step no-ops on job failure,
-          # so any red run leaves the cache empty and the next run rebuilds
-          # typeshare-cli from source again (~90s). save-always keeps that
-          # from happening.
-          save-always: true
-      - name: Install typeshare-cli
-        if: ${{ !cancelled() }}
-        run: |
-          if ! command -v typeshare >/dev/null 2>&1; then
-            cargo install typeshare-cli --version 1.13.4 --locked
-          fi
-      # xtask invokes companion/node_modules/.bin/biome directly (whatever
-      # version companion/package.json pins), so companion's deps must be
-      # installed first. A previous `bunx --bun @biomejs/biome@<version>`
-      # approach was non-deterministic across CI runs because bunx
-      # resolution touches the network + a per-runner cache.
-      - name: Install companion deps (for biome inside xtask)
-        if: ${{ !cancelled() }}
-        working-directory: companion
-        run: bun install --frozen-lockfile
-      - name: Regenerate protocol bindings
-        if: ${{ !cancelled() }}
-        run: cargo xtask regen-protocol
-      - name: Verify no drift
-        if: ${{ !cancelled() }}
-        # `git diff --quiet` is equivalent to `--exit-status` in intent
-        # (exit 0 = no diff, exit 1 = diff present) and more portable
-        # across `git` builds — a previous CI run rejected the longer
-        # spelling with `error: invalid option`, which we could not
-        # reproduce elsewhere.
-        run: |
-          if ! git diff --quiet companion/src/modules/wss/protocol.gen.ts; then
-            echo "::error::companion/src/modules/wss/protocol.gen.ts is out of sync with src-tauri/src/protocol.rs."
-            echo "::error::Run 'cargo xtask regen-protocol' locally and commit the result."
-            echo "::group::Actual drift (from committed to CI-regenerated)"
-            git --no-pager diff companion/src/modules/wss/protocol.gen.ts
-            echo "::endgroup::"
-            exit 1
-          fi
-
-  # Single job, not split per check: cargo's incremental build cache is shared
-  # across check / clippy / test, so splitting would recompile Tauri/Wry deps
-  # from scratch in each parallel job.
-  rust-checks:
-    name: Rust / Tauri
+  # Single job runs `bun run check` end-to-end. All prereqs (bun, rust,
+  # webkit2gtk apt deps, typeshare-cli, workspace install) set up here,
+  # then one invocation fans out to every check in the monorepo.
+  check:
+    name: Check
     needs: approve
     if: always() && (needs.approve.result == 'success' || needs.approve.result == 'skipped')
     runs-on: ubuntu-latest
@@ -173,17 +72,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
       # tauri-runtime-wry's build script links against WebKitGTK during
       # dependency compilation — required even for `cargo check`, not just
       # build. Apt list mirrors Tauri 2's prerequisites doc.
-      #
-      # NOTE: previously wrapped in awalsh128/cache-apt-pkgs-action to cut
-      # ~29s of install time, but that action installs the listed packages
-      # without their transitive -dev tree, so libwebkit2gtk-4.1-dev landed
-      # without libglib2.0-dev and glib-sys build.rs failed the whole
-      # Rust/Tauri job with pkg-config errors. Reverted to raw apt-get. If
-      # apt caching is revisited, either enumerate every -dev dep by hand
-      # or move to a Docker image with the deps pre-installed.
       - name: Install Tauri Linux dependencies
         run: |
           sudo apt-get update
@@ -198,66 +97,42 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri -> target
           # Cache third-party crate compiled outputs, not just their
           # sources. Without this, Tauri + wry + portable-pty et al get
-          # recompiled from source every run, dominating the ~1m46s
-          # cargo check. Cache balloons from ~142 MB to ~1 GB (well
-          # under GitHub's 10 GB per-repo cap) but cargo check drops to
+          # recompiled from source every run, dominating cargo clippy +
+          # test wall time. Cache balloons from ~142 MB to ~1 GB (well
+          # under GitHub's 10 GB per-repo cap) but cargo clippy drops to
           # ~10-20s on hit.
           cache-all-crates: true
 
-      - name: cargo check
-        if: ${{ !cancelled() }}
-        working-directory: src-tauri
-        run: cargo check --all-targets
-      - name: cargo clippy
-        if: ${{ !cancelled() }}
-        working-directory: src-tauri
-        run: cargo clippy --all-targets
-      - name: cargo test --lib
-        if: ${{ !cancelled() }}
-        working-directory: src-tauri
-        run: cargo test --lib
-
-      # hook_integration tests share filesystem state and a fixed HTTP port,
-      # so they must run serially. Mirrors the project's `bun run test` script.
-      - name: cargo test --test hook_integration
-        if: ${{ !cancelled() }}
-        working-directory: src-tauri
-        run: cargo test --test hook_integration -- --test-threads=1
-
-  # Companion Expo / React Native app. Own bun lockfile, own biome (2.5.1
-  # for its `preset` rules key which the root's 2.4.x biome refuses to
-  # load), own tsconfig, own fallow config.
-  #
-  # Runs `bun run check` as a single step by design. The script fans
-  # biome format + biome lint + tsc + fallow through `concurrently
-  # --group` with no `-k` / `--kill-others-on-fail` flag, so every check
-  # runs to completion regardless of what any other check does. One
-  # workflow run surfaces every failure across every check on the first
-  # pass, with `--group` prefixing each line by which check produced it
-  # so the log reads cleanly.
-  companion-checks:
-    name: Companion (Expo)
-    needs: approve
-    if: always() && (needs.approve.result == 'success' || needs.approve.result == 'skipped')
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
+      - name: Cache typeshare-cli install
+        uses: actions/cache@v4
         with:
-          bun-version: latest
-      - name: Install companion deps
-        working-directory: companion
+          path: ~/.cargo/bin/typeshare
+          key: typeshare-cli-1.13.4-${{ runner.os }}
+          # Persist the cache even when a later step in this job fails.
+          # Without this, actions/cache's post-step no-ops on job failure,
+          # so any red run leaves the cache empty and the next run rebuilds
+          # typeshare-cli from source again (~90s).
+          save-always: true
+
+      - name: Install typeshare-cli
+        run: |
+          if ! command -v typeshare >/dev/null 2>&1; then
+            cargo install typeshare-cli --version 1.13.4 --locked
+          fi
+
+      - name: bun install
         run: bun install --frozen-lockfile
+
+      # The single monorepo check. Fans out via concurrently --group:
+      # biome, desktop:tsc, desktop:test, sidecar:test, rust:clippy,
+      # rust:test, companion (which fans out its own 7 sub-checks),
+      # and the protocol drift verifier. Every sub-check runs to
+      # completion regardless of what others do, so one CI run surfaces
+      # every failure at once.
       - name: bun run check
-        if: ${{ !cancelled() }}
-        working-directory: companion
         run: bun run check

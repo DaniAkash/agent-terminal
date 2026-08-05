@@ -4,25 +4,23 @@
 # actionable. A security update that requires a major bump still gets opened
 # by Dependabot: `ignore` rules do not apply to security updates.
 #
-# Directory coverage:
-#   bun            -> /, /website, /src-tauri/sidecar (3 apps sharing policy)
-#   bun            -> /companion (separate entry; Expo packages are ignored)
+# Directory coverage (post bun-monorepo migration):
+#   bun            -> / (workspace root; dependabot walks the workspace tree
+#                        and proposes bumps against each member's package.json)
+#   bun            -> /apps/companion (separate entry; Expo packages ignored)
 #   cargo          -> / (workspace root; picks up src-tauri + xtask)
 #   github-actions -> / (all workflows under .github/workflows/)
 
 version: 2
 
 updates:
-  # Non-Expo bun apps: desktop frontend (Tauri React), website (marketing),
-  # and src-tauri/sidecar (headless xterm host). Shared cadence + ignore +
-  # group policy. Companion is handled by its own entry below because
-  # bun-driven bumps of Expo-managed packages cross the Hermes ABI
-  # boundary and blow up iOS at launch.
+  # Bun workspace root. Covers apps/desktop, apps/website, and
+  # src-tauri/sidecar (all three declared in root package.json workspaces).
+  # apps/companion is handled by its own entry below because bun-driven
+  # bumps of Expo-managed packages cross the Hermes ABI boundary and blow
+  # up iOS at launch.
   - package-ecosystem: "bun"
-    directories:
-      - "/"
-      - "/website"
-      - "/src-tauri/sidecar"
+    directory: "/"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -55,7 +53,7 @@ updates:
   #
   # https://docs.expo.dev/more/glossary-of-terms/#versioned-package
   - package-ecosystem: "bun"
-    directory: "/companion"
+    directory: "/apps/companion"
     schedule:
       interval: "weekly"
       day: "monday"

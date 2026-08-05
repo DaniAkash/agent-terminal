@@ -4,10 +4,10 @@
   "version": "0.3.0",
   "identifier": "com.daniakash.agent-terminal",
   "build": {
-    "beforeDevCommand": "bun run dev",
+    "beforeDevCommand": "bun run --filter @agent-terminal/desktop dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "bun run build",
-    "frontendDist": "../dist"
+    "beforeBuildCommand": "bun run --filter @agent-terminal/desktop build",
+    "frontendDist": "../apps/desktop/dist"
   },
   "app": {
     "windows": [
