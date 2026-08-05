@@ -65,32 +65,42 @@ fn regen_protocol() -> Result<()> {
     // red whenever a developer's biome version formats slightly
     // differently from typeshare's output.
     //
-    // Invoke biome directly from `apps/companion/node_modules/.bin/biome`
-    // rather than through `bunx --bun @biomejs/biome@<version>`. bunx
-    // resolves via a temporary lockfile that touches the network + the
-    // per-runner bunx cache; on CI this occasionally produced a
+    // Invoke biome directly from `node_modules/.bin/biome` at the repo
+    // root rather than through `bunx --bun @biomejs/biome@<version>`.
+    // bunx resolves via a temporary lockfile that touches the network +
+    // the per-runner bunx cache; on CI this occasionally produced a
     // slightly different biome instance from what a local `bun install`
     // materialises, tripping the drift check even when the wire types
     // matched. The direct binary path is fully deterministic: whatever
-    // `apps/companion/package.json` pins is what runs. Prerequisites:
-    // run `bun install` at the repo root (workspace install) before
-    // invoking this xtask; bun's workspace hoisting still creates a
-    // workspace-local `apps/companion/node_modules/.bin/biome` symlink.
-    let companion_dir = root.join("apps").join("companion");
-    let biome_bin = companion_dir
-        .join("node_modules")
-        .join(".bin")
-        .join("biome");
+    // the workspace root install materialises is what runs.
+    //
+    // Two nuances after the bun-monorepo migration:
+    //   1. Bun's `hoisted` linker (set in bunfig.toml for Expo compat)
+    //      hoists biome to the repo-root node_modules/.bin.
+    //   2. Both root biome.json and apps/companion/biome.json declare
+    //      `root: true`, so biome errors on "nested root configuration"
+    //      if invoked from the repo root pointing at apps/companion/….
+    //      Running with cwd=apps/companion means biome discovers only
+    //      companion's config (walks upward, stops at the first root).
+    //      The output path passed to biome is relative to that cwd.
+    let biome_bin = root.join("node_modules").join(".bin").join("biome");
     if !biome_bin.exists() {
         bail!(
             "biome binary not found at {}. Run `bun install` at the repo root first.",
             biome_bin.display()
         );
     }
+    let companion_dir = root.join("apps").join("companion");
+    let relative_output = output
+        .strip_prefix(&companion_dir)
+        .unwrap_or(&output);
+    // Bind the temporary String to a local so the &str reference passed
+    // into the args slice isn't hanging off a rvalue-extended temporary.
+    let relative_output_str = relative_output.display().to_string();
     run_in(
         &companion_dir,
         biome_bin.to_str().unwrap(),
-        &["format", "--write", output.to_str().unwrap()],
+        &["format", "--write", &relative_output_str],
     )
     .context("failed to invoke biome")?;
 
