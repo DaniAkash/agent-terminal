@@ -16,7 +16,7 @@
     "check:desktop:test": "bun test apps/desktop/src",
     "check:sidecar:test": "cd src-tauri/sidecar && bun test",
     "check:rust:clippy": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets",
-    "check:rust:test": "cargo test --manifest-path src-tauri/Cargo.toml --lib && cargo test --manifest-path src-tauri/Cargo.toml --test hook_integration -- --test-threads=1",
+    "check:rust:test": "cargo test --manifest-path src-tauri/Cargo.toml --all-targets --no-fail-fast -- --test-threads=1",
     "check:companion": "bun run --filter companion check",
     "check:drift": "cargo xtask regen-protocol && git diff --exit-code -- apps/companion/src/modules/wss/protocol.gen.ts",
     "check:fix": "biome check --write --unsafe && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --fix --allow-dirty --allow-staged"
