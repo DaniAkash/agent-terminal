@@ -54,7 +54,7 @@ bun run lint            # run Biome (JS/TS) + Cargo Clippy (Rust)
 bun run lint:fix        # auto-fix lint issues (safe fixes only)
 bun run typecheck       # TypeScript type check (no emit)
 bun run test            # run tests
-bun run tauri:build     # production build → src-tauri/target/release/bundle/
+bun run tauri:build     # production build → apps/desktop/target/release/bundle/
 ```
 
 ---
@@ -78,7 +78,7 @@ agent-terminal/
 │   └── screens/
 │       └── workspace/          # Main workspace screen, types, helpers
 │
-├── src-tauri/                  # Rust backend
+├── apps/desktop/src-tauri/      # Rust backend
 │   └── src/
 │       ├── agents/             # Agent registry (single source of truth)
 │       │   ├── mod.rs          # AgentProfile + AGENTS registry + lookups
@@ -169,13 +169,13 @@ chore: update tauri to 2.1.0
 
 ## Adding a new agent (agent registry)
 
-Agent support is declarative. A single registry in `src-tauri/src/agents/` is the source of truth for how each agent is identified, how its hook integration is installed, and how its live state is detected. Identity detection, hook installation, and OSC state detection all read the registry, so adding an agent is mostly one profile entry plus (for plugin-based agents) one plugin asset. There is no per-agent MOD to write and no `lib.rs` change.
+Agent support is declarative. A single registry in `apps/desktop/src-tauri/src/agents/` is the source of truth for how each agent is identified, how its hook integration is installed, and how its live state is detected. Identity detection, hook installation, and OSC state detection all read the registry, so adding an agent is mostly one profile entry plus (for plugin-based agents) one plugin asset. There is no per-agent MOD to write and no `lib.rs` change.
 
 How the state engine works, in one paragraph: each agent tab gets a fused state from three signals. **Hooks** (the agent's own lifecycle events, POSTed to a local server) give precise transitions. **OSC** (the agent's window title / progress) corrects a stale hook for agents that emit it. An agent-agnostic **process/prompt floor** (process liveness plus shell-prompt return) releases any stuck state back to idle, so a missed hook never leaves a badge stuck. You supply the per-agent facts; the engine does the fusing.
 
 ### Step 1: add an agent profile
 
-Create `src-tauri/src/agents/<agent>.rs` and register it in `AGENTS` in `src-tauri/src/agents/mod.rs`:
+Create `apps/desktop/src-tauri/src/agents/<agent>.rs` and register it in `AGENTS` in `apps/desktop/src-tauri/src/agents/mod.rs`:
 
 ```rust
 use super::{AgentProfile, EventRole, HookEvent, HookInstall, HookSpec};
@@ -218,7 +218,7 @@ That alone makes identity detection and hook install pick up the agent.
 Map each hook event name to an `EventRole` (`SessionStart`, `Working`, `Blocked`, `Completed`, `SessionEnd`). The engine is role-driven, so an agent can use whatever event names it emits. Pick the install kind:
 
 - **`HookInstall::NativeConfig`** for agents with their own hooks settings file (like Claude's `~/.claude/settings.json`). Agent Terminal merges its hook command in non-destructively, preserving existing entries.
-- **`HookInstall::Plugin`** for agents that load plugins from a directory (like opencode's `~/.config/opencode/plugin/`). Add a fresh plugin asset under `src-tauri/src/agents/assets/` and reference it with `include_str!`. The plugin POSTs `{ "agent", "event", "tab_id", "session_id"? }` to the local hook server; the hook port is provided to the shell as `AGENT_TERMINAL_HOOK_PORT` and the tab id as `AGENT_TERMINAL_TAB_ID`. Omit `session_id` when unknown (never send an empty string).
+- **`HookInstall::Plugin`** for agents that load plugins from a directory (like opencode's `~/.config/opencode/plugin/`). Add a fresh plugin asset under `apps/desktop/src-tauri/src/agents/assets/` and reference it with `include_str!`. The plugin POSTs `{ "agent", "event", "tab_id", "session_id"? }` to the local hook server; the hook port is provided to the shell as `AGENT_TERMINAL_HOOK_PORT` and the tab id as `AGENT_TERMINAL_TAB_ID`. Omit `session_id` when unknown (never send an empty string).
 
 An agent with no hook at all is fine too (`hook: None`): it is still detected by process name and gets working/idle from the floor.
 
@@ -263,7 +263,7 @@ This is optional: unknown agents fall back to a generic sparkle glyph. If the ag
 Add unit tests next to your profile (identity resolution, and the OSC signature if present), then:
 
 ```sh
-cargo test --manifest-path src-tauri/Cargo.toml --lib -- agents::
+cargo test --manifest-path apps/desktop/Cargo.toml --lib -- agents::
 bun run tauri:dev
 ```
 
@@ -297,10 +297,10 @@ Releases are tag-triggered. Pushing a `vX.Y.Z` (or `vX.Y.Z-rc.N`) tag fires the 
 
 1. **Bump the version** in three places so the tag matches the bundle metadata:
    - `package.json`
-   - `src-tauri/tauri.conf.json`
-   - `src-tauri/Cargo.toml`
+   - `apps/desktop/src-tauri/tauri.conf.json`
+   - `apps/desktop/Cargo.toml`
 
-   Then refresh `src-tauri/Cargo.lock` (`cargo update -p agent-terminal`) and open a PR titled `chore(release): vX.Y.Z`. The `chore(release)` prefix is filtered out of the next changelog.
+   Then refresh `apps/desktop/Cargo.lock` (`cargo update -p agent-terminal`) and open a PR titled `chore(release): vX.Y.Z`. The `chore(release)` prefix is filtered out of the next changelog.
 
 2. **Merge the bump PR**, then tag and push:
 

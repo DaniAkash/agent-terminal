@@ -8,7 +8,7 @@
 # Publish when ready — never auto-published.
 #
 # How to cut a release:
-#   1. Bump version in package.json + src-tauri/tauri.conf.json + src-tauri/Cargo.toml
+#   1. Bump version in apps/desktop/package.json + apps/desktop/src-tauri/tauri.conf.json + apps/desktop/src-tauri/Cargo.toml
 #   2. Commit ("chore(release): vX.Y.Z") — the `chore(release)` scope is
 #      filtered out by cliff.toml so the version-bump commit doesn't show
 #      up in the next release's changelog.
@@ -137,11 +137,11 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target
+            apps/desktop/target
           # Cache key carries the target triple so the two matrix entries
           # keep separate caches. Different triples = different compiled
           # artifacts; sharing the cache would just cause misses every time.
-          key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ matrix.target }}-${{ hashFiles('apps/desktop/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-cargo-${{ matrix.target }}-
 
@@ -170,6 +170,11 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
+          # Tauri project lives at apps/desktop after the monorepo Phase 2
+          # migration. tauri-action looks for src-tauri/ relative to
+          # projectPath. Cargo output lands at <projectPath>/target/ from
+          # here because Cargo.toml also lives at apps/desktop/.
+          projectPath: apps/desktop
           args: --target ${{ matrix.target }}
 
       - name: Add stable-named DMG copies
@@ -183,7 +188,7 @@ jobs:
         # download for the release page, the stable filename for the README.
         run: |
           set -euo pipefail
-          cd target/${{ matrix.target }}/release/bundle/dmg
+          cd apps/desktop/target/${{ matrix.target }}/release/bundle/dmg
           case "${{ matrix.target }}" in
             aarch64-apple-darwin) STABLE=agent-terminal-aarch64.dmg ;;
             x86_64-apple-darwin)  STABLE=agent-terminal-x64.dmg ;;
@@ -204,7 +209,7 @@ jobs:
         # generation) can all rely on a stable arch suffix.
         run: |
           set -euo pipefail
-          cd target/${{ matrix.target }}/release/bundle/macos
+          cd apps/desktop/target/${{ matrix.target }}/release/bundle/macos
           case "${{ matrix.target }}" in
             aarch64-apple-darwin) ARCH=aarch64 ;;
             x86_64-apple-darwin)  ARCH=x64 ;;
@@ -236,9 +241,9 @@ jobs:
         with:
           name: bundles-${{ matrix.target }}
           path: |
-            target/${{ matrix.target }}/release/bundle/dmg/*.dmg
-            target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz
-            target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz.sig
+            apps/desktop/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+            apps/desktop/target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz
+            apps/desktop/target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz.sig
           if-no-files-found: error
           retention-days: 7
 

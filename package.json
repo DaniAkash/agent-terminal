@@ -3,23 +3,24 @@
   "private": true,
   "workspaces": [
     "apps/*",
-    "src-tauri/sidecar"
+    "apps/desktop/src-tauri/sidecar"
   ],
   "scripts": {
     "dev": "bun run --filter @agent-terminal/desktop dev",
     "build": "bun run --filter @agent-terminal/desktop build",
-    "tauri:dev": "bunx tauri dev --config src-tauri/tauri.dev.conf.json --features dev-instance",
-    "tauri:build": "bunx tauri build",
-    "check": "concurrently --group --names biome,desktop:tsc,desktop:test,sidecar:test,rust:clippy,rust:test,companion,drift --prefix-colors auto \"bun run check:biome\" \"bun run check:desktop:tsc\" \"bun run check:desktop:test\" \"bun run check:sidecar:test\" \"bun run check:rust:clippy\" \"bun run check:rust:test\" \"bun run check:companion\" \"bun run check:drift\"",
+    "tauri:dev": "cd apps/desktop && bunx tauri dev --config src-tauri/tauri.dev.conf.json --features dev-instance",
+    "tauri:build": "cd apps/desktop && bunx tauri build",
+    "check": "concurrently --group --names biome,desktop:tsc,desktop:test,sidecar:test,rust:clippy,rust:test,tauri:build,companion,drift --prefix-colors auto \"bun run check:biome\" \"bun run check:desktop:tsc\" \"bun run check:desktop:test\" \"bun run check:sidecar:test\" \"bun run check:rust:clippy\" \"bun run check:rust:test\" \"bun run check:tauri:build\" \"bun run check:companion\" \"bun run check:drift\"",
     "check:biome": "biome check",
     "check:desktop:tsc": "bun run --filter @agent-terminal/desktop typecheck",
     "check:desktop:test": "bun test apps/desktop/src",
-    "check:sidecar:test": "cd src-tauri/sidecar && bun test",
-    "check:rust:clippy": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets",
-    "check:rust:test": "cargo test --manifest-path src-tauri/Cargo.toml --all-targets --no-fail-fast -- --test-threads=1",
+    "check:sidecar:test": "cd apps/desktop/src-tauri/sidecar && bun test",
+    "check:rust:clippy": "cargo clippy --manifest-path apps/desktop/Cargo.toml --all-targets",
+    "check:rust:test": "cargo test --manifest-path apps/desktop/Cargo.toml --all-targets --no-fail-fast -- --test-threads=1",
+    "check:tauri:build": "cd apps/desktop && bunx tauri build --no-bundle --debug",
     "check:companion": "bun run --filter companion check",
-    "check:drift": "cargo xtask regen-protocol && git diff --exit-code -- apps/companion/src/modules/wss/protocol.gen.ts",
-    "check:fix": "biome check --write --unsafe && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --fix --allow-dirty --allow-staged"
+    "check:drift": "cd apps/desktop && cargo xtask regen-protocol && cd ../.. && git diff --exit-code -- apps/companion/src/modules/wss/protocol.gen.ts",
+    "check:fix": "biome check --write --unsafe && cargo clippy --manifest-path apps/desktop/Cargo.toml --all-targets --fix --allow-dirty --allow-staged"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.6",

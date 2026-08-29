@@ -99,7 +99,9 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri -> target
+          # Cargo workspace lives at apps/desktop/Cargo.toml with target
+          # at apps/desktop/target after the monorepo Phase 2 migration.
+          workspaces: apps/desktop -> target
           # Cache third-party crate compiled outputs, not just their
           # sources. Without this, Tauri + wry + portable-pty et al get
           # recompiled from source every run, dominating cargo clippy +

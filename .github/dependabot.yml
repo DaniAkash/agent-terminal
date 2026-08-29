@@ -92,10 +92,11 @@ updates:
       - "dependencies"
       - "companion"
 
-  # Cargo workspace: root Cargo.toml aggregates src-tauri + xtask. Dependabot
-  # walks the workspace natively so a single entry rooted at `/` is enough.
+  # Cargo workspace lives at apps/desktop/Cargo.toml and aggregates
+  # src-tauri + xtask crates. Dependabot walks the workspace natively so
+  # a single entry rooted at the workspace root is enough.
   - package-ecosystem: "cargo"
-    directory: "/"
+    directory: "/apps/desktop"
     schedule:
       interval: "weekly"
       day: "monday"
