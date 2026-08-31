@@ -19,8 +19,9 @@ struct Cli {
 #[derive(Subcommand)]
 enum Cmd {
     /// Regenerate the TypeScript wire-protocol bindings from
-    /// `src-tauri/src/protocol.rs`. Run this after editing that file so
-    /// `apps/companion/src/modules/wss/protocol.gen.ts` stays in sync.
+    /// `apps/desktop/src-tauri/src/protocol.rs`. Run this after editing
+    /// that file so `apps/companion/src/modules/wss/protocol.gen.ts`
+    /// stays in sync.
     RegenProtocol,
 }
 
@@ -32,7 +33,11 @@ fn main() -> Result<()> {
 
 fn regen_protocol() -> Result<()> {
     let root = repo_root()?;
-    let input_dir = root.join("src-tauri").join("src");
+    let input_dir = root
+        .join("apps")
+        .join("desktop")
+        .join("src-tauri")
+        .join("src");
     let output = root
         .join("apps")
         .join("companion")
@@ -125,13 +130,22 @@ fn run_in(cwd: &Path, program: &str, args: &[&str]) -> Result<()> {
 }
 
 fn repo_root() -> Result<PathBuf> {
-    // Walk up from CARGO_MANIFEST_DIR (== xtask/) one level to the
-    // workspace root. Every subcommand needs this anchor for input +
-    // output path resolution.
+    // Walk up from CARGO_MANIFEST_DIR (== apps/desktop/xtask/) until we
+    // find a directory containing a `.git` entry. Every subcommand needs
+    // the repo root as an anchor for input + output path resolution
+    // (companion sources, sidecar sources, protocol.rs, generated files
+    // that land under apps/companion, etc.).
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    let root = PathBuf::from(manifest_dir)
-        .parent()
-        .context("xtask has no parent directory — unexpected layout")?
-        .to_path_buf();
-    Ok(root)
+    let mut candidate = PathBuf::from(manifest_dir);
+    loop {
+        if candidate.join(".git").exists() {
+            return Ok(candidate);
+        }
+        if !candidate.pop() {
+            bail!(
+                "could not locate repo root by walking up from {}",
+                manifest_dir
+            );
+        }
+    }
 }
