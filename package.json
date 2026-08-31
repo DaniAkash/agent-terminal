@@ -22,8 +22,8 @@
     "check:fix": "biome check --write --unsafe && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --fix --allow-dirty --allow-staged"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.6",
+    "@biomejs/biome": "^2.5.11",
     "@tauri-apps/cli": "^2",
-    "concurrently": "^10.0.4"
+    "concurrently": "^10.0.5"
   }
 }
