@@ -3,8 +3,8 @@
 //! Mastra registers hooks in `~/.mastracode/hooks.json` (flat format: each event
 //! maps to `[{ type: "command", command, timeout }]`). The action hook script
 //! posts a resolved state, which the registry maps to roles. The
-//! lifecycle-event-to-action mapping follows Mastra's own documented hook
-//! events.
+//! lifecycle-event-to-action mapping is referenced from herdr, re-implemented
+//! fresh.
 
 use super::{AgentProfile, EventRole, HookEvent, HookInstall, HookSpec};
 

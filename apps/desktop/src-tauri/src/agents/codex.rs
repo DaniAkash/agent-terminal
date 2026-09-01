@@ -7,7 +7,8 @@
 
 use super::{is_braille, AgentProfile, EventRole, HookEvent, HookInstall, HookSpec, OscState, OscView};
 
-/// Codex's OSC signature, derived by observing its own terminal output:
+/// Codex's OSC signature (reference: herdr `src/detect/manifests/codex.toml`,
+/// facts re-implemented fresh):
 /// - title containing `Action Required` → Blocked (Codex's approval prompt),
 /// - a Braille spinner frame in the title → Working,
 /// - any other non-empty title → Idle.

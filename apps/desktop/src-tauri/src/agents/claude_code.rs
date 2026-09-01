@@ -6,7 +6,8 @@
 
 use super::{is_braille, AgentProfile, EventRole, HookEvent, HookInstall, HookSpec, OscState, OscView};
 
-/// Claude's OSC signature, derived by observing its own terminal output:
+/// Claude's OSC signature (reference: herdr `src/detect/manifests/claude.toml`,
+/// facts re-implemented fresh):
 /// - a Braille-prefixed title is the animated spinner → Working,
 /// - OSC 9 progress `4;0;` is Claude's explicit idle marker → Idle,
 /// - any other settled (non-Braille) title means the prompt is showing → Idle.

@@ -3,8 +3,8 @@
 //! Kimi registers hooks in `~/.kimi-code/config.toml` via a managed block of
 //! `[[hooks]]` tables. The action hook script posts a resolved state
 //! (session/working/blocked/idle), which the registry maps to roles. The
-//! lifecycle-event-to-action mapping follows Kimi's own documented hook
-//! events.
+//! lifecycle-event-to-action mapping is referenced from herdr, re-implemented
+//! fresh.
 
 use super::{AgentProfile, EventRole, HookEvent, HookInstall, HookSpec};
 
