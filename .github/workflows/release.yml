@@ -182,6 +182,22 @@ jobs:
           # projectPath. Cargo output lands at <projectPath>/target/ from
           # here because Cargo.toml also lives at apps/desktop/.
           projectPath: apps/desktop
+          # Pin the build runner instead of letting tauri-action detect it.
+          #
+          # Detection picks a package manager by walking up from projectPath
+          # looking for a lockfile, then runs `<pm> run tauri`. In this
+          # monorepo the only lockfile is the root bun.lock while projectPath
+          # is apps/desktop, and the v0 action resolved that to npm and ran
+          # `npm run tauri build`, which fails because apps/desktop has no
+          # `tauri` script:
+          #
+          #   npm error Missing script: "tauri"
+          #   npm error workspace @agent-terminal/desktop
+          #
+          # Setting tauriScript skips detection entirely and runs exactly
+          # this command, which is also what `bun run tauri:build` does
+          # locally, so CI and laptop agree.
+          tauriScript: bunx tauri
           args: --target ${{ matrix.target }}
 
       - name: Add stable-named DMG copies
