@@ -6,8 +6,7 @@
 
 use super::{is_braille, AgentProfile, EventRole, HookEvent, HookInstall, HookSpec, OscState, OscView};
 
-/// Claude's OSC signature (reference: herdr `src/detect/manifests/claude.toml`,
-/// facts re-implemented fresh):
+/// Claude's OSC signature, derived by observing its own terminal output:
 /// - a Braille-prefixed title is the animated spinner → Working,
 /// - OSC 9 progress `4;0;` is Claude's explicit idle marker → Idle,
 /// - any other settled (non-Braille) title means the prompt is showing → Idle.
@@ -33,6 +32,20 @@ static EVENTS: &[HookEvent] = &[
     // PreToolUse is Working, except tool_name == "AskUserQuestion", which the
     // engine intercepts to stash the question text (see EventRole docs).
     HookEvent { name: "PreToolUse", role: EventRole::Working },
+    // Post-tool edges matter as much as pre-tool ones. With only PreToolUse
+    // mapped, a turn whose Stop is never delivered (Ctrl-C, crash, closed tab)
+    // pins the badge on Working forever. PostToolUse re-asserts Working on
+    // every completed tool call, so the state keeps advancing on its own.
+    HookEvent { name: "PostToolUse", role: EventRole::Working },
+    HookEvent { name: "PostToolUseFailure", role: EventRole::Working },
+    // A subagent finishing returns control to the parent, which is still
+    // working. Without this the parent can look idle mid-turn.
+    HookEvent { name: "SubagentStop", role: EventRole::Working },
+    // Two blocked signals on purpose. PermissionRequest is what current
+    // builds emit when a prompt is waiting; Notification is the older
+    // spelling. Both are registered so the badge is correct across
+    // versions, and a duplicate Blocked transition is idempotent.
+    HookEvent { name: "PermissionRequest", role: EventRole::Blocked },
     HookEvent { name: "Notification", role: EventRole::Blocked },
     HookEvent { name: "Stop", role: EventRole::Completed },
     HookEvent { name: "SessionEnd", role: EventRole::SessionEnd },
@@ -53,8 +66,49 @@ pub static PROFILE: AgentProfile = AgentProfile {
 
 #[cfg(test)]
 mod tests {
-    use super::state_from_osc;
-    use crate::agents::{OscState, OscView};
+    use super::{state_from_osc, EVENTS};
+    use crate::agents::{EventRole, OscState, OscView};
+
+    /// Pins the registered lifecycle events.
+    ///
+    /// Claude Code emits more events than the badge originally subscribed
+    /// to, and the missing ones are silent: an unregistered event simply
+    /// never arrives, so the badge sticks on a stale state instead of
+    /// failing loudly. This test makes a dropped subscription a test
+    /// failure rather than a bug report.
+    #[test]
+    fn subscribes_to_every_state_bearing_event() {
+        let got: Vec<(&str, EventRole)> =
+            EVENTS.iter().map(|e| (e.name, e.role)).collect();
+        assert_eq!(
+            got,
+            vec![
+                ("SessionStart", EventRole::SessionStart),
+                ("UserPromptSubmit", EventRole::Working),
+                ("PreToolUse", EventRole::Working),
+                ("PostToolUse", EventRole::Working),
+                ("PostToolUseFailure", EventRole::Working),
+                ("SubagentStop", EventRole::Working),
+                ("PermissionRequest", EventRole::Blocked),
+                ("Notification", EventRole::Blocked),
+                ("Stop", EventRole::Completed),
+                ("SessionEnd", EventRole::SessionEnd),
+            ]
+        );
+    }
+
+    /// Both spellings of the blocked signal stay registered: current
+    /// builds emit PermissionRequest, older ones Notification. Dropping
+    /// either silently breaks the blocked badge on that version.
+    #[test]
+    fn keeps_both_blocked_signals() {
+        let blocked: Vec<&str> = EVENTS
+            .iter()
+            .filter(|e| e.role == EventRole::Blocked)
+            .map(|e| e.name)
+            .collect();
+        assert_eq!(blocked, vec!["PermissionRequest", "Notification"]);
+    }
 
     fn view<'a>(title: &'a str, progress: &'a str) -> OscView<'a> {
         OscView { title, progress }

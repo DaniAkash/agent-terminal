@@ -1,8 +1,8 @@
 //! Amp agent profile.
 //!
 //! Amp reports state via its OSC window title and has no hook integration, so
-//! it is an OSC + floor agent. Signature reference: herdr
-//! `src/detect/manifests/amp.toml` (facts re-implemented fresh).
+//! it is an OSC + floor agent. The title signature below was derived by
+//! observing Amp's own terminal output.
 
 use super::{is_braille, AgentProfile, OscState, OscView};
 
