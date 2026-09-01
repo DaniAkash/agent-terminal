@@ -736,9 +736,11 @@ mod tests {
         let script = dir.join("claude-hook");
 
         // File has hooks but only for one existing event (not ours).
+        // PreCompact is deliberately an event agent-terminal does not
+        // register, so this asserts we leave a user's unrelated hooks alone.
         fs::write(
             &config_path,
-            r#"{"hooks":{"PostToolUse":[{"type":"command","command":"my-tool"}]}}"#,
+            r#"{"hooks":{"PreCompact":[{"type":"command","command":"my-tool"}]}}"#,
         )
         .unwrap();
 
@@ -748,8 +750,8 @@ mod tests {
 
         let v = read_json(&config_path);
         // Existing unrelated event preserved.
-        let post_arr = v["hooks"]["PostToolUse"].as_array().unwrap();
-        assert_eq!(post_arr.len(), 1, "PostToolUse should still have 1 entry");
+        let post_arr = v["hooks"]["PreCompact"].as_array().unwrap();
+        assert_eq!(post_arr.len(), 1, "PreCompact should still have 1 entry");
         // Our events added.
         assert!(has_our_command(&v, "SessionStart", &script));
         assert!(has_our_command(&v, "Stop", &script));
@@ -872,9 +874,9 @@ mod tests {
         assert_eq!(after, bad_json, "file must not be modified on parse error");
     }
 
-    // ── C9: all six Claude events installed in a single pass ──────────────────
+    // ── C9: every Claude event installed in a single pass ─────────────────────
     #[tokio::test]
-    async fn c9_claude_all_six_events_installed() {
+    async fn c9_claude_all_events_installed() {
         let dir = temp_dir("c9");
         let config_path = dir.join("settings.json");
         let script = dir.join("claude-hook");
@@ -885,12 +887,16 @@ mod tests {
 
         let v = read_json(&config_path);
         let hooks = v["hooks"].as_object().unwrap();
-        assert_eq!(hooks.len(), 6, "should have exactly 6 event keys");
+        assert_eq!(hooks.len(), 10, "should have exactly 10 event keys");
 
         let expected = [
             "SessionStart",
             "UserPromptSubmit",
             "PreToolUse",
+            "PostToolUse",
+            "PostToolUseFailure",
+            "SubagentStop",
+            "PermissionRequest",
             "Notification",
             "Stop",
             "SessionEnd",
