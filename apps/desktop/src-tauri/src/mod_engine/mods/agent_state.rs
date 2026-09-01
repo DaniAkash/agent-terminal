@@ -637,6 +637,17 @@ mod tests {
     }
 
     #[test]
+    fn opinionless_osc_keeps_working_hook() {
+        // An agent whose OSC carries no liveness signal (Claude 2.x: one static
+        // title, no OSC 9) must leave the hook channel authoritative. When the
+        // detector inferred Idle from that static title instead, this case took
+        // the OSC_STALE branch and the in-progress badge never rendered.
+        let now = Instant::now();
+        let i = inputs(AgentState::Working, None, true, false, now);
+        assert_eq!(effective_state(&i, now), AgentState::Working);
+    }
+
+    #[test]
     fn hook_wins_by_default() {
         let now = Instant::now();
         let i = inputs(AgentState::Blocked, None, true, false, now);
