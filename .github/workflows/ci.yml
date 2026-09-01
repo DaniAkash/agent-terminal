@@ -69,6 +69,14 @@ jobs:
     timeout-minutes: 30
     env:
       RUST_BACKTRACE: '1'
+      # apps/desktop/.cargo/config.toml points build-dir at a shared
+      # location so local worktrees stop each carrying their own copy of
+      # the dependency graph. A runner is a single ephemeral checkout, so
+      # it gains nothing from that and would instead split intermediates
+      # out of target/, which is the only thing rust-cache below caches
+      # and prunes. Overriding back to target/ keeps CI on the layout
+      # rust-cache expects.
+      CARGO_BUILD_BUILD_DIR: ${{ github.workspace }}/apps/desktop/target
     steps:
       - uses: actions/checkout@v4
 
