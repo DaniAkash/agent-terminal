@@ -109,6 +109,13 @@ jobs:
     needs: [changelog]
     runs-on: macos-15
     timeout-minutes: 90
+    env:
+      # apps/desktop/.cargo/config.toml moves intermediates to a shared
+      # dir so local worktrees share one copy. A release runner is a
+      # single ephemeral checkout, and the cache step below plus every
+      # bundle path in this workflow are written against target/, so
+      # override back to the default layout here.
+      CARGO_BUILD_BUILD_DIR: ${{ github.workspace }}/apps/desktop/target
     strategy:
       fail-fast: false
       matrix:

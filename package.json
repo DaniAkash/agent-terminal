@@ -15,12 +15,12 @@
     "check:desktop:tsc": "bun run --filter @agent-terminal/desktop typecheck",
     "check:desktop:test": "bun test apps/desktop/src",
     "check:sidecar:test": "cd apps/desktop/src-tauri/sidecar && bun test",
-    "check:rust:clippy": "cargo clippy --manifest-path apps/desktop/Cargo.toml --all-targets",
-    "check:rust:test": "cargo test --manifest-path apps/desktop/Cargo.toml --all-targets --no-fail-fast -- --test-threads=1",
+    "check:rust:clippy": "cd apps/desktop && cargo clippy --all-targets",
+    "check:rust:test": "cd apps/desktop && cargo test --all-targets --no-fail-fast -- --test-threads=1",
     "check:tauri:build": "cd apps/desktop && bunx tauri build --no-bundle --debug",
     "check:companion": "bun run --filter companion check",
     "check:drift": "cd apps/desktop && cargo xtask regen-protocol && cd ../.. && git diff --exit-code -- apps/companion/src/modules/wss/protocol.gen.ts",
-    "check:fix": "biome check --write --unsafe && cargo clippy --manifest-path apps/desktop/Cargo.toml --all-targets --fix --allow-dirty --allow-staged"
+    "check:fix": "biome check --write --unsafe && cd apps/desktop && cargo clippy --all-targets --fix --allow-dirty --allow-staged"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.6",

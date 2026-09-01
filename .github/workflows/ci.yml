@@ -69,6 +69,14 @@ jobs:
     timeout-minutes: 30
     env:
       RUST_BACKTRACE: '1'
+      # apps/desktop/.cargo/config.toml points build-dir at a shared
+      # location so local worktrees stop each carrying their own copy of
+      # the dependency graph. A runner is a single ephemeral checkout, so
+      # it gains nothing from that and would instead split intermediates
+      # out of target/, which is the only thing rust-cache below caches
+      # and prunes. Overriding back to target/ keeps CI on the layout
+      # rust-cache expects.
+      CARGO_BUILD_BUILD_DIR: ${{ github.workspace }}/apps/desktop/target
     steps:
       - uses: actions/checkout@v4
 
@@ -76,7 +84,12 @@ jobs:
         with:
           bun-version: latest
 
-      - uses: dtolnay/rust-toolchain@stable
+      # Pinned rather than @stable: rust-cache hashes every toolchain the
+      # runner reports into its cache key, so a floating toolchain makes
+      # the key drift whenever the runner image or upstream stable moves,
+      # and every drift is a cold rebuild of the whole dependency graph.
+      # Bump deliberately, same as any other dependency.
+      - uses: dtolnay/rust-toolchain@1.95.0
         with:
           components: clippy
 
@@ -109,6 +122,24 @@ jobs:
           # under GitHub's 10 GB per-repo cap) but cargo clippy drops to
           # ~10-20s on hit.
           cache-all-crates: true
+          # Pin the toolchain that feeds the cache key.
+          #
+          # rust-cache derives part of its key from `rustup toolchain
+          # list`, which reports every toolchain on the runner, not just
+          # the one this job uses. That set changes as GitHub rolls new
+          # runner images, so identical workflow config can hash to a
+          # different key depending on which image a job lands on, and a
+          # warm cache becomes a coin flip. Pinning the toolchain (see the
+          # dtolnay/rust-toolchain step above) keeps that set stable.
+          #
+          # `add-rust-environment-hash-key: false` looks like the direct
+          # fix and is what upstream BrowserOS went with, but on
+          # rust-cache@v2 that one flag gates BOTH the environment hash
+          # AND the Cargo.lock / Cargo.toml hash (src/config.ts:155-261).
+          # Disabling it yields a key with no lockfile component, so a
+          # dependency bump would silently restore a stale cache. Their
+          # live keys show exactly that shape. Not worth the correctness
+          # hole for a cache hit.
 
       - name: Cache typeshare-cli install
         uses: actions/cache@v4

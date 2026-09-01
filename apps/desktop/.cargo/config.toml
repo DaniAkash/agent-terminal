@@ -6,3 +6,32 @@
 # project-level scripts (codegen, deploy hooks, release automation, etc.).
 [alias]
 xtask = "run --package xtask --"
+
+[build]
+# Keep intermediate artifacts out of the checkout so every worktree on this
+# machine shares one copy instead of each carrying its own.
+#
+# Measured on this workspace: a full target/ is ~3.7G, of which ~781M is the
+# final artifacts and the rest is the dependency graph. With build-dir the
+# graph is written once and each worktree keeps only its 781M, so N worktrees
+# cost 3.7G + N*781M rather than N*3.7G. At three worktrees that is 6.0G
+# instead of 11.1G; at eight, 9.9G instead of 29.6G.
+#
+# Cross-worktree reuse is real, not just a disk trick: a second worktree
+# building against a warm shared dir compiles 1 crate rather than 381, and
+# alternating between worktrees stays at 1 (only the leaf crate, whose path
+# differs, is refingerprinted).
+#
+# {cargo-cache-home} expands to CARGO_HOME. Cargo expands neither ~ nor $HOME
+# and target-dir has no templating, so build-dir is the only form that can be
+# committed and still resolve per-machine.
+#
+# NOTE: cargo finds this file by walking up from the *current directory*, not
+# from --manifest-path. Every cargo invocation in package.json therefore cds
+# into apps/desktop first; a `--manifest-path` call from the repo root would
+# silently skip this file and rebuild the whole graph into its own target/.
+#
+# CI sets CARGO_BUILD_BUILD_DIR to override this back to target/, since a
+# runner is a single ephemeral checkout that gains nothing from sharing, and
+# Swatinem/rust-cache already caches and prunes target/ for us.
+build-dir = "{cargo-cache-home}/build/agent-terminal"
