@@ -30,7 +30,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
-    "lucide-react": "^1.28.0",
+    "lucide-react": "^1.37.0",
     "nanostores": "^1.4.2",
     "qrcode.react": "^4.2.0",
     "react": "^19.2.8",
