@@ -643,7 +643,10 @@ mod tests {
         // detector inferred Idle from that static title instead, this case took
         // the OSC_STALE branch and the in-progress badge never rendered.
         let now = Instant::now();
-        let i = inputs(AgentState::Working, None, true, false, now);
+        // Past OSC_STALE (1.5s) and well under PTY_SILENCE (20s): the window
+        // where the old permanent-Idle detector used to stale Working away.
+        let active = now - Duration::from_secs(5);
+        let i = inputs(AgentState::Working, None, true, false, active);
         assert_eq!(effective_state(&i, now), AgentState::Working);
     }
 
