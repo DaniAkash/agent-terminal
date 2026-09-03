@@ -11,7 +11,7 @@
   "dependencies": {
     "@phosphor-icons/react": "^2.1.10",
     "motion": "^12.43.0",
-    "next": "16.2.12",
+    "next": "16.3.3",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "shiki": "^4.4.1"
@@ -22,7 +22,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.2.12",
+    "eslint-config-next": "16.3.3",
     "tailwindcss": "^4",
     "typescript": "^6.0.3"
   },
