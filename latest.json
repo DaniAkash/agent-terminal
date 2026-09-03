@@ -1,15 +1,15 @@
 {
-  "version": "0.3.1",
-  "notes": "\n### Bug Fixes\n\n- Unblock the dependabot batch, biome 2.5.6 migrate + rn-webview pin (cc3e389)\n\n- Realign to Expo SDK 56 versions + prevent future ABI drift (#121) (2ef64bc)\n\n- Route typecheck through workspace filter after monorepo move (523aa22)\n\n- --no-fail-fast on cargo test so all test binaries report (9b5182d)\n\n- Hoisted linker + xtask biome path (unblock expo start) (#124) (3f99d63)\n\n- Align expo core to ~56.0.21 (SDK patch bumps) (7048226)\n\n- Subscribe to every state-bearing Claude Code hook event (ad2a69b)\n\n- Pin the tauri build runner instead of detecting it (#142) (59782f3)\n\n\n### Miscellaneous\n\n- Ignore yarn / npm / pnpm lockfiles (c0e27f2)\n\n- Move the lockfile block to the end of the file (f4427ba)\n\n- Add dependabot for bun apps + cargo workspace + github-actions (#113) (0d8d502)\n\n- Convert to bun monorepo (apps/desktop, apps/companion, apps/website) (5c68656)\n\n- Complete monorepo migration, src-tauri + xtask + Cargo into apps/desktop (381a878)\n\n- Complete monorepo migration (src-tauri + xtask + Cargo into apps/desktop) (#134) (3c12e23)\n\n- Restore reference attributions in profile doc comments (a2a0d1a)\n\n\n### Performance\n\n- Bump typescript to 7 (root + companion), 6 (website) (3c6dc65)\n\n- Warm caches on main pushes + cache Tauri apt packages (#119) (ec8b71f)\n\n- Pin rust toolchain so the cache key stops drifting (eb9a5b8)\n\n- Share build intermediates across worktrees (bc446ae)\n\n\n### Refactor\n\n- One bun run check across the monorepo, one CI job (e2ada94)\n\n\n### Reverts\n\n- Raw apt-get install instead of awalsh128/cache-apt-pkgs-action (#120) (4484611)\n\n",
-  "pub_date": "2026-09-01T13:50:09Z",
+  "version": "0.3.2",
+  "notes": "\n### Bug Fixes\n\n- Stop Claude's settled OSC title vetoing the working state (db1cc84)\n\n- Release the tab when the user cancels a turn (ac07087)\n\n- Stop trailing progress reopening a finished turn (be81e1c)\n\n\n### Tests\n\n- Age the working hook past OSC_STALE in the arbiter test (eafe5dd)\n\n",
+  "pub_date": "2026-09-03T05:47:34Z",
   "platforms": {
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTY0t3bmtjL1JxZHZRbXFFdURqMHFjS2RJYnVtaGtIbytpclFNb0NnWTdYOVJvcTI2M1hVWDM4NS9mYjJCTEJGeHZlWnlwUUdVSW9WRG9HZzhERGZXOFdxYUhPTEpmRmdrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg4MjcwNTUzCWZpbGU6QWdlbnQgVGVybWluYWwuYXBwLnRhci5nego0STV3cXoxSmV0cWJvOU1zMmNNcmxjbWIwUWR3V28yTEF6NGdENnNIMEtyUlRLbnYrWDgzT0cxczg4dmxuNE5ERGF4cnhlb2tmUHphTVM3c2JSV1VDdz09Cg==",
-      "url": "https://github.com/DaniAkash/agent-terminal/releases/download/v0.3.1/Agent.Terminal_aarch64.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTY0t3bmtjL1JxZGkraVIvM0V5c2I3VGlWTnhja0ROczgwUU1mTWxKSHRkRXBBOXl6Q0pvbW80cnhjWURqc0I5L0ZLSTFxR1ArN0xJL0JKV1dVNFJXUWx5ZXByUFJxaXdnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg4NDE0NDE2CWZpbGU6QWdlbnQgVGVybWluYWwuYXBwLnRhci5negp6cGQ4ektncFZ5VWpSRHk3MDRhcnI5U0tURXUrVjNuc1ZDYVpqZzdhNytONXQwV0UyZlNZTVlwckJ0ZmR1RFErN0FSdlhQUnFqc01SWFVOdVd5cC9Edz09Cg==",
+      "url": "https://github.com/DaniAkash/agent-terminal/releases/download/v0.3.2/Agent.Terminal_aarch64.app.tar.gz"
     },
     "darwin-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTY0t3bmtjL1JxZHR4RnBheHlzRHBvUHYyNUNzamFodjBla25nVTlYcUFpYzh1TXJWeG0vNThwd2NEc2wraVNrWTBRNjhVYXlkUGdNV0RxTHlkaWVoYXBlUFl3WTJCaFE4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg4MjcwNTcyCWZpbGU6QWdlbnQgVGVybWluYWwuYXBwLnRhci5negpmVkZqd0RoaldSbHNHTXF3RFZJWEdlaE1kNk4zVGFPWjFzTnNZVERnZ04wRlhxeHYwa1pSMXZTVFNEWngzY2pLWGZMSC9qWEdSTThOWG9UQmhKc29EZz09Cg==",
-      "url": "https://github.com/DaniAkash/agent-terminal/releases/download/v0.3.1/Agent.Terminal_x64.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTY0t3bmtjL1JxZGthc2VCN0VCRFhlSlBycDlOaFFnQmV1Wm8yV1VzUmRRMkt3NU43c3NSNEpZU081R2luM0lBYjRaemFpWTJENEJQN2l4M2NmQ0pzclpJNm9NVWdINXdNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg4NDE0NDA4CWZpbGU6QWdlbnQgVGVybWluYWwuYXBwLnRhci5negpQMDZrdGI0REoyNkZHREpJRkxSZ2tUSDZXdUFaRmpYZENOeTJtb0M4R3lIbTZwZjZ0NmdmUkFZMU1KUVhmYmp0WmVRMy95UWdLUmg1N0JpblB1YmhDZz09Cg==",
+      "url": "https://github.com/DaniAkash/agent-terminal/releases/download/v0.3.2/Agent.Terminal_x64.app.tar.gz"
     }
   }
 }
