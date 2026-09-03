@@ -34,7 +34,7 @@ fn state_from_osc(view: &OscView) -> Option<OscState> {
 
 static EVENTS: &[HookEvent] = &[
     HookEvent { name: "SessionStart", role: EventRole::SessionStart },
-    HookEvent { name: "UserPromptSubmit", role: EventRole::Working },
+    HookEvent { name: "UserPromptSubmit", role: EventRole::TurnStart },
     // PreToolUse is Working, except tool_name == "AskUserQuestion", which the
     // engine intercepts to stash the question text (see EventRole docs).
     HookEvent { name: "PreToolUse", role: EventRole::Working },
@@ -46,7 +46,6 @@ static EVENTS: &[HookEvent] = &[
     HookEvent { name: "PostToolUseFailure", role: EventRole::Working },
     // A subagent finishing returns control to the parent, which is still
     // working. Without this the parent can look idle mid-turn.
-    HookEvent { name: "SubagentStop", role: EventRole::Working },
     // Two blocked signals on purpose. PermissionRequest is what current
     // builds emit when a prompt is waiting; Notification is the older
     // spelling. Both are registered so the badge is correct across
@@ -91,11 +90,10 @@ mod tests {
             got,
             vec![
                 ("SessionStart", EventRole::SessionStart),
-                ("UserPromptSubmit", EventRole::Working),
+                ("UserPromptSubmit", EventRole::TurnStart),
                 ("PreToolUse", EventRole::Working),
                 ("PostToolUse", EventRole::Working),
                 ("PostToolUseFailure", EventRole::Working),
-                ("SubagentStop", EventRole::Working),
                 ("PermissionRequest", EventRole::Blocked),
                 ("Notification", EventRole::Blocked),
                 ("Stop", EventRole::Completed),

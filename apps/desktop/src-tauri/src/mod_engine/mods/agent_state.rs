@@ -488,6 +488,19 @@ impl Mod for AgentStateMod {
                 st.prompt_returned = false;
                 st.hook_state = AgentState::Idle;
             }
+            EventRole::TurnStart => {
+                st.proc_alive = true;
+                st.prompt_returned = false;
+                st.pending_question = None;
+                st.completed_message = None;
+                st.hook_state = AgentState::Working;
+            }
+            // Trailing progress after a turn reported Completed is stale: the
+            // agent can emit it late (Claude fires SubagentStop seconds after
+            // Stop, and hook delivery is not ordered). Honouring it repainted a
+            // finished tab as busy while its completion tick was still showing.
+            // Only a TurnStart reopens a finished turn.
+            EventRole::Working if st.hook_state == AgentState::Completed => {}
             EventRole::Working => {
                 st.proc_alive = true;
                 st.prompt_returned = false;
@@ -878,6 +891,60 @@ this line is not json at all
         let bytes = b"\x1b]0;\xe2\xa0\x82 Claude\x07";
         let h = CtxHarness::new();
         m.on_output(bytes, &h.ctx("proj:tab-1"));
+        assert_eq!(drain_states(&mut rx), vec!["in-progress"]);
+    }
+
+    #[tokio::test]
+    async fn trailing_progress_does_not_reopen_a_completed_turn() {
+        // Observed in the wild: Claude fired SubagentStop 8.5s after Stop. With
+        // that mapped to progress the tab flipped back to in-progress while the
+        // completion tick was still on screen, so it pulsed and showed a green
+        // check at once.
+        let mut m = AgentStateMod::new();
+        let mut rx = register_tab(&mut m, "proj:tab-1");
+        m.on_hook_event(&payload("claude-code", "SessionStart", Some("proj:tab-1"), Some("s-y")));
+        m.on_hook_event(&payload("claude-code", "UserPromptSubmit", Some("proj:tab-1"), Some("s-y")));
+        assert_eq!(drain_states(&mut rx), vec!["idle", "in-progress"]);
+
+        m.on_hook_event(&payload("claude-code", "Stop", Some("proj:tab-1"), Some("s-y")));
+        tokio::time::sleep(Duration::from_millis(120)).await;
+        assert_eq!(drain_states(&mut rx), vec!["completed"]);
+
+        // Late progress from the finished turn must be ignored.
+        m.on_hook_event(&payload("claude-code", "PostToolUse", Some("proj:tab-1"), Some("s-y")));
+        m.on_hook_event(&payload("claude-code", "PreToolUse", Some("proj:tab-1"), Some("s-y")));
+        assert!(drain_states(&mut rx).is_empty(), "completed tab must stay completed");
+    }
+
+    #[tokio::test]
+    async fn a_new_prompt_reopens_a_completed_turn() {
+        // The guard must not strand the tab: the next turn has to start.
+        let mut m = AgentStateMod::new();
+        let mut rx = register_tab(&mut m, "proj:tab-1");
+        m.on_hook_event(&payload("claude-code", "SessionStart", Some("proj:tab-1"), Some("s-y")));
+        m.on_hook_event(&payload("claude-code", "UserPromptSubmit", Some("proj:tab-1"), Some("s-y")));
+        m.on_hook_event(&payload("claude-code", "Stop", Some("proj:tab-1"), Some("s-y")));
+        tokio::time::sleep(Duration::from_millis(120)).await;
+        assert_eq!(drain_states(&mut rx), vec!["idle", "in-progress", "completed"]);
+
+        m.on_hook_event(&payload("claude-code", "UserPromptSubmit", Some("proj:tab-1"), Some("s-y")));
+        assert_eq!(drain_states(&mut rx), vec!["in-progress"]);
+    }
+
+    #[tokio::test]
+    async fn single_signal_agents_still_start_their_next_turn() {
+        // opencode's only progress event doubles as its turn start, so it is
+        // TurnStart. If it were a mid-turn heartbeat the guard would strand the
+        // tab in completed forever after turn_end.
+        let mut m = AgentStateMod::new();
+        let mut rx = register_tab(&mut m, "proj:tab-1");
+        m.on_hook_event(&payload("opencode", "session_start", Some("proj:tab-1"), Some("s-y")));
+        m.on_hook_event(&payload("opencode", "working", Some("proj:tab-1"), Some("s-y")));
+        m.on_hook_event(&payload("opencode", "turn_end", Some("proj:tab-1"), Some("s-y")));
+        tokio::time::sleep(Duration::from_millis(120)).await;
+        assert_eq!(drain_states(&mut rx), vec!["idle", "in-progress", "completed"]);
+
+        m.on_hook_event(&payload("opencode", "working", Some("proj:tab-1"), Some("s-y")));
         assert_eq!(drain_states(&mut rx), vec!["in-progress"]);
     }
 

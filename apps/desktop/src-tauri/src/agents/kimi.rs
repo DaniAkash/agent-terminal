@@ -11,7 +11,7 @@ use super::{AgentProfile, EventRole, HookEvent, HookInstall, HookSpec};
 /// Actions the hook script posts, mapped to state-engine roles.
 static EVENTS: &[HookEvent] = &[
     HookEvent { name: "session", role: EventRole::SessionStart },
-    HookEvent { name: "working", role: EventRole::Working },
+    HookEvent { name: "working", role: EventRole::TurnStart },
     HookEvent { name: "blocked", role: EventRole::Blocked },
     HookEvent { name: "idle", role: EventRole::Idle },
 ];

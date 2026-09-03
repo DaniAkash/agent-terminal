@@ -28,7 +28,7 @@ fn state_from_osc(view: &OscView) -> Option<OscState> {
 
 static EVENTS: &[HookEvent] = &[
     HookEvent { name: "SessionStart", role: EventRole::SessionStart },
-    HookEvent { name: "UserPromptSubmit", role: EventRole::Working },
+    HookEvent { name: "UserPromptSubmit", role: EventRole::TurnStart },
     HookEvent { name: "PermissionRequest", role: EventRole::Blocked },
     HookEvent { name: "Stop", role: EventRole::Completed },
 ];

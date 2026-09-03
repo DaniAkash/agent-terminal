@@ -887,7 +887,7 @@ mod tests {
 
         let v = read_json(&config_path);
         let hooks = v["hooks"].as_object().unwrap();
-        assert_eq!(hooks.len(), 10, "should have exactly 10 event keys");
+        assert_eq!(hooks.len(), 9, "should have exactly 9 event keys");
 
         let expected = [
             "SessionStart",
@@ -895,7 +895,6 @@ mod tests {
             "PreToolUse",
             "PostToolUse",
             "PostToolUseFailure",
-            "SubagentStop",
             "PermissionRequest",
             "Notification",
             "Stop",

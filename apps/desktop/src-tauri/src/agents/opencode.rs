@@ -9,7 +9,7 @@ use super::{AgentProfile, EventRole, HookEvent, HookInstall, HookSpec};
 
 static EVENTS: &[HookEvent] = &[
     HookEvent { name: "session_start", role: EventRole::SessionStart },
-    HookEvent { name: "working", role: EventRole::Working },
+    HookEvent { name: "working", role: EventRole::TurnStart },
     HookEvent { name: "blocked", role: EventRole::Blocked },
     HookEvent { name: "turn_end", role: EventRole::Completed },
 ];

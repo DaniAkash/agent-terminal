@@ -60,6 +60,13 @@ pub(crate) fn is_braille(c: char) -> bool {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EventRole {
     SessionStart,
+    /// Opens a turn. Always moves the tab to working, including out of
+    /// `Completed`, since a new turn supersedes the previous one's result.
+    TurnStart,
+    /// Mid-turn progress. Re-asserts working, but must never resurrect a turn
+    /// that already reported `Completed`: agents can emit trailing progress
+    /// events after their stop event, and honouring those repainted a finished
+    /// tab as busy underneath its own completion tick.
     Working,
     Blocked,
     /// Return to the idle baseline without ending the session. Used by agents
