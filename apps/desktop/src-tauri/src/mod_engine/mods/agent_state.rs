@@ -205,6 +205,15 @@ fn effective_state(i: &Inputs, now: Instant) -> AgentState {
     i.hook
 }
 
+/// A lone ESC or Ctrl-C: the user reaching for "stop".
+///
+/// Matched as an exact single byte on purpose. Navigation keys arrive as
+/// multi-byte escape sequences (arrow keys send `ESC [ A`), so requiring the
+/// lone byte keeps ordinary cursor movement from reading as a cancel.
+fn is_interrupt_key(data: &[u8]) -> bool {
+    matches!(data, [0x1b] | [0x03])
+}
+
 /// Recompute the effective state and, if it changed, push it to the frontend
 /// and fire a notification. Shared by the sync callbacks and the reconcile tick.
 fn reconcile(
@@ -350,6 +359,36 @@ impl Mod for AgentStateMod {
         reconcile(&mut st, &handle.emitter, &self.notifications, now);
     }
 
+    /// Cancellation channel. Agents flagged `interrupt_ends_turn` abandon a turn
+    /// on ESC without firing their completion event, so the keypress is the only
+    /// evidence the turn ended. Releases to Idle rather than Completed: a
+    /// cancelled turn produced no result and must not show as finished.
+    ///
+    /// Guessing wrong is self-correcting, since the next hook event restores
+    /// Working. A missed cancellation is not: it pins the tab to Working until
+    /// the next prompt.
+    fn on_input(&mut self, data: &[u8], ctx: &ModContext) {
+        if !is_interrupt_key(data) {
+            return;
+        }
+        let Some(handle) = self.tabs.get(ctx.tab_id) else { return };
+        let mut st = handle.state.lock().unwrap();
+        if st.hook_state != AgentState::Working {
+            return;
+        }
+        let ends_turn = st
+            .agent_id
+            .as_deref()
+            .and_then(agents::by_id)
+            .is_some_and(|p| p.interrupt_ends_turn);
+        if !ends_turn {
+            return;
+        }
+        st.hook_state = AgentState::Idle;
+        st.pending_question = None;
+        reconcile(&mut st, &handle.emitter, &self.notifications, Instant::now());
+    }
+
     fn on_agent_detected(&mut self, agent: &str, _cwd: &str, _cmd: &str, ctx: &ModContext) {
         if agents::by_id(agent).is_none() {
             return;
@@ -449,6 +488,19 @@ impl Mod for AgentStateMod {
                 st.prompt_returned = false;
                 st.hook_state = AgentState::Idle;
             }
+            EventRole::TurnStart => {
+                st.proc_alive = true;
+                st.prompt_returned = false;
+                st.pending_question = None;
+                st.completed_message = None;
+                st.hook_state = AgentState::Working;
+            }
+            // Trailing progress after a turn reported Completed is stale: the
+            // agent can emit it late (Claude fires SubagentStop seconds after
+            // Stop, and hook delivery is not ordered). Honouring it repainted a
+            // finished tab as busy while its completion tick was still showing.
+            // Only a TurnStart reopens a finished turn.
+            EventRole::Working if st.hook_state == AgentState::Completed => {}
             EventRole::Working => {
                 st.proc_alive = true;
                 st.prompt_returned = false;
@@ -634,6 +686,20 @@ mod tests {
         let quiet_since = now - Duration::from_secs(21); // past PTY_SILENCE (20s)
         let i = inputs(AgentState::Working, None, true, false, quiet_since);
         assert_eq!(effective_state(&i, now), AgentState::Idle);
+    }
+
+    #[test]
+    fn opinionless_osc_keeps_working_hook() {
+        // An agent whose OSC carries no liveness signal (Claude 2.x: one static
+        // title, no OSC 9) must leave the hook channel authoritative. When the
+        // detector inferred Idle from that static title instead, this case took
+        // the OSC_STALE branch and the in-progress badge never rendered.
+        let now = Instant::now();
+        // Past OSC_STALE (1.5s) and well under PTY_SILENCE (20s): the window
+        // where the old permanent-Idle detector used to stale Working away.
+        let active = now - Duration::from_secs(5);
+        let i = inputs(AgentState::Working, None, true, false, active);
+        assert_eq!(effective_state(&i, now), AgentState::Working);
     }
 
     #[test]
@@ -826,6 +892,132 @@ this line is not json at all
         let h = CtxHarness::new();
         m.on_output(bytes, &h.ctx("proj:tab-1"));
         assert_eq!(drain_states(&mut rx), vec!["in-progress"]);
+    }
+
+    #[tokio::test]
+    async fn trailing_progress_does_not_reopen_a_completed_turn() {
+        // Observed in the wild: Claude fired SubagentStop 8.5s after Stop. With
+        // that mapped to progress the tab flipped back to in-progress while the
+        // completion tick was still on screen, so it pulsed and showed a green
+        // check at once.
+        let mut m = AgentStateMod::new();
+        let mut rx = register_tab(&mut m, "proj:tab-1");
+        m.on_hook_event(&payload("claude-code", "SessionStart", Some("proj:tab-1"), Some("s-y")));
+        m.on_hook_event(&payload("claude-code", "UserPromptSubmit", Some("proj:tab-1"), Some("s-y")));
+        assert_eq!(drain_states(&mut rx), vec!["idle", "in-progress"]);
+
+        m.on_hook_event(&payload("claude-code", "Stop", Some("proj:tab-1"), Some("s-y")));
+        tokio::time::sleep(Duration::from_millis(120)).await;
+        assert_eq!(drain_states(&mut rx), vec!["completed"]);
+
+        // Late progress from the finished turn must be ignored.
+        m.on_hook_event(&payload("claude-code", "PostToolUse", Some("proj:tab-1"), Some("s-y")));
+        m.on_hook_event(&payload("claude-code", "PreToolUse", Some("proj:tab-1"), Some("s-y")));
+        assert!(drain_states(&mut rx).is_empty(), "completed tab must stay completed");
+    }
+
+    #[tokio::test]
+    async fn a_new_prompt_reopens_a_completed_turn() {
+        // The guard must not strand the tab: the next turn has to start.
+        let mut m = AgentStateMod::new();
+        let mut rx = register_tab(&mut m, "proj:tab-1");
+        m.on_hook_event(&payload("claude-code", "SessionStart", Some("proj:tab-1"), Some("s-y")));
+        m.on_hook_event(&payload("claude-code", "UserPromptSubmit", Some("proj:tab-1"), Some("s-y")));
+        m.on_hook_event(&payload("claude-code", "Stop", Some("proj:tab-1"), Some("s-y")));
+        tokio::time::sleep(Duration::from_millis(120)).await;
+        assert_eq!(drain_states(&mut rx), vec!["idle", "in-progress", "completed"]);
+
+        m.on_hook_event(&payload("claude-code", "UserPromptSubmit", Some("proj:tab-1"), Some("s-y")));
+        assert_eq!(drain_states(&mut rx), vec!["in-progress"]);
+    }
+
+    #[tokio::test]
+    async fn single_signal_agents_still_start_their_next_turn() {
+        // opencode's only progress event doubles as its turn start, so it is
+        // TurnStart. If it were a mid-turn heartbeat the guard would strand the
+        // tab in completed forever after turn_end.
+        let mut m = AgentStateMod::new();
+        let mut rx = register_tab(&mut m, "proj:tab-1");
+        m.on_hook_event(&payload("opencode", "session_start", Some("proj:tab-1"), Some("s-y")));
+        m.on_hook_event(&payload("opencode", "working", Some("proj:tab-1"), Some("s-y")));
+        m.on_hook_event(&payload("opencode", "turn_end", Some("proj:tab-1"), Some("s-y")));
+        tokio::time::sleep(Duration::from_millis(120)).await;
+        assert_eq!(drain_states(&mut rx), vec!["idle", "in-progress", "completed"]);
+
+        m.on_hook_event(&payload("opencode", "working", Some("proj:tab-1"), Some("s-y")));
+        assert_eq!(drain_states(&mut rx), vec!["in-progress"]);
+    }
+
+    #[test]
+    fn interrupt_key_releases_a_cancelled_turn() {
+        // Claude does not fire Stop when the user interrupts, so without this
+        // channel the tab pulses as in-progress until the next prompt.
+        let mut m = AgentStateMod::new();
+        let mut rx = register_tab(&mut m, "proj:tab-1");
+        m.on_hook_event(&payload("claude-code", "SessionStart", Some("proj:tab-1"), Some("s-y")));
+        m.on_hook_event(&payload("claude-code", "UserPromptSubmit", Some("proj:tab-1"), Some("s-y")));
+        assert_eq!(drain_states(&mut rx), vec!["idle", "in-progress"]);
+
+        let h = CtxHarness::new();
+        m.on_input(b"\x1b", &h.ctx("proj:tab-1"));
+        assert_eq!(drain_states(&mut rx), vec!["idle"]);
+    }
+
+    #[test]
+    fn ctrl_c_also_releases_a_cancelled_turn() {
+        let mut m = AgentStateMod::new();
+        let mut rx = register_tab(&mut m, "proj:tab-1");
+        m.on_hook_event(&payload("claude-code", "SessionStart", Some("proj:tab-1"), Some("s-y")));
+        m.on_hook_event(&payload("claude-code", "UserPromptSubmit", Some("proj:tab-1"), Some("s-y")));
+        assert_eq!(drain_states(&mut rx), vec!["idle", "in-progress"]);
+
+        let h = CtxHarness::new();
+        m.on_input(b"\x03", &h.ctx("proj:tab-1"));
+        assert_eq!(drain_states(&mut rx), vec!["idle"]);
+    }
+
+    #[test]
+    fn arrow_keys_are_not_a_cancel() {
+        // ESC [ A and friends must not read as an interrupt, or ordinary cursor
+        // movement would clear a live turn.
+        let mut m = AgentStateMod::new();
+        let mut rx = register_tab(&mut m, "proj:tab-1");
+        m.on_hook_event(&payload("claude-code", "SessionStart", Some("proj:tab-1"), Some("s-y")));
+        m.on_hook_event(&payload("claude-code", "UserPromptSubmit", Some("proj:tab-1"), Some("s-y")));
+        assert_eq!(drain_states(&mut rx), vec!["idle", "in-progress"]);
+
+        let h = CtxHarness::new();
+        for seq in [&b"\x1b[A"[..], b"\x1b[B", b"\x1bOP", b"hello"] {
+            m.on_input(seq, &h.ctx("proj:tab-1"));
+        }
+        assert!(drain_states(&mut rx).is_empty(), "navigation must not change state");
+    }
+
+    #[test]
+    fn interrupt_is_ignored_for_agents_that_report_their_own_cancel() {
+        // Opt-in per agent: opencode is not flagged, so its hook stays the sole
+        // authority and ESC must not move the tab.
+        let mut m = AgentStateMod::new();
+        let mut rx = register_tab(&mut m, "proj:tab-1");
+        m.on_hook_event(&payload("opencode", "session_start", Some("proj:tab-1"), Some("s-y")));
+        m.on_hook_event(&payload("opencode", "working", Some("proj:tab-1"), Some("s-y")));
+        assert_eq!(drain_states(&mut rx), vec!["idle", "in-progress"]);
+
+        let h = CtxHarness::new();
+        m.on_input(b"\x1b", &h.ctx("proj:tab-1"));
+        assert!(drain_states(&mut rx).is_empty(), "unflagged agent must be untouched");
+    }
+
+    #[test]
+    fn interrupt_does_not_disturb_an_idle_tab() {
+        let mut m = AgentStateMod::new();
+        let mut rx = register_tab(&mut m, "proj:tab-1");
+        m.on_hook_event(&payload("claude-code", "SessionStart", Some("proj:tab-1"), Some("s-y")));
+        assert_eq!(drain_states(&mut rx), vec!["idle"]);
+
+        let h = CtxHarness::new();
+        m.on_input(b"\x1b", &h.ctx("proj:tab-1"));
+        assert!(drain_states(&mut rx).is_empty());
     }
 
     #[test]

@@ -10,7 +10,15 @@ use super::{is_braille, AgentProfile, EventRole, HookEvent, HookInstall, HookSpe
 /// facts re-implemented fresh):
 /// - a Braille-prefixed title is the animated spinner → Working,
 /// - OSC 9 progress `4;0;` is Claude's explicit idle marker → Idle,
-/// - any other settled (non-Braille) title means the prompt is showing → Idle.
+/// - anything else → no opinion.
+///
+/// Both positive signals are absent from Claude 2.x, which paints one static
+/// title for the life of the session and emits no OSC 9 at all. A settled title
+/// therefore carries no liveness information, so this returns None rather than
+/// inferring Idle from it. Inferring Idle made the fused state machine stale
+/// every hook-reported Working back to Idle after OSC_STALE, which suppressed
+/// the in-progress badge for every Claude tab. The two positive branches stay
+/// so the detector self-heals if either signal returns.
 ///
 /// Claude does not surface "blocked" via OSC; that comes from the hook channel.
 fn state_from_osc(view: &OscView) -> Option<OscState> {
@@ -21,15 +29,12 @@ fn state_from_osc(view: &OscView) -> Option<OscState> {
     if view.progress.starts_with("4;0;") {
         return Some(OscState::Idle);
     }
-    if first.is_some() {
-        return Some(OscState::Idle);
-    }
     None
 }
 
 static EVENTS: &[HookEvent] = &[
     HookEvent { name: "SessionStart", role: EventRole::SessionStart },
-    HookEvent { name: "UserPromptSubmit", role: EventRole::Working },
+    HookEvent { name: "UserPromptSubmit", role: EventRole::TurnStart },
     // PreToolUse is Working, except tool_name == "AskUserQuestion", which the
     // engine intercepts to stash the question text (see EventRole docs).
     HookEvent { name: "PreToolUse", role: EventRole::Working },
@@ -41,7 +46,6 @@ static EVENTS: &[HookEvent] = &[
     HookEvent { name: "PostToolUseFailure", role: EventRole::Working },
     // A subagent finishing returns control to the parent, which is still
     // working. Without this the parent can look idle mid-turn.
-    HookEvent { name: "SubagentStop", role: EventRole::Working },
     // Two blocked signals on purpose. PermissionRequest is what current
     // builds emit when a prompt is waiting; Notification is the older
     // spelling. Both are registered so the badge is correct across
@@ -63,6 +67,7 @@ pub static PROFILE: AgentProfile = AgentProfile {
         timeout_ms: 10_000,
     }),
     osc: Some(state_from_osc),
+    interrupt_ends_turn: true,
 };
 
 #[cfg(test)]
@@ -85,11 +90,10 @@ mod tests {
             got,
             vec![
                 ("SessionStart", EventRole::SessionStart),
-                ("UserPromptSubmit", EventRole::Working),
+                ("UserPromptSubmit", EventRole::TurnStart),
                 ("PreToolUse", EventRole::Working),
                 ("PostToolUse", EventRole::Working),
                 ("PostToolUseFailure", EventRole::Working),
-                ("SubagentStop", EventRole::Working),
                 ("PermissionRequest", EventRole::Blocked),
                 ("Notification", EventRole::Blocked),
                 ("Stop", EventRole::Completed),
@@ -127,10 +131,12 @@ mod tests {
     }
 
     #[test]
-    fn settled_title_is_idle() {
-        // U+2733 static glyph (not Braille) → prompt showing.
-        assert_eq!(state_from_osc(&view("\u{2733} Claude", "")), Some(OscState::Idle));
-        assert_eq!(state_from_osc(&view("~/project", "")), Some(OscState::Idle));
+    fn settled_title_yields_no_opinion() {
+        // "✳ Claude Code" (U+2733, not Braille) is the only title Claude 2.x
+        // ever sets, and it never changes. Reading Idle out of it vetoed the
+        // hook channel's Working state and hid the in-progress badge outright.
+        assert_eq!(state_from_osc(&view("\u{2733} Claude Code", "")), None);
+        assert_eq!(state_from_osc(&view("~/project", "")), None);
     }
 
     #[test]

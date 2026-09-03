@@ -27,6 +27,7 @@ pub static PROFILE: AgentProfile = AgentProfile {
     runtime_wrapped: true,
     hook: None,
     osc: Some(state_from_osc),
+    interrupt_ends_turn: false,
 };
 
 #[cfg(test)]

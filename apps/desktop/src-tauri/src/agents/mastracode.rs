@@ -11,7 +11,7 @@ use super::{AgentProfile, EventRole, HookEvent, HookInstall, HookSpec};
 /// Actions the hook script posts, mapped to state-engine roles.
 static EVENTS: &[HookEvent] = &[
     HookEvent { name: "idle", role: EventRole::Idle },
-    HookEvent { name: "working", role: EventRole::Working },
+    HookEvent { name: "working", role: EventRole::TurnStart },
     HookEvent { name: "blocked", role: EventRole::Blocked },
     HookEvent { name: "release", role: EventRole::SessionEnd },
 ];
@@ -48,4 +48,5 @@ pub static PROFILE: AgentProfile = AgentProfile {
         timeout_ms: 10_000,
     }),
     osc: None,
+    interrupt_ends_turn: false,
 };
