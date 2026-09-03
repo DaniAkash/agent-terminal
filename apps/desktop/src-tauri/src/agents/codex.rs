@@ -44,6 +44,7 @@ pub static PROFILE: AgentProfile = AgentProfile {
         timeout_ms: 5_000,
     }),
     osc: Some(state_from_osc),
+    interrupt_ends_turn: false,
 };
 
 #[cfg(test)]

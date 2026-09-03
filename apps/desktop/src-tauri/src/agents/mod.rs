@@ -137,6 +137,11 @@ pub struct AgentProfile {
     /// OSC title/progress signature, if the agent emits state via OSC. `None`
     /// for agents that do not (opencode).
     pub osc: Option<fn(&OscView) -> Option<OscState>>,
+    /// True if a lone ESC or Ctrl-C ends the current turn without the agent
+    /// firing its completion event, making the keypress the only signal that
+    /// the turn is over. Opt-in per agent: an agent that does report its own
+    /// cancellation must stay `false` so its hook stays the sole authority.
+    pub interrupt_ends_turn: bool,
 }
 
 impl AgentProfile {

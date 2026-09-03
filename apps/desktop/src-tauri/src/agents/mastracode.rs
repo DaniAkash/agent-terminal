@@ -48,4 +48,5 @@ pub static PROFILE: AgentProfile = AgentProfile {
         timeout_ms: 10_000,
     }),
     osc: None,
+    interrupt_ends_turn: false,
 };
