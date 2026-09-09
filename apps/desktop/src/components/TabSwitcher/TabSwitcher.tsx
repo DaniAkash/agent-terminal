@@ -108,10 +108,12 @@ export function TabSwitcher() {
       onOpenChange={setOpen}
       title="Tab switcher"
       description="Jump to a recently active tab"
-      // VS Code-style placement: pinned near the top of the terminal area
-      // (not the whole window — sidebar shifts the centre right by
-      // --sidebar-half). top:64px puts it just below the TabBar.
-      className="top-16 left-[calc(50%+var(--sidebar-half))] sm:max-w-[600px]"
+      // VS Code-style placement: pinned near the top. Horizontal centring
+      // is inherited from DialogContent so the switcher stays put whatever
+      // the sidebar is doing; anchoring it to the terminal area meant a
+      // resizable sidebar dragged the switcher around, and a hidden one
+      // left it offset by half a sidebar that was not on screen.
+      className="top-16 sm:max-w-[600px]"
     >
       {/* shouldFilter=false: we own the filter (filterSwitcherRows) so we
           can preserve recency order among matches. cmdk's default filter
