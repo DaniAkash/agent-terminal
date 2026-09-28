@@ -4,13 +4,14 @@
 // is exactly what this control is.
 
 import { useStore } from '@nanostores/react'
-import { useRef } from 'react'
+import type React from 'react'
+import { useEffect, useRef } from 'react'
 import {
+  $sidebarMaxWidth,
   $sidebarWidth,
   applySidebarWidthToDocument,
   clampSidebarWidth,
   resetSidebarWidth,
-  SIDEBAR_WIDTH_MAX,
   SIDEBAR_WIDTH_MIN,
   setSidebarWidth,
   sidebarMaxForViewport,
@@ -35,17 +36,31 @@ import {
  * watches the real DOM.
  * -------------------------------------------------------------------------*/
 
+// The cursor and selection lock is global, so every exit path has to clear it
+// or the whole window is left unselectable under a resize cursor. Module scope
+// keeps the reference stable for the unmount cleanup below.
+function releaseDragStyles() {
+  document.body.style.cursor = ''
+  document.body.style.userSelect = ''
+}
+
 const HEADER_HEIGHT = 38
 const ARROW_STEP = 8
 const ARROW_STEP_LARGE = 32
 
 export function SidebarResizeHandle() {
   const width = useStore($sidebarWidth)
+  const maxWidth = useStore($sidebarMaxWidth)
   const drag = useRef<{
     startX: number
     startWidth: number
     next: number
   } | null>(null)
+
+  // Unavoidable effect: a drag can be interrupted by this element unmounting,
+  // since Cmd+B hides the sidebar outright, and pointerup then never arrives.
+  // Nothing but an unmount cleanup can release the global lock in that case.
+  useEffect(() => releaseDragStyles, [])
 
   function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
     if (e.button !== 0) return
@@ -73,8 +88,7 @@ export function SidebarResizeHandle() {
     if (e.currentTarget.hasPointerCapture(e.pointerId)) {
       e.currentTarget.releasePointerCapture(e.pointerId)
     }
-    document.body.style.cursor = ''
-    document.body.style.userSelect = ''
+    releaseDragStyles()
     setSidebarWidth(d.next)
   }
 
@@ -96,12 +110,13 @@ export function SidebarResizeHandle() {
       aria-label="Resize sidebar"
       aria-valuenow={width}
       aria-valuemin={SIDEBAR_WIDTH_MIN}
-      aria-valuemax={SIDEBAR_WIDTH_MAX}
+      aria-valuemax={maxWidth}
       tabIndex={0}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={endDrag}
       onPointerCancel={endDrag}
+      onLostPointerCapture={endDrag}
       onDoubleClick={resetSidebarWidth}
       onKeyDown={onKeyDown}
       style={{ top: HEADER_HEIGHT }}

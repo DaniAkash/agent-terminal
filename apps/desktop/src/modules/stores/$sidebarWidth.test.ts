@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
 import {
+  $sidebarMaxWidth,
   $sidebarWidth,
   clampSidebarWidth,
   initSidebarWidthFromStorage,
@@ -112,6 +113,23 @@ describe('$sidebarWidth', () => {
     setSidebarWidth(9999)
     expect($sidebarWidth.get()).toBe(SIDEBAR_WIDTH_MAX)
     expect(ls.get(KEY)).toBe(String(SIDEBAR_WIDTH_MAX))
+  })
+
+  test('exposes the viewport-narrowed ceiling for assistive tech', () => {
+    // The handle reports this as aria-valuemax. A hardcoded absolute maximum
+    // would promise a width the drag then refuses on a narrow window.
+    const g = globalThis as typeof globalThis & {
+      window?: { innerWidth: number }
+    }
+    const prev = g.window
+    g.window = { innerWidth: 900 }
+    try {
+      setSidebarWidth(400)
+      expect($sidebarMaxWidth.get()).toBe(sidebarMaxForViewport(900))
+      expect($sidebarWidth.get()).toBe(sidebarMaxForViewport(900))
+    } finally {
+      g.window = prev
+    }
   })
 
   test('resetSidebarWidth returns to the default', () => {

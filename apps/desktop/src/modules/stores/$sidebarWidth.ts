@@ -53,10 +53,20 @@ export function clampSidebarWidth(
 
 export const $sidebarWidth = atom<number>(SIDEBAR_WIDTH_DEFAULT)
 
+/**
+ * The ceiling currently in force, which is the absolute maximum narrowed by
+ * the viewport share. Exposed as a store so the resize handle can report an
+ * accurate `aria-valuemax` without owning a window listener of its own.
+ */
+export const $sidebarMaxWidth = atom<number>(SIDEBAR_WIDTH_MAX)
+
 function currentViewportMax(): number {
-  return typeof window === 'undefined'
-    ? SIDEBAR_WIDTH_MAX
-    : sidebarMaxForViewport(window.innerWidth)
+  const max =
+    typeof window === 'undefined'
+      ? SIDEBAR_WIDTH_MAX
+      : sidebarMaxForViewport(window.innerWidth)
+  if ($sidebarMaxWidth.get() !== max) $sidebarMaxWidth.set(max)
+  return max
 }
 
 /**
@@ -103,6 +113,8 @@ export function resetSidebarWidth() {
  */
 export function clampSidebarWidthToViewport() {
   const current = $sidebarWidth.get()
+  // Reads through currentViewportMax so the reported ceiling tracks the window
+  // even when the width itself does not need to move.
   const next = clampSidebarWidth(current, currentViewportMax())
   if (next !== current) setSidebarWidth(next)
 }
