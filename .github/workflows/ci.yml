@@ -89,7 +89,7 @@ jobs:
       # the key drift whenever the runner image or upstream stable moves,
       # and every drift is a cold rebuild of the whole dependency graph.
       # Bump deliberately, same as any other dependency.
-      - uses: dtolnay/rust-toolchain@1.95.0
+      - uses: dtolnay/rust-toolchain@1.120.0
         with:
           components: clippy
 
