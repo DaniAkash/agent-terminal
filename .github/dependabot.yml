@@ -188,6 +188,8 @@ updates:
       - dependency-name: "*"
         update-types:
           - "version-update:semver-major"
+      # Version-shaped refs are prerelease branches, so keep the Rust version as an action input.
+      - dependency-name: "dtolnay/rust-toolchain"
     groups:
       minor-and-patch:
         update-types:
