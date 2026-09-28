@@ -9,6 +9,10 @@ import { initNavigation } from '@/modules/stores/$navigation'
 import { $projects } from '@/modules/stores/$projects'
 import { initSidebarViewFromStorage } from '@/modules/stores/$sidebarView'
 import { initSidebarVisibleFromStorage } from '@/modules/stores/$sidebarVisible'
+import {
+  clampSidebarWidthToViewport,
+  initSidebarWidthFromStorage,
+} from '@/modules/stores/$sidebarWidth'
 import { initTabRecencySubscriber } from '@/modules/stores/$tabRecency.init'
 import { initThemeFromStorage } from '@/modules/stores/$theme'
 import { installMobileOpsListener } from '@/modules/wss-bridge/mobile-ops'
@@ -44,6 +48,11 @@ async function bootstrap() {
   initThemeFromStorage()
   initSidebarVisibleFromStorage()
   initSidebarViewFromStorage()
+  initSidebarWidthFromStorage()
+
+  // Re-clamp the sidebar on window resize so a width chosen on a wide
+  // display cannot strand an oversized sidebar on a smaller one.
+  window.addEventListener('resize', clampSidebarWidthToViewport)
 
   // Recency tracker subscribes to navigation; must run after initNavigation
   // so the first bump captures the project/tab restored from disk.

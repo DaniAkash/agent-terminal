@@ -120,10 +120,10 @@
   --tab-foreground: rgba(0, 0, 0, 0.5);
   --tab-foreground-active: rgba(0, 0, 0, 0.88);
   --tab-border: rgba(0, 0, 0, 0.08);
-  /* Sidebar width — consumed by Sidebar and by popovers centred over the
-     terminal area (e.g. the Cmd+P switcher). Single source of truth. */
+  /* Sidebar width. Default only: $sidebarWidth overwrites this on the
+     document root once hydrated, so the sidebar still paints at a sane
+     width during first paint. Single source of truth. */
   --sidebar-width: 232px;
-  --sidebar-half: calc(var(--sidebar-width) / 2);
 
   /* Terminal */
   --terminal-background: #ffffff;

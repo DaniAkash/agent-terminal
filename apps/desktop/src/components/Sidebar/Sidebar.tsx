@@ -2,6 +2,7 @@ import { useStore } from '@nanostores/react'
 import { $sidebarView } from '@/modules/stores/$sidebarView'
 import { $sidebarVisible } from '@/modules/stores/$sidebarVisible'
 import { SidebarRecent } from './SidebarRecent'
+import { SidebarResizeHandle } from './SidebarResizeHandle'
 import { SidebarViewToggle } from './SidebarViewToggle'
 import { SidebarWorkspaces } from './SidebarWorkspaces'
 
@@ -25,7 +26,7 @@ export function Sidebar() {
   if (!visible) return null
 
   return (
-    <div className="flex h-full w-[var(--sidebar-width)] min-w-[var(--sidebar-width)] flex-col border-sidebar-border border-r bg-sidebar">
+    <div className="relative flex h-full w-[var(--sidebar-width)] min-w-[var(--sidebar-width)] flex-col border-sidebar-border border-r bg-sidebar">
       {/* Header — drag region hosting the view toggle. Reserves the
           macOS traffic-light row (~80px) on the left. Traffic lights
           keep their default Tauri Overlay placement (looked correct
@@ -53,6 +54,8 @@ export function Sidebar() {
           }}
         />
       </div>
+
+      <SidebarResizeHandle />
     </div>
   )
 }
