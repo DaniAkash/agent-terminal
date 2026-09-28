@@ -16,11 +16,12 @@
 version: 2
 
 updates:
-  # Bun workspace root. Covers apps/desktop, apps/website, and
-  # src-tauri/sidecar (all three declared in root package.json workspaces).
-  # apps/companion is handled by its own entry below because raw bumps of the
-  # exact-pinned Expo-managed packages cross the Hermes ABI boundary and blow
-  # up iOS at launch.
+  # Bun workspace root. `workspaces` is `apps/*`, so this entry traverses
+  # apps/desktop, apps/website, apps/companion and src-tauri/sidecar. The
+  # companion has its own entry below for policy, but that entry cannot stop
+  # this one from proposing the same packages, so the companion-owned families
+  # are ignored here too. Keep the two ignore lists in step: relaxing one
+  # without the other reopens the hole.
   - package-ecosystem: "bun"
     directory: "/"
     schedule:
@@ -35,6 +36,27 @@ updates:
       - dependency-name: "*"
         update-types:
           - "version-update:semver-major"
+      # Owned by the /apps/companion entry. These are companion-only, so
+      # blocking them here costs the other workspaces nothing. `react-native`
+      # is the one that matters most: a bump off the SDK's exact pin is a
+      # semver-minor for a 0.x version, so the major-only rule above lets it
+      # through, and it crashes iOS at launch with a dyld "Symbol not found"
+      # for a JSI method the pinned hermesvm xcframework does not export.
+      - dependency-name: "expo"
+      - dependency-name: "expo-*"
+      - dependency-name: "@expo/*"
+      - dependency-name: "react-native"
+      - dependency-name: "react-native-*"
+      - dependency-name: "@react-native-*"
+      - dependency-name: "@shopify/react-native-*"
+      # Shared with apps/desktop and apps/website, but the companion pins them
+      # to the exact versions its SDK requires, and a bump here rewrites that
+      # pin, so the result can never satisfy `expo install --check`. Blocked to
+      # keep the workspaces from fighting over one version. apps/desktop uses a
+      # caret range so it still picks up 19.x on install; apps/website pins
+      # exactly and needs a deliberate bump.
+      - dependency-name: "react"
+      - dependency-name: "react-dom"
     groups:
       minor-and-patch:
         update-types:
