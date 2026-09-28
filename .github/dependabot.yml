@@ -7,18 +7,21 @@
 # Directory coverage (post bun-monorepo migration):
 #   bun            -> / (workspace root; dependabot walks the workspace tree
 #                        and proposes bumps against each member's package.json)
-#   bun            -> /apps/companion (separate entry; Expo packages ignored)
+#   bun            -> /apps/companion (separate entry; Expo SDK patches
+#                        grouped and allowed, SDK minors and exact-pinned
+#                        React Native packages blocked)
 #   cargo          -> / (workspace root; picks up src-tauri + xtask)
 #   github-actions -> / (all workflows under .github/workflows/)
 
 version: 2
 
 updates:
-  # Bun workspace root. Covers apps/desktop, apps/website, and
-  # src-tauri/sidecar (all three declared in root package.json workspaces).
-  # apps/companion is handled by its own entry below because bun-driven
-  # bumps of Expo-managed packages cross the Hermes ABI boundary and blow
-  # up iOS at launch.
+  # Bun workspace root. `workspaces` is `apps/*`, so this entry traverses
+  # apps/desktop, apps/website, apps/companion and src-tauri/sidecar. The
+  # companion has its own entry below for policy, but that entry cannot stop
+  # this one from proposing the same packages, so the companion-owned families
+  # are ignored here too. Keep the two ignore lists in step: relaxing one
+  # without the other reopens the hole.
   - package-ecosystem: "bun"
     directory: "/"
     schedule:
@@ -33,6 +36,27 @@ updates:
       - dependency-name: "*"
         update-types:
           - "version-update:semver-major"
+      # Owned by the /apps/companion entry. These are companion-only, so
+      # blocking them here costs the other workspaces nothing. `react-native`
+      # is the one that matters most: a bump off the SDK's exact pin is a
+      # semver-minor for a 0.x version, so the major-only rule above lets it
+      # through, and it crashes iOS at launch with a dyld "Symbol not found"
+      # for a JSI method the pinned hermesvm xcframework does not export.
+      - dependency-name: "expo"
+      - dependency-name: "expo-*"
+      - dependency-name: "@expo/*"
+      - dependency-name: "react-native"
+      - dependency-name: "react-native-*"
+      - dependency-name: "@react-native-*"
+      - dependency-name: "@shopify/react-native-*"
+      # Shared with apps/desktop and apps/website, but the companion pins them
+      # to the exact versions its SDK requires, and a bump here rewrites that
+      # pin, so the result can never satisfy `expo install --check`. Blocked to
+      # keep the workspaces from fighting over one version. apps/desktop uses a
+      # caret range so it still picks up 19.x on install; apps/website pins
+      # exactly and needs a deliberate bump.
+      - dependency-name: "react"
+      - dependency-name: "react-dom"
     groups:
       minor-and-patch:
         update-types:
@@ -67,20 +91,47 @@ updates:
       - dependency-name: "*"
         update-types:
           - "version-update:semver-major"
-      # Expo core + all Expo modules. Upgrade via `expo upgrade` locally.
+      # Expo core and modules track the SDK with tilde ranges (`expo` is
+      # `~56.0.22`, `expo-router` is `~56.2.21`), so Expo itself sanctions
+      # patch movement inside the pinned SDK minor. Patches are allowed
+      # through on that basis while minors stay opt-in, because a minor is an
+      # SDK bump and has to be driven by `expo install --fix` so the whole set
+      # moves together. Blocking patches too is what let the tree rot behind
+      # the SDK selector until `expo install --check` failed on every branch,
+      # main included, with no commit to cause it.
       - dependency-name: "expo"
+        update-types:
+          - "version-update:semver-minor"
       - dependency-name: "expo-*"
+        update-types:
+          - "version-update:semver-minor"
       - dependency-name: "@expo/*"
-      # React and React DOM are pinned by each Expo SDK release.
+        update-types:
+          - "version-update:semver-minor"
+      # Exact-pinned by the SDK with no tilde, so no automated bump is safe and
+      # these stay fully blocked. `react-native` is pinned to one version
+      # because iOS links a prebuilt hermesvm xcframework while Android
+      # recompiles Hermes from source, so a version the SDK did not pin crashes
+      # iOS at launch with a dyld "Symbol not found" for a JSI method the
+      # xcframework does not export.
       - dependency-name: "react"
       - dependency-name: "react-dom"
-      # React Native core + community packages Expo curates in
-      # bundledNativeModules.json.
       - dependency-name: "react-native"
       - dependency-name: "react-native-*"
       - dependency-name: "@react-native-*"
       - dependency-name: "@shopify/react-native-*"
     groups:
+      # Expo SDK patches ship as a coordinated set, so they get their own group:
+      # one PR moves the family together and `expo install --check` in CI
+      # ratifies the result. Mixed into the general group, a partial bump would
+      # surface as an Expo mismatch instead.
+      expo-sdk-patches:
+        patterns:
+          - "expo"
+          - "expo-*"
+          - "@expo/*"
+        update-types:
+          - "patch"
       minor-and-patch:
         update-types:
           - "minor"
