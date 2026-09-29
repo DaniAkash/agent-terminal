@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="./docs/assets/glass-terminal-transparent.png" width="128" alt="Agent Terminal" />
+  <img src="https://raw.githubusercontent.com/DaniAkash/agent-terminal/main/assets/agent-terminal-icon.svg" width="128" alt="Agent Terminal" />
 
   # Agent Terminal
 
