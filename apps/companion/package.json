@@ -23,10 +23,10 @@
     "expo-status-bar": "~56.0.4",
     "expo-system-ui": "~56.0.5",
     "js-base64": "^3.9.4",
-    "nanostores": "^1.5.4",
+    "nanostores": "^1.5.5",
     "react": "19.2.3",
     "react-dom": "19.2.3",
-    "react-hook-form": "^7.88.0",
+    "react-hook-form": "^7.89.0",
     "react-native": "0.85.3",
     "react-native-draggable-flatlist": "4.0.3",
     "react-native-gesture-handler": "~2.31.1",
@@ -37,17 +37,17 @@
     "react-native-webview": "13.16.1",
     "react-native-worklets": "0.8.3",
     "tailwindcss": "^4.3.3",
-    "uniwind": "^1.12.0",
+    "uniwind": "^1.12.2",
     "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.14",
+    "@biomejs/biome": "^2.5.15",
     "@expo/config-plugins": "~56.0.0",
     "@types/bun": "^1.4.2",
     "@types/react": "~19.2.18",
     "concurrently": "^10.0.4",
     "fallow": "^2.104.0",
-    "react-doctor": "0.9.14",
+    "react-doctor": "0.9.17",
     "typescript": "~6.0.3"
   },
   "scripts": {
