@@ -49,6 +49,7 @@
           }
         }
       ],
+      "./plugins/withIosDeploymentTarget",
       "./plugins/withGradleWrapperVersion"
     ]
   }
