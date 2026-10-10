@@ -11,10 +11,11 @@
     // model the platform split, so it flags the iOS file as unreachable.
     // Both are legitimate consumers.
     "src/screens/tab/TerminalDom.tsx",
-    // Config plugin loaded by string reference from app.json's plugins
+    // Config plugins loaded by string reference from app.json's plugins
     // array (Expo's config-plugins mechanism). Fallow doesn't parse
-    // app.json, so it flags the file as unreachable.
-    "plugins/withGradleWrapperVersion.js"
+    // app.json, so it flags the files as unreachable.
+    "plugins/withGradleWrapperVersion.js",
+    "plugins/withIosDeploymentTarget.js"
   ],
   // react-native-web is required by expo/dom's `.web.tsx` files that
   // Metro pulls in when bundling `'use dom'` components. No source
@@ -22,8 +23,8 @@
   // expo-build-properties + expo-dev-client + expo-system-ui are
   // autolinked / config-plugin loaded, so nothing imports them
   // directly. @expo/config-plugins is a transitive Expo dep required
-  // from the local Gradle wrapper plugin (a build-time module fallow
-  // does not scan).
+  // from the local config plugins (build-time modules fallow does
+  // not scan).
   "ignoreDependencies": [
     "react-native-web",
     "expo-build-properties",
