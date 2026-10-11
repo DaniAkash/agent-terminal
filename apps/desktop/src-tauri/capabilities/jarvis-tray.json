@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "jarvis-tray",
+  "description": "Usage update subscriptions for the isolated Jarvis tray window",
+  "windows": ["jarvis-tray"],
+  "permissions": ["core:event:allow-listen", "core:event:allow-unlisten"]
+}
