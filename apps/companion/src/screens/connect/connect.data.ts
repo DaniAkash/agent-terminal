@@ -3,6 +3,7 @@ import { useStore } from '@nanostores/react'
 import { useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { loadPairingConfig, savePairingConfig } from '@/modules/env/dev-config'
+import { saveDeviceToSecureStore } from '@/modules/stores/$device'
 import { $session } from '@/modules/stores/$session'
 import { connect } from '@/modules/wss/client'
 import {
@@ -10,12 +11,13 @@ import {
   type ConnectOutputs,
   connectSchema,
 } from './connect.schemas'
+import { deviceRecordFromManualInput } from './manual-pairing.helpers'
 
 export function useConnectData() {
   const session = useStore($session)
   const form = useForm<ConnectInputs, unknown, ConnectOutputs>({
     resolver: zodResolver(connectSchema),
-    defaultValues: { url: '', token: '' },
+    defaultValues: { url: '', token: '', fingerprint: '' },
     mode: 'onSubmit',
   })
 
@@ -41,11 +43,27 @@ export function useConnectData() {
   }, [form])
 
   const onSubmit = form.handleSubmit(async (data) => {
+    // The pinned socket refuses to construct without a device record
+    // carrying a fingerprint, so the manual path persists one just as the
+    // QR path does. Same shape, same store; only the source differs.
+    const record = deviceRecordFromManualInput(
+      data.url,
+      data.token,
+      data.fingerprint,
+    )
+    if (!record) {
+      form.setError('url', { message: 'Expected wss://host:port/stream' })
+      return
+    }
+
     try {
-      await savePairingConfig(data.url, data.token)
+      await Promise.all([
+        savePairingConfig(data.url, data.token, data.fingerprint),
+        saveDeviceToSecureStore(record),
+      ])
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      console.error('[connect] savePairingConfig failed:', err)
+      console.error('[connect] saving manual pairing failed:', err)
       form.setError('root', { message: `Failed to save credentials, ${msg}` })
       return
     }

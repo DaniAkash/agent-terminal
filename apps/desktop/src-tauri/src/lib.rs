@@ -384,6 +384,19 @@ pub fn run() {
                             .ok()
                             .map(|(fp, _)| fp.clone());
 
+                        // Publish the fingerprint into the dev config so the
+                        // manual connect screen can read the URL, token and
+                        // pin from one file. Best-effort: failing to write it
+                        // only costs the manual path, never the QR flow.
+                        if let Some(fp) = tls_fingerprint.as_deref() {
+                            if let Err(e) = AuthStub::record_fingerprint(&path, fp) {
+                                eprintln!(
+                                    "[wss] could not record fingerprint in {}: {e}",
+                                    path.display()
+                                );
+                            }
+                        }
+
                         // Paired-tokens + pairing-window shared handles.
                         // Load or init the Keychain-backed map; dev
                         // namespace so a dev build does not read prod

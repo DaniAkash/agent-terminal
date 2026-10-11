@@ -24,6 +24,7 @@ export function ConnectScreen() {
         <ConnectHeader />
         <UrlField control={control} errors={errors} />
         <TokenField control={control} errors={errors} />
+        <FingerprintField control={control} errors={errors} />
         <FormErrors rootMessage={errors.root?.message} server={serverMessage} />
         <SubmitButton onPress={onSubmit} disabled={disabled} />
       </View>
@@ -38,7 +39,8 @@ function ConnectHeader() {
         Pair with desktop
       </Text>
       <Text className="text-muted-foreground text-sm">
-        Enter the WSS URL and token from the desktop's dev config file.
+        Enter the WSS URL, token and TLS fingerprint from the desktop's dev
+        config file.
       </Text>
     </View>
   )
@@ -104,6 +106,29 @@ function TokenField({ control, errors }: FieldProps) {
             placeholder="paste the UUID from companion-dev.json"
             autoCapitalize="none"
             autoCorrect={false}
+            value={value}
+            onBlur={onBlur}
+            onChangeText={onChange}
+          />
+        )}
+      />
+    </LabeledField>
+  )
+}
+
+function FingerprintField({ control, errors }: FieldProps) {
+  return (
+    <LabeledField label="TLS fingerprint" error={errors.fingerprint?.message}>
+      <Controller
+        control={control}
+        name="fingerprint"
+        render={({ field: { onChange, value, onBlur } }) => (
+          <TextInput
+            className="rounded-md border border-input bg-card px-3 py-3 font-mono text-foreground"
+            placeholder="paste the fingerprint from companion-dev.json"
+            autoCapitalize="none"
+            autoCorrect={false}
+            multiline
             value={value}
             onBlur={onBlur}
             onChangeText={onChange}
