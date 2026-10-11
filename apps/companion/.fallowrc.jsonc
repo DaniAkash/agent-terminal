@@ -52,6 +52,12 @@
     // is pre-existing; it grew slightly with the autoConnect / probe
     // helpers but stayed under the pre-Phase-2B risk envelope.
     "ignore": [
+      // Thin React glue around an async store read. The pure logic this
+      // screen depends on (URL canonicalisation, fingerprint parsing,
+      // device-record construction) is tested directly in
+      // manual-pairing.helpers.test.ts; what remains here is an effect
+      // that cannot be exercised without a full render harness.
+      "src/screens/connect/manual-prefill.hooks.ts",
       "src/modules/wss/client.ts",
       "src/modules/wss/bootstrap.ts",
       "src/screens/pair/**",

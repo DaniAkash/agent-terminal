@@ -102,6 +102,63 @@ impl AuthStub {
         ))
     }
 
+    /// Record the server's TLS fingerprint in the config file so the
+    /// manual connect screen can read all three values it needs from one
+    /// place. Called after the TLS bundle exists, which is later than
+    /// `load_or_init`, hence the second pass over the file.
+    ///
+    /// Merges into the parsed JSON object rather than re-serialising
+    /// `ConfigFile`, because the struct deliberately ignores unknown keys
+    /// and a round-trip would silently drop any the user or an older
+    /// build left behind.
+    pub fn publish_endpoint(
+        path: &Path,
+        fingerprint: Option<&str>,
+        connect_url: Option<&str>,
+    ) -> io::Result<()> {
+        let raw = fs::read_to_string(path)?;
+        let mut doc: serde_json::Value = serde_json::from_str(&raw)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        let Some(obj) = doc.as_object_mut() else {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "companion-dev.json is not a JSON object",
+            ));
+        };
+
+        let mut changed = false;
+        for (key, value) in [("fingerprint", fingerprint), ("connect_url", connect_url)] {
+            let Some(value) = value else { continue };
+            if obj.get(key).and_then(|v| v.as_str()) == Some(value) {
+                continue;
+            }
+            obj.insert(key.to_string(), serde_json::Value::String(value.to_string()));
+            changed = true;
+        }
+        if !changed {
+            return Ok(());
+        }
+
+        let body = serde_json::to_string_pretty(&doc)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+
+        // Write-then-rename rather than writing in place. This file holds
+        // the dev bearer token, and `fs::write` truncates first: a crash
+        // between truncate and write would leave invalid JSON that
+        // `load_or_init` then refuses, taking QR pairing down with it.
+        // Rename within the same directory is atomic, so a reader sees
+        // either the old file or the new one.
+        let tmp = path.with_extension("json.tmp");
+        fs::write(&tmp, body)?;
+        match fs::rename(&tmp, path) {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                let _ = fs::remove_file(&tmp);
+                Err(e)
+            }
+        }
+    }
+
     /// Constant-time comparison of `supplied` against the configured
     /// token. Timing attacks on a dev token are unrealistic, but the
     /// primitive is cheap and the WSS server calls it once per

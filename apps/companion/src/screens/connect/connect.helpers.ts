@@ -1,12 +1,3 @@
-export function normaliseWebSocketUrl(input: string): string {
-  const trimmed = input.trim()
-  if (!trimmed) return ''
-  if (trimmed.startsWith('ws://') || trimmed.startsWith('wss://')) {
-    return trimmed
-  }
-  return `ws://${trimmed}`
-}
-
 export function connectErrorMessage(
   status: string,
   serverError: string | null,

@@ -446,6 +446,29 @@ pub fn run() {
                             "[wss] pairing snapshot: host={hostname:?} ips={lan_ips:?} port={bound_port}"
                         );
 
+                        // Publish the reachable endpoint and the pin into the
+                        // dev config, so the manual connect screen can take all
+                        // three values from the one file it points at. Written
+                        // here rather than at load time because `bind_addr` in
+                        // that file is the requested address: the host is a
+                        // wildcard and the port is whichever of the trio was
+                        // free, so it is not something a client can dial.
+                        // Best-effort; losing it costs the manual path only.
+                        let connect_url = hostname
+                            .clone()
+                            .or_else(|| lan_ips.first().map(|ip| ip.to_string()))
+                            .map(|h| format!("wss://{h}:{bound_port}/stream"));
+                        if let Err(e) = AuthStub::publish_endpoint(
+                            &path,
+                            tls_fingerprint.as_deref(),
+                            connect_url.as_deref(),
+                        ) {
+                            eprintln!(
+                                "[wss] could not publish endpoint into {}: {e}",
+                                path.display()
+                            );
+                        }
+
                         // mDNS advertisement (best-effort). Held for
                         // the app's lifetime; Drop deregisters cleanly.
                         // Skipped when there are no LAN IPs to
