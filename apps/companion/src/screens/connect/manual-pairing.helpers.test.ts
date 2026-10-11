@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { isDeviceRecord } from '@/modules/stores/$device.helpers'
 import {
+  canonicalStreamUrl,
   deviceRecordFromManualInput,
   isIpv4Literal,
   normaliseFingerprint,
@@ -126,5 +127,33 @@ describe('deviceRecordFromManualInput', () => {
       '03:0A:11:18:1F:26:2D:34:3B:42:49:50:57:5E:65:6C:73:7A:81:88:8F:96:9D:A4:AB:B2:B9:C0:C7:CE:D5:DC',
     )
     expect(isDeviceRecord(r)).toBe(true)
+  })
+})
+
+describe('canonicalStreamUrl', () => {
+  test('upgrades a bare host:port, which is what people paste', () => {
+    expect(canonicalStreamUrl('192.168.0.79:28617')).toBe(
+      'wss://192.168.0.79:28617/stream',
+    )
+  })
+
+  test('forces the /stream path the desktop actually serves', () => {
+    // The resolver always rebuilds /stream, so accepting another path
+    // would connect once and then resolve somewhere else on retry.
+    expect(canonicalStreamUrl('wss://host.local:28617/other')).toBe(
+      'wss://host.local:28617/stream',
+    )
+  })
+
+  test('rejects ws://, which the pinned socket refuses at construction', () => {
+    expect(canonicalStreamUrl('ws://192.168.0.79:28617/stream')).toBeNull()
+  })
+
+  test('rejects a URL with no port', () => {
+    expect(canonicalStreamUrl('wss://host.local/stream')).toBeNull()
+  })
+
+  test('rejects blank input', () => {
+    expect(canonicalStreamUrl('   ')).toBeNull()
   })
 })

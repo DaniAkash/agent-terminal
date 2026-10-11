@@ -39,8 +39,9 @@ function ConnectHeader() {
         Pair with desktop
       </Text>
       <Text className="text-muted-foreground text-sm">
-        Enter the WSS URL, token and TLS fingerprint from the desktop's dev
-        config file.
+        Copy connect_url, token and fingerprint from the desktop's dev config
+        file. The desktop rewrites connect_url each launch with the port it
+        actually bound.
       </Text>
     </View>
   )

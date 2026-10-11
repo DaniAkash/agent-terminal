@@ -384,19 +384,6 @@ pub fn run() {
                             .ok()
                             .map(|(fp, _)| fp.clone());
 
-                        // Publish the fingerprint into the dev config so the
-                        // manual connect screen can read the URL, token and
-                        // pin from one file. Best-effort: failing to write it
-                        // only costs the manual path, never the QR flow.
-                        if let Some(fp) = tls_fingerprint.as_deref() {
-                            if let Err(e) = AuthStub::record_fingerprint(&path, fp) {
-                                eprintln!(
-                                    "[wss] could not record fingerprint in {}: {e}",
-                                    path.display()
-                                );
-                            }
-                        }
-
                         // Paired-tokens + pairing-window shared handles.
                         // Load or init the Keychain-backed map; dev
                         // namespace so a dev build does not read prod
@@ -458,6 +445,29 @@ pub fn run() {
                         eprintln!(
                             "[wss] pairing snapshot: host={hostname:?} ips={lan_ips:?} port={bound_port}"
                         );
+
+                        // Publish the reachable endpoint and the pin into the
+                        // dev config, so the manual connect screen can take all
+                        // three values from the one file it points at. Written
+                        // here rather than at load time because `bind_addr` in
+                        // that file is the requested address: the host is a
+                        // wildcard and the port is whichever of the trio was
+                        // free, so it is not something a client can dial.
+                        // Best-effort; losing it costs the manual path only.
+                        let connect_url = hostname
+                            .clone()
+                            .or_else(|| lan_ips.first().map(|ip| ip.to_string()))
+                            .map(|h| format!("wss://{h}:{bound_port}/stream"));
+                        if let Err(e) = AuthStub::publish_endpoint(
+                            &path,
+                            tls_fingerprint.as_deref(),
+                            connect_url.as_deref(),
+                        ) {
+                            eprintln!(
+                                "[wss] could not publish endpoint into {}: {e}",
+                                path.display()
+                            );
+                        }
 
                         // mDNS advertisement (best-effort). Held for
                         // the app's lifetime; Drop deregisters cleanly.

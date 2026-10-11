@@ -75,7 +75,7 @@ const FRAME_STALE_MS = 45_000
 const PROBE_TIMEOUT_MS = 3_000
 const PROBE_POLL_MS = 100
 
-export function connect(url: string, token: string): void {
+function connect(url: string, token: string): void {
   // Every connection is TLS-pinned end-to-end. The PinnedWebSocket
   // constructor rejects non-wss:// URLs synchronously so a stale ws://
   // URL from a legacy paired record fails loudly at construction rather
@@ -100,7 +100,7 @@ export function connect(url: string, token: string): void {
  * exhaustion, marks the session as `unreachable` so the UI can
  * surface a retry.
  *
- * Kept separate from `connect()` so the manual-token flow (from
+ * Kept separate from `connect()` so the ladder stays testable (the
  * `/connect`) can bypass the ladder entirely.
  */
 export async function autoConnect(

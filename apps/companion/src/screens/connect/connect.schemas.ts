@@ -1,13 +1,18 @@
 import { z } from 'zod'
-import { normaliseWebSocketUrl } from './connect.helpers'
-import { normaliseFingerprint } from './manual-pairing.helpers'
+import {
+  canonicalStreamUrl,
+  normaliseFingerprint,
+} from './manual-pairing.helpers'
 
 export const connectSchema = z.object({
   url: z
     .string()
     .min(1, 'WSS URL is required')
-    .transform((raw) => normaliseWebSocketUrl(raw))
-    .refine((v) => v.length > 0, 'WSS URL is required'),
+    .transform((raw) => canonicalStreamUrl(raw))
+    .refine(
+      (v): v is string => v !== null,
+      'Expected wss://host:port, the desktop only serves /stream',
+    ),
   token: z
     .string()
     .transform((raw) => raw.trim())

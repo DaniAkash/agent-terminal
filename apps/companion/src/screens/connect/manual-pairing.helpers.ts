@@ -26,6 +26,37 @@ export function normaliseFingerprint(input: string): string | null {
 }
 
 /**
+ * Canonicalise hand-entered input into the single URL this transport can
+ * actually use: `wss://host:port/stream`.
+ *
+ * Strict on purpose. `PinnedWebSocket` rejects non-wss synchronously, and
+ * the desktop serves only `/stream`, so a `ws://` scheme or a stray path
+ * produces a record that saves cleanly and then fails to connect, or
+ * connects once and resolves differently on the next attempt because the
+ * resolver always rebuilds `/stream`. Rejecting here turns all of that
+ * into one field error at submit time.
+ *
+ * A bare `host:port` is accepted and upgraded, since that is what the
+ * desktop prints and what people paste.
+ */
+export function canonicalStreamUrl(input: string): string | null {
+  const trimmed = input.trim()
+  if (!trimmed) return null
+  const withScheme = /^[a-z]+:\/\//i.test(trimmed)
+    ? trimmed
+    : `wss://${trimmed}`
+  let u: URL
+  try {
+    u = new URL(withScheme)
+  } catch {
+    return null
+  }
+  if (u.protocol !== 'wss:') return null
+  if (!u.hostname || !u.port) return null
+  return `wss://${u.hostname}:${u.port}/stream`
+}
+
+/**
  * Split a `wss://host:port/path` URL into the endpoint fields a
  * DeviceRecord needs. Returns null for anything the resolver could not
  * later rebuild a URL from.
