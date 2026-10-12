@@ -1,18 +1,49 @@
 import { useStore } from '@nanostores/react'
-import { type Href, useRouter } from 'expo-router'
+import { type Href, useNavigation, useRouter } from 'expo-router'
 import { useCallback, useState } from 'react'
 import { $session } from '@/modules/stores/$session'
 import { tabHref } from '@/screens/tab/tab.helpers'
 import { type SwitcherRow, switcherOrder } from './switcher.helpers'
 
 /**
- * Close this sheet, then present another one in its place. The dismiss has
- * to settle before the next present, or the new sheet races the outgoing
- * animation and never appears.
+ * Close this sheet, then present another one in its place.
+ *
+ * The present waits for the dismissal to actually finish rather than for
+ * the next JS turn. A form sheet animates out over a few hundred
+ * milliseconds, and a push issued into that window is dropped: the new
+ * sheet never appears, which is the exact race this helper exists to avoid.
+ * `setTimeout(0)` only looked sufficient because a warm simulator forgives
+ * it.
+ *
+ * The navigator's own transition event is the signal, so nothing here
+ * guesses at an animation duration. The timer is a backstop, not the
+ * mechanism: if the event never arrives the sheet still opens rather than
+ * leaving the user on a screen their tap appeared to do nothing to.
  */
-function swapSheet(router: ReturnType<typeof useRouter>, href: string): void {
+const SWAP_FALLBACK_MS = 600
+
+/** Only the part of the navigation object this helper depends on. */
+interface TransitionAware {
+  addListener: (event: 'transitionEnd', handler: () => void) => () => void
+}
+
+function swapSheet(
+  navigation: TransitionAware,
+  router: ReturnType<typeof useRouter>,
+  href: string,
+): void {
+  let opened = false
+  const open = () => {
+    if (opened) return
+    opened = true
+    router.push(href as Href)
+  }
+  const stop = navigation.addListener('transitionEnd', () => {
+    stop()
+    open()
+  })
+  setTimeout(open, SWAP_FALLBACK_MS)
   router.back()
-  setTimeout(() => router.push(href as Href), 0)
 }
 
 /**
@@ -25,6 +56,7 @@ function swapSheet(router: ReturnType<typeof useRouter>, href: string): void {
 export function useSwitcherData() {
   const session = useStore($session)
   const router = useRouter()
+  const navigation = useNavigation<TransitionAware>()
   const [now] = useState(() => Date.now())
 
   const rows = switcherOrder(session.projects, now)
@@ -48,15 +80,19 @@ export function useSwitcherData() {
     // because replacing one sheet with another leaves the stack holding a
     // route that has already animated away, and the next present is a
     // no-op against it.
-    openDesktops: useCallback(() => swapSheet(router, '/desktops'), [router]),
+    openDesktops: useCallback(
+      () => swapSheet(navigation, router, '/desktops'),
+      [navigation, router],
+    ),
     openDetails: useCallback(
       (row: SwitcherRow) =>
-        swapSheet(router, `/status/${row.projectId}/${row.tabId}`),
-      [router],
+        swapSheet(navigation, router, `/status/${row.projectId}/${row.tabId}`),
+      [navigation, router],
     ),
     openWorkspace: useCallback(
-      (row: SwitcherRow) => swapSheet(router, `/project/${row.projectId}/edit`),
-      [router],
+      (row: SwitcherRow) =>
+        swapSheet(navigation, router, `/project/${row.projectId}/edit`),
+      [navigation, router],
     ),
   }
 }

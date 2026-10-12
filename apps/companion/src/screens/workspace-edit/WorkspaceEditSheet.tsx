@@ -186,7 +186,7 @@ export function WorkspaceEditSheet({ projectId }: { projectId: string }) {
       </View>
 
       <Text className="px-4 pb-2 text-muted-foreground text-xs">
-        Drag to reorder. Long press a session for more.
+        Drag the handle to reorder. Long press a session for more.
       </Text>
 
       <DraggableFlatList
@@ -220,31 +220,45 @@ interface EditableTabRowProps extends RenderItemParams<TabSummary> {
 // fallow-ignore-next-line complexity
 function EditableTabRow({ item, drag, isActive, onMore }: EditableTabRowProps) {
   const sleeping = !item.is_spawned
+  // The handle drags and the row opens the menu. Driving both from one long
+  // press meant every reorder also popped a dialog over the list you were
+  // trying to rearrange, and it left the handle as decoration.
   return (
-    <Pressable
-      onLongPress={() => {
-        drag()
-        onMore()
-      }}
-      delayLongPress={350}
-      disabled={isActive}
-      accessibilityRole="button"
-      accessibilityLabel={`${sessionLabel(item)}${item.pinned ? ', pinned' : ''}${sleeping ? ', sleeping' : ''}. Long press for options.`}
-      className={`mb-1 flex-row items-center gap-2 rounded-md border border-border bg-card p-3 ${sleeping ? 'opacity-60' : ''} ${isActive ? 'opacity-80' : ''}`}
+    <View
+      className={`mb-1 flex-row items-center rounded-md border border-border bg-card ${sleeping ? 'opacity-60' : ''} ${isActive ? 'opacity-80' : ''}`}
     >
-      <Text className="text-muted-foreground text-xs">⠿</Text>
-      <Text
-        numberOfLines={1}
-        className="flex-1 font-mono text-foreground text-sm"
+      <Pressable
+        onLongPress={drag}
+        delayLongPress={160}
+        disabled={isActive}
+        accessibilityRole="button"
+        accessibilityLabel={`Reorder ${sessionLabel(item)}`}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 4 }}
+        className="px-3 py-3"
       >
-        {sessionLabel(item)}
-      </Text>
-      {item.pinned && <Text className="text-foreground text-xs">★</Text>}
-      {sleeping && (
-        <Text className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground uppercase">
-          sleeping
+        <Text className="text-muted-foreground text-xs">⠿</Text>
+      </Pressable>
+      <Pressable
+        onLongPress={onMore}
+        delayLongPress={350}
+        disabled={isActive}
+        accessibilityRole="button"
+        accessibilityLabel={`${sessionLabel(item)}${item.pinned ? ', pinned' : ''}${sleeping ? ', sleeping' : ''}. Long press for options.`}
+        className="flex-1 flex-row items-center gap-2 py-3 pr-3"
+      >
+        <Text
+          numberOfLines={1}
+          className="flex-1 font-mono text-foreground text-sm"
+        >
+          {sessionLabel(item)}
         </Text>
-      )}
-    </Pressable>
+        {item.pinned && <Text className="text-foreground text-xs">★</Text>}
+        {sleeping && (
+          <Text className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground uppercase">
+            sleeping
+          </Text>
+        )}
+      </Pressable>
+    </View>
   )
 }

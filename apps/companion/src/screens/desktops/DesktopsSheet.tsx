@@ -1,6 +1,6 @@
 import { useStore } from '@nanostores/react'
 import { useRouter } from 'expo-router'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ActivityIndicator, Pressable, Text, View } from 'react-native'
 import { $devices, setActiveDevice } from '@/modules/stores/$devices'
 import { $session } from '@/modules/stores/$session'
@@ -33,12 +33,18 @@ export function DesktopsSheet() {
     await setActiveDevice(row.deviceId)
   }
 
-  // Once the new desktop is up, the sheet has done its job.
-  if (switchingTo !== null && devices.activeId === switchingTo) {
-    if (session.status === 'connected') {
-      router.back()
-    }
-  }
+  // Once the new desktop is up, the sheet has done its job. useEffect
+  // exception: this is a navigation, so it cannot run during render the way
+  // a plain store write can. Called from the render body it fires on every
+  // render that still satisfies the condition, updating the navigator while
+  // React is rendering.
+  const settled =
+    switchingTo !== null &&
+    devices.activeId === switchingTo &&
+    session.status === 'connected'
+  useEffect(() => {
+    if (settled) router.back()
+  }, [settled, router])
 
   return (
     <View collapsable={false} className="flex-1 bg-background">

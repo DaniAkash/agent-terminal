@@ -1,6 +1,6 @@
 import { $activeDevice } from '@/modules/stores/$devices'
 import { $session, resetSession } from '@/modules/stores/$session'
-import { noteTabState } from '@/modules/stores/$tabState'
+import { clearTabStates, noteTabState } from '@/modules/stores/$tabState'
 import type {
   BumpRecencyBody,
   ClientFrame,
@@ -191,6 +191,7 @@ export function disconnect(): void {
   state.socket?.close()
   state.socket = null
   subscriptions.clear()
+  clearTabStates()
   resetSession()
 }
 
@@ -575,6 +576,9 @@ function dispatchBytes(tabId: string, seq: number, b64: string): void {
 
 function handleAuthOk(deviceName: string): void {
   state.reconnectAttempts = 0
+  // Nothing has been pushed on this connection yet, and what is left over
+  // belongs to the previous one, possibly a different desktop entirely.
+  clearTabStates()
   $session.set({
     status: 'connected',
     deviceName,

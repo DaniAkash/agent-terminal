@@ -14,3 +14,17 @@ export const $tabState = map<Record<string, TabStateSummary>>({})
 export function noteTabState(tabId: string, state: TabStateSummary): void {
   $tabState.setKey(tabId, state)
 }
+
+/**
+ * Drop everything learned from a connection that is going away.
+ *
+ * These entries are keyed by tab id alone, which is only unique within one
+ * desktop. Two desktops can mint the same project and tab id, so carrying
+ * the map across a switch risks showing one machine's working directory for
+ * the other's session. Even on the same desktop a reconnect has not pushed
+ * anything yet, and a stale directory is worse than a blank one: it is the
+ * field someone checks before deciding where a command would run.
+ */
+export function clearTabStates(): void {
+  $tabState.set({})
+}
