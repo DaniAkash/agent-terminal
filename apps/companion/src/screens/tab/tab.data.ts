@@ -1,5 +1,7 @@
+import { useStore } from '@nanostores/react'
 import { decode } from 'js-base64'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { $session } from '@/modules/stores/$session'
 import {
   resizeTab as resizeTabWss,
   subscribeToTab,
@@ -8,7 +10,12 @@ import {
 } from '@/modules/wss/client'
 import { applyAlt, applyCtrl } from './extra-keys.helpers'
 import type { TerminalHandle } from './TerminalDom'
-import { useActiveTabInfo, useNoteRecency, useSessionSwipe } from './tab.hooks'
+import {
+  useActiveTabInfo,
+  useConnectionNotices,
+  useNoteRecency,
+  useSessionSwipe,
+} from './tab.hooks'
 
 const SCROLLBACK = 2000
 
@@ -96,6 +103,12 @@ export function useTabData(projectId: string, tabId: string) {
   const toggleCtrl = useCallback(() => setCtrlArmed((v) => !v), [])
   const toggleAlt = useCallback(() => setAltArmed((v) => !v), [])
 
+  const connected = useStore($session).status === 'connected'
+  const writeToTerminal = useCallback((payload: string) => {
+    terminalRef.current?.write(payload)
+  }, [])
+  useConnectionNotices(tabId, writeToTerminal)
+
   const active = useActiveTabInfo(projectId, tabId)
   const { swipeBack, swipeForward } = useSessionSwipe(tabId)
   useNoteRecency(tabId)
@@ -111,6 +124,7 @@ export function useTabData(projectId: string, tabId: string) {
     toggleCtrl,
     toggleAlt,
     active,
+    connected,
     swipeBack,
     swipeForward,
   }

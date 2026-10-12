@@ -18,6 +18,12 @@ import type {
 } from '@/modules/wss/protocol.gen'
 import { PinnedWebSocket } from '../../../modules/pinned-websocket'
 import { computeBackoffDelay } from './client.helpers'
+import {
+  drainWrites,
+  enqueueWrite,
+  type QueuedWrite,
+  queuedFor,
+} from './outbox.helpers'
 
 export type TabHandlers = {
   onSnapshot: (payload: string, seq: number) => void
@@ -192,6 +198,10 @@ export function disconnect(): void {
   state.socket = null
   subscriptions.clear()
   clearTabStates()
+  // Queued keystrokes belong to the connection being torn down. Carrying
+  // them into whatever is connected next is exactly what flushOutbox
+  // refuses to do, so they go with it.
+  outbox = []
   resetSession()
 }
 
@@ -220,8 +230,46 @@ export function unsubscribeFromTab(tabId: string): void {
   }
 }
 
+/**
+ * Keystrokes typed while the socket is down are held rather than dropped on
+ * the floor, which is what `send` did silently. They are replayed on
+ * reconnect only into the session they were typed into; see `flushOutbox`.
+ */
+let outbox: QueuedWrite[] = []
+
 export function writeToTab(tabId: string, data: string): void {
+  if (state.socket?.readyState !== PinnedWebSocket.OPEN) {
+    outbox = enqueueWrite(outbox, { tabId, data })
+    return
+  }
   send({ op: 'write', body: { tab_id: tabId, data } })
+}
+
+/** How many keystrokes are waiting to be replayed into a session. */
+export function queuedWritesFor(tabId: string): number {
+  return queuedFor(outbox, tabId)
+}
+
+/**
+ * Replay what was typed offline, into the same sessions it was typed into.
+ *
+ * Anything whose session is no longer subscribed is discarded rather than
+ * sent somewhere else. A queued `rm` landing in a different shell than the
+ * one the user was looking at is the failure this guards against, and
+ * dropping keystrokes is the safe side of that trade.
+ */
+function flushOutbox(): void {
+  if (outbox.length === 0) return
+  const { flush, dropped } = drainWrites(outbox, (tabId) =>
+    subscriptions.has(tabId),
+  )
+  outbox = []
+  if (dropped.length > 0) {
+    console.log('[wss.client] dropped queued writes', { count: dropped.length })
+  }
+  for (const write of flush) {
+    send({ op: 'write', body: { tab_id: write.tabId, data: write.data } })
+  }
 }
 
 export function resizeTab(tabId: string, cols: number, rows: number): void {
@@ -602,7 +650,10 @@ function handleAuthOk(deviceName: string): void {
     }
   }
   startHeartbeat()
+  // Subscriptions first: flushOutbox only sends into sessions that are
+  // subscribed, so replaying them before it is what lets anything through.
   replayOpenSubscriptions()
+  flushOutbox()
 }
 
 function parseWssHostPort(url: string): { host: string; port: number } | null {

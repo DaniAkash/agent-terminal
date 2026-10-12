@@ -11,6 +11,9 @@ interface ActiveTabBarProps {
   label: string
   projectName: string
   glyph: TabGlyph
+  /** False while the socket is down, which outranks whatever the agent was
+   *  last seen doing: a lit green dot over a dead connection is a lie. */
+  connected: boolean
   onPress: () => void
 }
 
@@ -27,16 +30,17 @@ export function ActiveTabBar({
   label,
   projectName,
   glyph,
+  connected,
   onPress,
 }: ActiveTabBarProps) {
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={`${label}, ${glyphLabel(glyph)}, in ${projectName}. Opens the session list.`}
+      accessibilityLabel={`${label}, ${connected ? glyphLabel(glyph) : 'offline'}, in ${projectName}. Opens the session list.`}
       className="flex-row items-center gap-2 border-border border-b bg-muted px-4 py-1.5 active:bg-accent-soft"
     >
-      <StatusDot glyph={glyph} />
+      <StatusDot glyph={glyph} connected={connected} />
       <Text numberOfLines={1} className="font-medium text-foreground text-xs">
         {label}
       </Text>
@@ -48,9 +52,17 @@ export function ActiveTabBar({
   )
 }
 
-function StatusDot({ glyph }: { glyph: TabGlyph }) {
+function StatusDot({
+  glyph,
+  connected,
+}: {
+  glyph: TabGlyph
+  connected: boolean
+}) {
   const pulse = useRef(new Animated.Value(1)).current
-  const pulses = glyphPulses(glyph)
+  // An agent state read off the last tree says nothing about now once the
+  // socket is down, so the dot reports the connection instead.
+  const pulses = connected && glyphPulses(glyph)
 
   // useEffect exception: drives an imperative animation loop tied to a
   // value, which is one of the cases CLAUDE.md keeps the hook for. The
@@ -80,7 +92,11 @@ function StatusDot({ glyph }: { glyph: TabGlyph }) {
 
   return (
     <Animated.View style={{ opacity: pulse }}>
-      <View className={`h-2 w-2 rounded-full ${glyphDotClass(glyph)}`} />
+      <View
+        className={`h-2 w-2 rounded-full ${
+          connected ? glyphDotClass(glyph) : 'bg-destructive'
+        }`}
+      />
     </Animated.View>
   )
 }

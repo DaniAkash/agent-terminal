@@ -3,7 +3,13 @@ import { useRouter } from 'expo-router'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { $recency } from '@/modules/stores/$recency'
 import { $session } from '@/modules/stores/$session'
-import { sendBumpRecency } from '@/modules/wss/client'
+import { queuedWritesFor, sendBumpRecency } from '@/modules/wss/client'
+import {
+  INITIAL_NOTICE_STATE,
+  type NoticeState,
+  nextNotice,
+  renderNotice,
+} from './connection-notice.helpers'
 import { rawTabId, splitTabId } from './tab.helpers'
 import {
   type ActiveTabInfo,
@@ -109,4 +115,33 @@ export function useSessionSwipe(composedTabId: string) {
     swipeBack: useCallback(() => step(1), [step]),
     swipeForward: useCallback(() => step(-1), [step]),
   }
+}
+
+/**
+ * Narrate connection changes into the terminal itself.
+ *
+ * A banner would cost permanent chrome on the one screen that cannot spare
+ * it, and a modal would interrupt reading. The scrollback is where the user
+ * is already looking, and the desktop's snapshot overwrites these lines on
+ * resume, so they clean themselves up.
+ */
+export function useConnectionNotices(
+  tabId: string,
+  write: (payload: string) => void,
+): void {
+  const session = useStore($session)
+  const noticeState = useRef<NoticeState>(INITIAL_NOTICE_STATE)
+
+  // useEffect exception: pushes to an external system (the terminal
+  // surface) on a value change, with no render-time equivalent, and it must
+  // happen once per transition rather than once per render.
+  useEffect(() => {
+    const { state, notice } = nextNotice(
+      noticeState.current,
+      session.status,
+      queuedWritesFor(tabId),
+    )
+    noticeState.current = state
+    if (notice) write(renderNotice(notice))
+  }, [session.status, tabId, write])
 }

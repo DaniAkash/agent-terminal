@@ -30,6 +30,7 @@ export function TabScreen({ projectId, tabId }: TabScreenProps) {
     toggleCtrl,
     toggleAlt,
     active,
+    connected,
     swipeBack,
     swipeForward,
   } = useTabData(projectId, tabId)
@@ -87,6 +88,7 @@ export function TabScreen({ projectId, tabId }: TabScreenProps) {
           label={active.label}
           projectName={active.projectName}
           glyph={active.glyph}
+          connected={connected}
           onPress={openSwitcher}
         />
         <View className="flex-1">

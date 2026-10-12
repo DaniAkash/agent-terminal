@@ -47,3 +47,23 @@ export function splitTabId(
 export function tabHref(projectId: string, wireTabId: string): Href {
   return `/tab/${projectId}/${rawTabId(projectId, wireTabId)}` as Href
 }
+
+export type TerminalRouteAction = 'pair' | 'render'
+
+/**
+ * What the terminal route should do for the current device state.
+ *
+ * Deliberately not gated on the connection. Losing the desktop used to
+ * send the user to the pairing screen, which threw away the scrollback
+ * they were reading and the keystrokes they were about to queue. A
+ * dropped connection is a state the terminal shows, not a reason to leave
+ * it; only an unpaired phone has nothing to render. While the stored
+ * devices are still being read, rendering is the better guess, since the
+ * common case by far is that one is about to arrive.
+ */
+export function terminalRouteAction(device: {
+  loaded: boolean
+  record: unknown | null
+}): TerminalRouteAction {
+  return device.loaded && !device.record ? 'pair' : 'render'
+}

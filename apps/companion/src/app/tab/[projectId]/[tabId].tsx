@@ -2,20 +2,18 @@ import { useStore } from '@nanostores/react'
 import { Redirect, Stack, useLocalSearchParams } from 'expo-router'
 import { $activeDevice } from '@/modules/stores/$devices'
 import { noteActiveSession } from '@/modules/stores/$lastSession'
-import { $session } from '@/modules/stores/$session'
 import { TabScreen } from '@/screens/tab/TabScreen'
-import { composedTabId } from '@/screens/tab/tab.helpers'
+import { composedTabId, terminalRouteAction } from '@/screens/tab/tab.helpers'
 
 export default function TabRoute() {
-  const session = useStore($session)
   const device = useStore($activeDevice)
   const { projectId, tabId } = useLocalSearchParams<{
     projectId: string
     tabId: string
   }>()
 
-  if (session.status !== 'connected') {
-    return <Redirect href="/connect" />
+  if (terminalRouteAction(device) === 'pair') {
+    return <Redirect href="/pair" />
   }
 
   const composed = composedTabId(projectId, tabId)
