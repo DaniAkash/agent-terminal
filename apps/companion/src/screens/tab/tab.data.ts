@@ -19,6 +19,7 @@ const SCROLLBACK = 2000
  * below resubscribes and the webview keeps running, which is the whole
  * reason swiping between sessions costs a frame rather than a reload.
  */
+// fallow-ignore-next-line complexity
 export function useTabData(projectId: string, tabId: string) {
   const terminalRef = useRef<TerminalHandle | null>(null)
   const [ready, setReady] = useState(false)

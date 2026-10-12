@@ -52,3 +52,26 @@ export function advanceSwipe(
   if (target === null || target === currentKey) return null
   return { state: { run: next, at: now }, target }
 }
+
+/** How far a finger must travel before a pan counts as a swipe. */
+const SWIPE_THRESHOLD_PX = 24
+
+export type SwipeIntent = 'up' | 'back' | 'forward' | null
+
+/**
+ * Read a finished pan as one of the three gestures, or as nothing.
+ *
+ * The axes are compared against each other rather than each against a
+ * threshold, so a diagonal flick resolves to whichever way the finger
+ * mostly went instead of firing two gestures or none.
+ */
+export function swipeIntent(
+  translationX: number,
+  translationY: number,
+): SwipeIntent {
+  if (Math.abs(translationY) > Math.abs(translationX)) {
+    return translationY < -SWIPE_THRESHOLD_PX ? 'up' : null
+  }
+  if (translationX < -SWIPE_THRESHOLD_PX) return 'back'
+  return translationX > SWIPE_THRESHOLD_PX ? 'forward' : null
+}

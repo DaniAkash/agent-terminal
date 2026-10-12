@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { View } from 'react-native'
 import { Gesture, GestureDetector } from 'react-native-gesture-handler'
+import { swipeIntent } from './tab-swipe.helpers'
 
 interface TerminalGestureLayerProps {
   onSwipeUp: () => void
@@ -29,19 +30,19 @@ export function TerminalGestureLayer({
   // from the UI runtime, and running them directly keeps the worklet
   // plumbing (and its own failure modes) out of a file whose job is to
   // decide which way a finger moved.
+  // runOnJS: these handlers only navigate, so there is nothing to gain
+  // from the UI runtime, and running them directly keeps the worklet
+  // plumbing (and its own failure modes) out of a file whose job is to
+  // decide which way a finger moved.
   const pan = Gesture.Pan()
     .runOnJS(true)
     .activeOffsetY([-12, 10_000])
     .activeOffsetX([-16, 16])
     .onEnd((e) => {
-      // Compare against each other, not against a single threshold: a
-      // diagonal flick should resolve to whichever axis the user meant.
-      if (Math.abs(e.translationY) > Math.abs(e.translationX)) {
-        if (e.translationY < -24) onSwipeUp()
-        return
-      }
-      if (e.translationX < -24) onSwipeBack()
-      else if (e.translationX > 24) onSwipeForward()
+      const intent = swipeIntent(e.translationX, e.translationY)
+      if (intent === 'up') onSwipeUp()
+      else if (intent === 'back') onSwipeBack()
+      else if (intent === 'forward') onSwipeForward()
     })
 
   // `collapsable={false}` is load-bearing, not defensive. React Native

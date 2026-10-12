@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
   DONE_LINGER_MS,
+  doneExpiresAt,
   glyphDotClass,
   glyphLabel,
   glyphPulses,
@@ -64,5 +65,23 @@ describe('glyph presentation', () => {
     for (const g of ['awaiting', 'running', 'done', 'error', 'idle'] as const) {
       expect(glyphLabel(g).length).toBeGreaterThan(0)
     }
+  })
+})
+
+describe('doneExpiresAt', () => {
+  test('arms one timer at the end of the linger window', () => {
+    expect(doneExpiresAt('done', NOW)).toBe(NOW + DONE_LINGER_MS)
+  })
+
+  test('has nothing to expire for a state that does not fade', () => {
+    for (const state of ['running', 'awaiting', 'error', 'idle', undefined]) {
+      expect(doneExpiresAt(state, NOW)).toBeNull()
+    }
+  })
+
+  test('has nothing to expire when done carries no stamp', () => {
+    // Matches tabGlyph, which keeps an unstamped done lit rather than
+    // guessing; with no stamp there is no moment to count from.
+    expect(doneExpiresAt('done', undefined)).toBeNull()
   })
 })

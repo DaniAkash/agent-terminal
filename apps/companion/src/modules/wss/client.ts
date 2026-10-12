@@ -1,5 +1,6 @@
 import { $activeDevice } from '@/modules/stores/$devices'
 import { $session, resetSession } from '@/modules/stores/$session'
+import { noteTabState } from '@/modules/stores/$tabState'
 import type {
   BumpRecencyBody,
   ClientFrame,
@@ -11,6 +12,8 @@ import type {
   RenameTabBody,
   ReorderTabsBody,
   ServerFrame,
+  SetProjectPinnedBody,
+  SetTabPinnedBody,
   TabStateSummary,
 } from '@/modules/wss/protocol.gen'
 import { PinnedWebSocket } from '../../../modules/pinned-websocket'
@@ -324,6 +327,20 @@ export function sendRemoveTab(body: RemoveTabBody): Promise<void> {
   return sendPending(op_id, frame)
 }
 
+export function sendSetTabPinned(body: SetTabPinnedBody): Promise<void> {
+  const op_id = nextOpId++
+  const frame: ClientFrame = { op: 'set_tab_pinned', body: { op_id, body } }
+  return sendPending(op_id, frame)
+}
+
+export function sendSetProjectPinned(
+  body: SetProjectPinnedBody,
+): Promise<void> {
+  const op_id = nextOpId++
+  const frame: ClientFrame = { op: 'set_project_pinned', body: { op_id, body } }
+  return sendPending(op_id, frame)
+}
+
 export function sendBumpRecency(body: BumpRecencyBody): Promise<void> {
   const op_id = nextOpId++
   const frame: ClientFrame = { op: 'bump_recency', body: { op_id, body } }
@@ -513,6 +530,9 @@ function dispatchFrame(frame: ServerFrame): void {
     return
   }
   if (frame.op === 'tab_state') {
+    // Parked in a store as well as handed to the subscriber: the status
+    // sheet is a different route and never holds a subscription itself.
+    noteTabState(frame.body.tab_id, frame.body.state)
     subscriptions.get(frame.body.tab_id)?.onTabState?.(frame.body.state)
     return
   }

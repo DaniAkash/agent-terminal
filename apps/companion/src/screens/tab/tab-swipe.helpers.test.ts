@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import { advanceSwipe, RUN_IDLE_MS, type SwipeState } from './tab-swipe.helpers'
+import {
+  advanceSwipe,
+  RUN_IDLE_MS,
+  type SwipeState,
+  swipeIntent,
+} from './tab-swipe.helpers'
 
 const ORDER = ['a', 'b', 'c', 'd']
 const T0 = 10_000
@@ -98,5 +103,32 @@ describe('degenerate orders', () => {
   test('never reports landing on the session already open', () => {
     const out = advanceSwipe(null, 1, ['a', 'a'], 'a', T0)
     expect(out).toBeNull()
+  })
+})
+
+describe('swipeIntent', () => {
+  test('reads a clear vertical flick as opening the session list', () => {
+    expect(swipeIntent(0, -80)).toBe('up')
+  })
+
+  test('reads horizontal flicks as stepping through history', () => {
+    expect(swipeIntent(-80, 0)).toBe('back')
+    expect(swipeIntent(80, 0)).toBe('forward')
+  })
+
+  test('resolves a diagonal to the axis the finger mostly went', () => {
+    // Otherwise a sloppy flick either fires two gestures or none.
+    expect(swipeIntent(-80, -30)).toBe('back')
+    expect(swipeIntent(-30, -80)).toBe('up')
+  })
+
+  test('ignores a downward drag, which has no gesture bound to it', () => {
+    expect(swipeIntent(0, 80)).toBeNull()
+  })
+
+  test('ignores travel below the threshold, so taps still reach the keys', () => {
+    expect(swipeIntent(0, 0)).toBeNull()
+    expect(swipeIntent(-10, 0)).toBeNull()
+    expect(swipeIntent(0, -10)).toBeNull()
   })
 })

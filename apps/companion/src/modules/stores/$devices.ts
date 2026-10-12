@@ -24,9 +24,6 @@ function recordKey(deviceId: string): string {
   return `${RECORD_PREFIX}${deviceStorageSlug(deviceId)}`
 }
 
-// Consumed today only through `$activeDevice` below; the desktop picker
-// that reads the whole map lands with the switcher UI.
-// fallow-ignore-next-line unused-export
 export const $devices = map<DevicesState>({
   loaded: false,
   byId: {},
@@ -168,7 +165,6 @@ export async function updateLastEndpoint(
  * subscriber in `wss/bootstrap.ts` sees the change and swaps the connection,
  * which keeps the store free of any dependency on the client.
  */
-// fallow-ignore-next-line unused-export
 export async function setActiveDevice(deviceId: string): Promise<void> {
   const state = $devices.get()
   if (!state.byId[deviceId] || state.activeId === deviceId) return

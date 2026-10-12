@@ -71,6 +71,7 @@ interface KeyButtonProps {
   onPress: () => void
 }
 
+// fallow-ignore-next-line complexity
 function KeyButton({
   label,
   armed,

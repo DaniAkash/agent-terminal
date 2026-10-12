@@ -56,3 +56,15 @@ export function glyphLabel(glyph: TabGlyph): string {
   if (glyph === 'error') return 'failed'
   return 'idle'
 }
+
+/**
+ * When a lit `done` dot should go out, or null when nothing is waiting to
+ * expire. The caller arms one timer off this rather than polling a clock.
+ */
+export function doneExpiresAt(
+  agentState: string | undefined,
+  agentStateAt: number | undefined,
+): number | null {
+  if (agentState !== 'done' || agentStateAt === undefined) return null
+  return agentStateAt + DONE_LINGER_MS
+}

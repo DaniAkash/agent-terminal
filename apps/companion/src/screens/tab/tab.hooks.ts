@@ -5,27 +5,25 @@ import { $recency } from '@/modules/stores/$recency'
 import { $session } from '@/modules/stores/$session'
 import { sendBumpRecency } from '@/modules/wss/client'
 import { rawTabId, splitTabId } from './tab.helpers'
-import { DONE_LINGER_MS, type TabGlyph, tabGlyph } from './tab-status.helpers'
+import {
+  type ActiveTabInfo,
+  activeStateStamp,
+  activeTabInfo,
+} from './tab-info.helpers'
+import { doneExpiresAt } from './tab-status.helpers'
 import {
   advanceSwipe,
   type SwipeDirection,
   type SwipeState,
 } from './tab-swipe.helpers'
 
-export interface ActiveTabInfo {
-  label: string
-  projectName: string
-  glyph: TabGlyph
-}
-
 /**
- * Name and state of the session on screen, read from the same tree the
- * switcher reads so the two can never disagree.
+ * Name and state of the session on screen.
  *
- * `now` comes from a state value rather than a bare `Date.now()` so the
- * done dot can actually go out: the desktop stops sending frames once a
- * turn ends, and `agent_state` stays "done" forever after, so nothing
- * else would ever prompt the re-render that dims it.
+ * `now` is state rather than a bare `Date.now()` so the done dot can
+ * actually go out: the desktop stops sending frames once a turn ends and
+ * `agent_state` stays "done" forever after, so nothing else would prompt
+ * the re-render that dims it.
  */
 export function useActiveTabInfo(
   projectId: string,
@@ -34,18 +32,13 @@ export function useActiveTabInfo(
   const session = useStore($session)
   const [now, setNow] = useState(() => Date.now())
 
-  const project = session.projects.find((p) => p.project_id === projectId)
-  const tab = project?.tabs.find((t) => t.tab_id === composedTabId)
-  const glyph = tabGlyph(tab?.agent_state, tab?.agent_state_at, now)
+  const info = activeTabInfo(session.projects, projectId, composedTabId, now)
+  const stamp = activeStateStamp(session.projects, projectId, composedTabId)
+  const expiresAt = doneExpiresAt(stamp.state, stamp.at)
 
-  const expiresAt =
-    tab?.agent_state === 'done' && tab.agent_state_at !== undefined
-      ? tab.agent_state_at + DONE_LINGER_MS
-      : null
-
-  // useEffect exception: a timer tied to a value, which is one of the
-  // cases CLAUDE.md keeps the hook for. One timeout, armed only while a
-  // dot is actually lit and waiting to expire.
+  // useEffect exception: a timer tied to a value, one of the cases
+  // CLAUDE.md keeps the hook for. One timeout, armed only while a dot is
+  // lit and waiting to expire.
   useEffect(() => {
     if (expiresAt === null) return
     const remaining = expiresAt - Date.now()
@@ -54,11 +47,7 @@ export function useActiveTabInfo(
     return () => clearTimeout(id)
   }, [expiresAt])
 
-  return {
-    label: tab?.label ?? splitTabId(composedTabId)?.tabId ?? 'session',
-    projectName: project?.name ?? '',
-    glyph,
-  }
+  return info
 }
 
 /**

@@ -1,11 +1,10 @@
+import { useActionSheet } from '@expo/react-native-action-sheet'
+import { useState } from 'react'
 import { FlatList, Pressable, Text, View } from 'react-native'
+import { NewProjectSheet } from '@/screens/projects/NewProjectSheet'
 import { SwitcherRowItem } from './SwitcherRow'
 import { useSwitcherData } from './switcher.data'
-import {
-  type SwitcherRow,
-  type SwitcherSection,
-  sectionHeading,
-} from './switcher.helpers'
+import { headingAt, type SwitcherRow, sectionHeading } from './switcher.helpers'
 
 interface SwitcherSheetProps {
   /** Composed id of the session on screen behind the sheet, if any. */
@@ -22,7 +21,31 @@ interface SwitcherSheetProps {
  * of sessions reads as one ordered list, not as a folder tree.
  */
 export function SwitcherSheet({ currentKey }: SwitcherSheetProps) {
-  const { rows, now, deviceName, open, openDesktops } = useSwitcherData()
+  const {
+    rows,
+    now,
+    deviceName,
+    open,
+    openDesktops,
+    openDetails,
+    openWorkspace,
+  } = useSwitcherData()
+  const { showActionSheetWithOptions } = useActionSheet()
+  const [showNewProject, setShowNewProject] = useState(false)
+
+  function openRowMenu(row: SwitcherRow) {
+    showActionSheetWithOptions(
+      {
+        options: ['Session details', `Edit ${row.projectName}`, 'Cancel'],
+        cancelButtonIndex: 2,
+        title: row.label,
+      },
+      (index?: number) => {
+        if (index === 0) openDetails(row)
+        else if (index === 1) openWorkspace(row)
+      },
+    )
+  }
 
   return (
     <View className="flex-1 bg-background">
@@ -55,7 +78,7 @@ export function SwitcherSheet({ currentKey }: SwitcherSheetProps) {
         }
         renderItem={({ item, index }) => (
           <>
-            {headingFor(rows, index) !== null && (
+            {headingAt(rows, index) !== null && (
               <Text className="px-3 pt-3 pb-1 font-medium text-muted-foreground text-xs uppercase">
                 {sectionHeading(item.section)}
               </Text>
@@ -65,6 +88,7 @@ export function SwitcherSheet({ currentKey }: SwitcherSheetProps) {
               now={now}
               isCurrent={item.key === currentKey}
               onPress={() => open(item)}
+              onLongPress={() => openRowMenu(item)}
             />
           </>
         )}
@@ -73,6 +97,19 @@ export function SwitcherSheet({ currentKey }: SwitcherSheetProps) {
             No sessions on this desktop yet.
           </Text>
         }
+        ListFooterComponent={
+          <Pressable
+            onPress={() => setShowNewProject(true)}
+            accessibilityRole="button"
+            className="mx-1 mt-3 items-center rounded-lg border border-border px-3 py-2.5 active:bg-accent-soft"
+          >
+            <Text className="text-foreground text-sm">New workspace</Text>
+          </Pressable>
+        }
+      />
+      <NewProjectSheet
+        visible={showNewProject}
+        onDismiss={() => setShowNewProject(false)}
       />
     </View>
   )
@@ -80,14 +117,4 @@ export function SwitcherSheet({ currentKey }: SwitcherSheetProps) {
 
 function keyOf(row: SwitcherRow): string {
   return row.key
-}
-
-/** A heading renders only where the section actually changes. */
-function headingFor(
-  rows: SwitcherRow[],
-  index: number,
-): SwitcherSection | null {
-  const section = rows[index]?.section
-  if (section === undefined) return null
-  return index === 0 || rows[index - 1]?.section !== section ? section : null
 }

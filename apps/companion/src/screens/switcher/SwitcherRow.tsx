@@ -7,6 +7,7 @@ interface SwitcherRowProps {
   now: number
   isCurrent: boolean
   onPress: () => void
+  onLongPress: () => void
 }
 
 export function SwitcherRowItem({
@@ -14,11 +15,14 @@ export function SwitcherRowItem({
   now,
   isCurrent,
   onPress,
+  onLongPress,
 }: SwitcherRowProps) {
   const age = relativeAge(row.lastActiveAt, now)
   return (
     <Pressable
       onPress={onPress}
+      onLongPress={onLongPress}
+      delayLongPress={350}
       accessibilityRole="button"
       accessibilityLabel={`${row.label}, ${glyphLabel(row.glyph)}, in ${row.projectName}${age ? `, ${age} ago` : ''}`}
       className={`flex-row items-center gap-3 rounded-lg px-3 py-3 active:bg-accent-soft ${

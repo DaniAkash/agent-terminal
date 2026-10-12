@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import type { ProjectSummary } from '@/modules/wss/protocol.gen'
-import { relativeAge, sectionHeading, switcherOrder } from './switcher.helpers'
+import {
+  headingAt,
+  relativeAge,
+  sectionHeading,
+  switcherOrder,
+} from './switcher.helpers'
 
 const NOW = 1_000_000_000
 
@@ -131,5 +136,28 @@ describe('sectionHeading', () => {
     for (const s of ['attention', 'recent', 'idle'] as const) {
       expect(sectionHeading(s).length).toBeGreaterThan(0)
     }
+  })
+})
+
+describe('headingAt', () => {
+  const rows = switcherOrder(tree(), NOW)
+
+  test('labels the first row of the list', () => {
+    expect(headingAt(rows, 0)).toBe('attention')
+  })
+
+  test('labels a row that starts a new group', () => {
+    const firstRecent = rows.findIndex((r) => r.section === 'recent')
+    expect(headingAt(rows, firstRecent)).toBe('recent')
+  })
+
+  test('stays quiet inside a group that is already labelled', () => {
+    const firstRecent = rows.findIndex((r) => r.section === 'recent')
+    expect(headingAt(rows, firstRecent + 1)).toBeNull()
+  })
+
+  test('is null past the end rather than throwing', () => {
+    expect(headingAt(rows, rows.length)).toBeNull()
+    expect(headingAt([], 0)).toBeNull()
   })
 })

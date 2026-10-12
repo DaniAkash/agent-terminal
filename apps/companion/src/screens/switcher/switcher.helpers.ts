@@ -100,3 +100,17 @@ export function relativeAge(
   if (hours < 24) return `${hours}h`
   return `${Math.floor(hours / 24)}d`
 }
+
+/**
+ * The section heading to draw above a row, or null where the row sits
+ * inside a group that has already been labelled.
+ */
+export function headingAt(
+  rows: readonly SwitcherRow[],
+  index: number,
+): SwitcherSection | null {
+  const section = rows[index]?.section
+  if (section === undefined) return null
+  if (index === 0) return section
+  return rows[index - 1]?.section === section ? null : section
+}
