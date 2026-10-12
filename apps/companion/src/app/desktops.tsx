@@ -1,10 +1,5 @@
-import { PlaceholderSheet } from '@/screens/placeholder/PlaceholderSheet'
+import { DesktopsSheet } from '@/screens/desktops/DesktopsSheet'
 
 export default function DesktopsRoute() {
-  return (
-    <PlaceholderSheet
-      title="Desktops"
-      body="Switching between paired desktops lands with the connection picker."
-    />
-  )
+  return <DesktopsSheet />
 }

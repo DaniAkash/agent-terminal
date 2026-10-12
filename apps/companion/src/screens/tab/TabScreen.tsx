@@ -1,13 +1,24 @@
+import { useRouter } from 'expo-router'
 import { useEffect, useRef } from 'react'
-import { Animated, Keyboard, Platform, Text, View } from 'react-native'
+import { Animated, Keyboard, Platform, View } from 'react-native'
+import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { ActiveTabBar } from './ActiveTabBar'
 import { ExtraKeysBar } from './ExtraKeysBar'
 import TerminalDom from './TerminalDom'
+import { TerminalGestureLayer } from './TerminalGestureLayer'
 import { useTabData } from './tab.data'
 
 const DOM_PROPS = { scrollEnabled: false, hideKeyboardAccessoryView: true }
 
-export function TabScreen({ tabId }: { tabId: string }) {
+interface TabScreenProps {
+  projectId: string
+  /** Composed wire id, which is what every stream op addresses. */
+  tabId: string
+}
+
+export function TabScreen({ projectId, tabId }: TabScreenProps) {
+  const router = useRouter()
   const {
     terminalRef,
     onData,
@@ -18,11 +29,16 @@ export function TabScreen({ tabId }: { tabId: string }) {
     altArmed,
     toggleCtrl,
     toggleAlt,
-    status,
-    deviceName,
-  } = useTabData(tabId)
-  const spacerHeight = useRef(new Animated.Value(0)).current
+    active,
+    swipeBack,
+    swipeForward,
+  } = useTabData(projectId, tabId)
   const insets = useSafeAreaInsets()
+  // Rests at the bottom inset rather than zero so the last key row clears
+  // the home indicator. Sitting in that strip, iOS swallows the touch
+  // before it reaches the key: the wider keys still have tappable area
+  // above it, but a half-width one is simply dead.
+  const spacerHeight = useRef(new Animated.Value(insets.bottom)).current
 
   useEffect(() => {
     // Animated.Value updates the native view's height directly, no React
@@ -46,7 +62,7 @@ export function TabScreen({ tabId }: { tabId: string }) {
     })
     const hide = Keyboard.addListener('keyboardDidHide', () => {
       Animated.timing(spacerHeight, {
-        toValue: 0,
+        toValue: insets.bottom,
         duration: 250,
         useNativeDriver: false,
       }).start()
@@ -57,30 +73,47 @@ export function TabScreen({ tabId }: { tabId: string }) {
     }
   }, [spacerHeight, insets.bottom])
 
+  // The sheet marks the session you are already in, so a glance does not
+  // make you work out where you are before deciding where to go.
+  const openSwitcher = () =>
+    router.push({ pathname: '/switcher', params: { current: tabId } })
+
+  // GestureHandlerRootView wraps THIS screen rather than the app, per the
+  // repo's standing rule about keeping it out of _layout.tsx.
   return (
-    <View className="flex-1 bg-background">
-      <View className="border-border border-b bg-muted px-4 py-2">
-        <Text className="text-muted-foreground text-xs">
-          {deviceName ?? 'unknown'} · {status}
-        </Text>
-      </View>
-      <View className="flex-1">
-        <TerminalDom
-          ref={terminalRef}
-          onData={onData}
-          onResize={onResize}
-          onReady={onReady}
-          dom={DOM_PROPS}
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <View className="flex-1 bg-background">
+        <ActiveTabBar
+          label={active.label}
+          projectName={active.projectName}
+          glyph={active.glyph}
+          onPress={openSwitcher}
         />
+        <View className="flex-1">
+          <TerminalDom
+            ref={terminalRef}
+            onData={onData}
+            onResize={onResize}
+            onReady={onReady}
+            dom={DOM_PROPS}
+          />
+        </View>
+        <TerminalGestureLayer
+          onSwipeUp={openSwitcher}
+          onSwipeBack={swipeBack}
+          onSwipeForward={swipeForward}
+        >
+          <ExtraKeysBar
+            ctrlArmed={ctrlArmed}
+            altArmed={altArmed}
+            onKey={onKey}
+            onToggleCtrl={toggleCtrl}
+            onToggleAlt={toggleAlt}
+            onMore={openSwitcher}
+          />
+        </TerminalGestureLayer>
+        <Animated.View style={{ height: spacerHeight }} />
       </View>
-      <ExtraKeysBar
-        ctrlArmed={ctrlArmed}
-        altArmed={altArmed}
-        onKey={onKey}
-        onToggleCtrl={toggleCtrl}
-        onToggleAlt={toggleAlt}
-      />
-      <Animated.View style={{ height: spacerHeight }} />
-    </View>
+    </GestureHandlerRootView>
   )
 }

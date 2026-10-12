@@ -28,7 +28,7 @@ export default function TabRoute() {
   return (
     <>
       <Stack.Screen options={{ title: 'Terminal' }} />
-      <TabScreen tabId={composed} />
+      <TabScreen projectId={projectId} tabId={composed} />
     </>
   )
 }

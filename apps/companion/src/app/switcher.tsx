@@ -1,12 +1,14 @@
 import { useStore } from '@nanostores/react'
-import { Redirect } from 'expo-router'
+import { Redirect, useLocalSearchParams } from 'expo-router'
 import { $session } from '@/modules/stores/$session'
-import { ProjectsScreen } from '@/screens/projects/ProjectsScreen'
+import { SwitcherSheet } from '@/screens/switcher/SwitcherSheet'
 
 export default function SwitcherRoute() {
   const session = useStore($session)
+  // Passed by the terminal so the sheet can mark where you already are.
+  const { current } = useLocalSearchParams<{ current?: string }>()
   if (session.status !== 'connected') {
     return <Redirect href="/connect" />
   }
-  return <ProjectsScreen />
+  return <SwitcherSheet currentKey={current} />
 }
