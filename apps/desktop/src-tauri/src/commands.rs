@@ -162,14 +162,39 @@ pub async fn close_tab(
     Ok(())
 }
 
+/// Serialises writers of `projects.json`.
+///
+/// Two overlapping saves both open the file at offset 0, so the shorter
+/// one leaves the longer one's tail behind and the file stops parsing:
+/// every project silently disappears on the next start. Mobile ops and
+/// desktop edits persist through the same command, which is exactly how
+/// two writes end up in flight at once.
+static PROJECTS_WRITE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 #[tauri::command]
 pub async fn save_projects(projects: serde_json::Value) -> Result<(), String> {
     let path = projects_config_path()?;
     let parent = path.parent().unwrap().to_owned();
-    tokio::fs::create_dir_all(&parent).await.map_err(|e| e.to_string())?;
     let json = serde_json::to_string_pretty(&projects).map_err(|e| e.to_string())?;
-    tokio::fs::write(&path, json).await.map_err(|e| e.to_string())?;
-    Ok(())
+    let _guard = PROJECTS_WRITE.lock().await;
+    tokio::fs::create_dir_all(&parent).await.map_err(|e| e.to_string())?;
+    write_file_atomically(&path, json.as_bytes()).await
+}
+
+/// Write through a temp file in the same directory, then rename over the
+/// target. Rename is atomic, so a reader (including the next cold start)
+/// sees either the whole old file or the whole new one, never a half
+/// written or over-long one.
+async fn write_file_atomically(path: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
+    let tmp = path.with_extension("json.tmp");
+    tokio::fs::write(&tmp, bytes).await.map_err(|e| e.to_string())?;
+    match tokio::fs::rename(&tmp, path).await {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let _ = tokio::fs::remove_file(&tmp).await;
+            Err(e.to_string())
+        }
+    }
 }
 
 /// Push the desktop React `$projects` nano-store into the WSS
@@ -462,4 +487,56 @@ fn projects_config_path() -> Result<std::path::PathBuf, String> {
         .join(".config")
         .join(crate::identity::NAMESPACE)
         .join("projects.json"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn atomic_write_leaves_exactly_the_bytes_given() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("projects.json");
+        write_file_atomically(&path, b"[{\"id\":\"long one here\"}]")
+            .await
+            .expect("first write");
+        write_file_atomically(&path, b"[]").await.expect("second");
+        let raw = tokio::fs::read(&path).await.expect("read back");
+        assert_eq!(raw, b"[]", "a shorter write must not leave a tail behind");
+        assert!(
+            !path.with_extension("json.tmp").exists(),
+            "the temp file is renamed away, not left in the config directory"
+        );
+    }
+
+    #[tokio::test]
+    async fn concurrent_saves_never_interleave_into_a_broken_file() {
+        // The corruption this guards against: two writers at offset 0, the
+        // shorter finishing last and leaving the longer one's tail, which
+        // stops the file parsing and loses every project.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("projects.json");
+        let long = format!("[{{\"id\":\"{}\"}}]", "x".repeat(4000));
+        let short = "[]".to_string();
+        for _ in 0..25 {
+            let (a, b) = (path.clone(), path.clone());
+            let (one, two) = (long.clone(), short.clone());
+            let first = tokio::spawn(async move {
+                let _g = PROJECTS_WRITE.lock().await;
+                write_file_atomically(&a, one.as_bytes()).await
+            });
+            let second = tokio::spawn(async move {
+                let _g = PROJECTS_WRITE.lock().await;
+                write_file_atomically(&b, two.as_bytes()).await
+            });
+            first.await.expect("join").expect("write");
+            second.await.expect("join").expect("write");
+            let raw = tokio::fs::read_to_string(&path).await.expect("read back");
+            assert!(
+                raw == long || raw == short,
+                "file must hold one whole write, got {} bytes",
+                raw.len()
+            );
+        }
+    }
 }
