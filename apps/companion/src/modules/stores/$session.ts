@@ -16,9 +16,9 @@ type Session = {
    * Whether `projects` came from this connection's own Projects frame.
    *
    * `connected` is set on auth_ok, which the desktop sends BEFORE the tree, so
-   * status alone cannot distinguish "no projects" from "not told yet" — and on
-   * a reconnect the array still holds the previous session's tree. Anything
-   * that branches on the tree's contents waits for this instead.
+   * status alone cannot distinguish "no projects" from "not told yet". On a
+   * reconnect the array still holds the previous session's tree. Anything that
+   * branches on the tree's contents waits for this instead.
    */
   projectsLoaded: boolean
   lastError: string | null
