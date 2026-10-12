@@ -14,17 +14,10 @@ import type { Project, Tab } from '@/screens/workspace/workspace.types'
 export const $projects = atom<Project[]>([])
 
 function persist(projects: Project[]): void {
+  // Disk only. The WSS push is driven by `initProjectsSync`, which also
+  // watches $tabMeta and $tabRecency; syncing from here too would send the
+  // tree twice per mutation and without those two stores merged in.
   IPC.saveProjects(projects).catch(() => {})
-  // Push the fresh tree into the WSS ProjectsCache so any paired mobile
-  // client sees the change. Fire-and-forget; a stale mobile view is not
-  // a desktop-side failure. Runs alongside `saveProjects` for every
-  // mutation (add/remove/rename/reorder/pin), including the initial
-  // hydration bootstrap in the $session store.
-  // Every persist call passes hydrated=true. Bootstrap fires the first
-  // one right after listProjects() resolves in main.tsx; after that any
-  // mutation from the desktop UI (or from a mobile CRUD op via the
-  // mobile-ops listener) funnels through here and re-affirms the flag.
-  IPC.syncProjectsToWss(projects, true).catch(() => {})
 }
 
 function arrayMove<T>(arr: T[], from: number, to: number): T[] {
@@ -44,10 +37,10 @@ export function toggleExpanded(projectId: string): void {
   persist(updated)
 }
 
-export function toggleProjectPin(projectId: string): void {
+export function setProjectPinned(projectId: string, pinned: boolean): void {
   const updated = $projects
     .get()
-    .map((p) => (p.id === projectId ? { ...p, pinned: !p.pinned } : p))
+    .map((p) => (p.id === projectId ? { ...p, pinned } : p))
   const sorted = [
     ...updated.filter((p) => p.pinned),
     ...updated.filter((p) => !p.pinned),
@@ -56,12 +49,14 @@ export function toggleProjectPin(projectId: string): void {
   persist(sorted)
 }
 
-export function toggleTabPin(projectId: string, tabId: string): void {
+export function setTabPinned(
+  projectId: string,
+  tabId: string,
+  pinned: boolean,
+): void {
   const updated = $projects.get().map((p) => {
     if (p.id !== projectId) return p
-    const tabs = p.tabs.map((t) =>
-      t.id === tabId ? { ...t, pinned: !t.pinned } : t,
-    )
+    const tabs = p.tabs.map((t) => (t.id === tabId ? { ...t, pinned } : t))
     const sorted = [
       ...tabs.filter((t) => t.pinned),
       ...tabs.filter((t) => !t.pinned),
@@ -70,6 +65,21 @@ export function toggleTabPin(projectId: string, tabId: string): void {
   })
   $projects.set(updated)
   persist(updated)
+}
+
+export function toggleProjectPin(projectId: string): void {
+  const project = $projects.get().find((p) => p.id === projectId)
+  if (!project) return
+  setProjectPinned(projectId, !project.pinned)
+}
+
+export function toggleTabPin(projectId: string, tabId: string): void {
+  const tab = $projects
+    .get()
+    .find((p) => p.id === projectId)
+    ?.tabs.find((t) => t.id === tabId)
+  if (!tab) return
+  setTabPinned(projectId, tabId, !tab.pinned)
 }
 
 export function reorderProjects(oldIndex: number, newIndex: number): void {

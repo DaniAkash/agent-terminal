@@ -194,6 +194,15 @@ pub(crate) struct StoredTab {
     last_cwd: Option<String>,
     #[serde(default, rename = "userRenamed")]
     user_renamed: bool,
+    /// Renderer-only. Present on the `sync_projects_to_wss` payload,
+    /// absent from projects.json: agent state is ephemeral and must not
+    /// be persisted across restarts.
+    #[serde(default, rename = "agentState", skip_serializing_if = "Option::is_none")]
+    agent_state: Option<String>,
+    #[serde(default, rename = "agentStateAt", skip_serializing_if = "Option::is_none")]
+    agent_state_at: Option<u64>,
+    #[serde(default, rename = "lastActiveAt", skip_serializing_if = "Option::is_none")]
+    last_active_at: Option<u64>,
 }
 
 fn default_true() -> bool {
@@ -257,6 +266,11 @@ fn tab_summary_from_stored(project_id: &str, t: StoredTab) -> TabSummary {
         user_renamed: t.user_renamed,
         // Filled in at read time by projects_with_spawn_status().
         is_spawned: false,
+        // Renderer-owned signals. Absent on a cold-start disk load,
+        // populated once React syncs through sync_projects_to_wss.
+        agent_state: t.agent_state,
+        agent_state_at: t.agent_state_at,
+        last_active_at: t.last_active_at,
     }
 }
 
@@ -413,6 +427,7 @@ mod tests {
                     pinned: false,
                     user_renamed: false,
                     is_spawned: false,
+                    ..Default::default()
                 }],
             },
             ProjectSummary {
@@ -431,6 +446,7 @@ mod tests {
                     pinned: false,
                     user_renamed: false,
                     is_spawned: false,
+                    ..Default::default()
                 }],
             },
         ]);
@@ -461,6 +477,7 @@ mod tests {
                     pinned: false,
                     user_renamed: false,
                     is_spawned: false,
+                    ..Default::default()
                 },
                 TabSummary {
                     tab_id: "t2".into(),
@@ -472,6 +489,7 @@ mod tests {
                     pinned: false,
                     user_renamed: false,
                     is_spawned: false,
+                    ..Default::default()
                 },
             ],
         }]);

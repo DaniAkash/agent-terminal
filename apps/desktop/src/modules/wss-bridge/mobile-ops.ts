@@ -2,9 +2,9 @@
 // server. Every mobile CRUD frame (create_tab, rename_project, etc.)
 // lands here; we map each op to the matching `$projects` store action.
 //
-// Success loop: store action mutates `$projects` → persist() fires both
-// saveProjects (disk) AND syncProjectsToWss (Rust cache) → cache
-// broadcasts a fresh Projects frame to every connected WSS client
+// Success loop: store action mutates `$projects` → persist() writes disk
+// and the projects-sync subscriber pushes the merged tree to the Rust
+// cache → cache broadcasts a fresh Projects frame to every WSS client
 // including the mobile that sent this op. The sender's pending-ops map
 // clears when it sees its own mutation land in the pushed tree.
 //
@@ -23,7 +23,11 @@ import {
   renameProject,
   renameTab,
   reorderTabs,
+  setProjectPinned,
+  setTabPinned,
 } from '@/modules/stores/$projects'
+import { bumpTabRecency } from '@/modules/stores/$tabRecency'
+import { makeTabKey } from '@/screens/workspace/workspace.helpers'
 
 interface MobileOp {
   op: string
@@ -87,6 +91,21 @@ function applyOp(op: string, body: unknown): void {
         new_index: number
       }
       reorderTabs(b.project_id, b.old_index, b.new_index)
+      return
+    }
+    case 'set_tab_pinned': {
+      const b = body as { project_id: string; tab_id: string; pinned: boolean }
+      setTabPinned(b.project_id, b.tab_id, b.pinned)
+      return
+    }
+    case 'set_project_pinned': {
+      const b = body as { project_id: string; pinned: boolean }
+      setProjectPinned(b.project_id, b.pinned)
+      return
+    }
+    case 'bump_recency': {
+      const b = body as { project_id: string; tab_id: string }
+      bumpTabRecency(makeTabKey(b.project_id, b.tab_id))
       return
     }
     default:

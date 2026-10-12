@@ -16,6 +16,7 @@ import {
 import { initTabRecencySubscriber } from '@/modules/stores/$tabRecency.init'
 import { initThemeFromStorage } from '@/modules/stores/$theme'
 import { installMobileOpsListener } from '@/modules/wss-bridge/mobile-ops'
+import { initProjectsSync } from '@/modules/wss-bridge/projects-sync.init'
 import { WorkspaceLayout } from '@/screens/workspace/WorkspaceLayout'
 import type { Project } from '@/screens/workspace/workspace.types'
 import '@xterm/xterm/css/xterm.css'
@@ -31,11 +32,6 @@ async function bootstrap() {
     if (saved.length > 0) {
       $projects.set(saved)
     }
-    // Prime the Rust WSS ProjectsCache AND flip its `hydrated` flag,
-    // even when saved is empty. Rust needs the flag flipped to accept
-    // mobile CRUD ops. If we skipped the call for an empty projects.json
-    // the first mobile CRUD would be rejected forever.
-    IPC.syncProjectsToWss(saved ?? [], true).catch(() => {})
   } catch {}
 
   // Install the wss:mobile_op listener so any mobile client that fires a
@@ -57,6 +53,13 @@ async function bootstrap() {
   // Recency tracker subscribes to navigation; must run after initNavigation
   // so the first bump captures the project/tab restored from disk.
   initTabRecencySubscriber()
+
+  // Pushes the project tree, merged with $tabMeta and $tabRecency, into the
+  // Rust WSS cache for any paired mobile client. Its first push also flips
+  // the `hydrated` flag that mobile CRUD is gated on, replacing the inline
+  // bootstrap sync that used to run right after listProjects(). Must follow
+  // initTabRecencySubscriber so the first push carries the restored MRU.
+  initProjectsSync()
 
   // Notification firing lives entirely in Rust. The bridge just pushes
   // UI state (projects map, active tab, app focus) so the backend can

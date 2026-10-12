@@ -889,6 +889,25 @@ async fn dispatch_client_frame(
             dispatch_mobile_op(&state, &outbox_tx, connection_id, op_id, "reorder_tabs", &body);
         }
 
+        ClientFrame::SetTabPinned { op_id, body } => {
+            dispatch_mobile_op(state, outbox_tx, connection_id, op_id, "set_tab_pinned", &body);
+        }
+
+        ClientFrame::SetProjectPinned { op_id, body } => {
+            dispatch_mobile_op(
+                state,
+                outbox_tx,
+                connection_id,
+                op_id,
+                "set_project_pinned",
+                &body,
+            );
+        }
+
+        ClientFrame::BumpRecency { op_id, body } => {
+            dispatch_mobile_op(state, outbox_tx, connection_id, op_id, "bump_recency", &body);
+        }
+
         // Pairing frames only arrive inside the `pairing_flow` sub-
         // task; a PairingStart received here is a protocol confusion
         // (session-mode connection sending a pair frame). Bounce back
@@ -1013,6 +1032,9 @@ fn first_op_name(frame: &ClientFrame) -> &'static str {
         ClientFrame::RemoveProject { .. } => "remove_project",
         ClientFrame::RemoveTab { .. } => "remove_tab",
         ClientFrame::ReorderTabs { .. } => "reorder_tabs",
+        ClientFrame::SetTabPinned { .. } => "set_tab_pinned",
+        ClientFrame::SetProjectPinned { .. } => "set_project_pinned",
+        ClientFrame::BumpRecency { .. } => "bump_recency",
         ClientFrame::PairingStart { .. } => "pairing_start",
     }
 }
