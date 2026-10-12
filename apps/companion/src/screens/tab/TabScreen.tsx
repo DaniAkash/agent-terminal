@@ -33,8 +33,12 @@ export function TabScreen({ projectId, tabId }: TabScreenProps) {
     swipeBack,
     swipeForward,
   } = useTabData(projectId, tabId)
-  const spacerHeight = useRef(new Animated.Value(0)).current
   const insets = useSafeAreaInsets()
+  // Rests at the bottom inset rather than zero so the last key row clears
+  // the home indicator. Sitting in that strip, iOS swallows the touch
+  // before it reaches the key: the wider keys still have tappable area
+  // above it, but a half-width one is simply dead.
+  const spacerHeight = useRef(new Animated.Value(insets.bottom)).current
 
   useEffect(() => {
     // Animated.Value updates the native view's height directly, no React
@@ -58,7 +62,7 @@ export function TabScreen({ projectId, tabId }: TabScreenProps) {
     })
     const hide = Keyboard.addListener('keyboardDidHide', () => {
       Animated.timing(spacerHeight, {
-        toValue: 0,
+        toValue: insets.bottom,
         duration: 250,
         useNativeDriver: false,
       }).start()

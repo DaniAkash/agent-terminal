@@ -30,7 +30,7 @@ export function StatusSheet({ projectId, tabId }: StatusSheetProps) {
   }
 
   return (
-    <View className="flex-1 gap-4 bg-background px-4 pt-4">
+    <View collapsable={false} className="flex-1 gap-4 bg-background px-4 pt-4">
       <View className="flex-row items-center gap-2">
         <View
           className={`h-2.5 w-2.5 rounded-full ${glyphDotClass(status.glyph)}`}

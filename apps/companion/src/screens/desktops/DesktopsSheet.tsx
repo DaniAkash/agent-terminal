@@ -41,7 +41,7 @@ export function DesktopsSheet() {
   }
 
   return (
-    <View className="flex-1 bg-background">
+    <View collapsable={false} className="flex-1 bg-background">
       <View className="px-4 pt-3 pb-1">
         <Text className="font-semibold text-base text-foreground">
           Desktops

@@ -47,11 +47,21 @@ export function SwitcherSheet({ currentKey }: SwitcherSheetProps) {
     )
   }
 
+  // collapsable={false} is load-bearing. React Native flattens a view that
+  // only groups children, which hoists them into the screen wrapper and
+  // loses this flex container: inside a detent-sized sheet the content then
+  // lays out below the visible area at zero height, so every row mounts and
+  // nothing paints.
   return (
-    <View className="flex-1 bg-background">
+    <View collapsable={false} className="flex-1 bg-background">
       <FlatList
         data={rows}
         keyExtractor={keyOf}
+        // flex is load-bearing, not cosmetic. Without it the list has no
+        // definite height inside the sheet's detent-sized container: it
+        // lays out at zero height below the visible area, so every row
+        // mounts and nothing paints.
+        style={{ flex: 1 }}
         contentContainerStyle={{ paddingHorizontal: 8, paddingBottom: 32 }}
         // The title row rides inside the list rather than beside it. As a
         // sibling it ended up overlapping the first section heading: the

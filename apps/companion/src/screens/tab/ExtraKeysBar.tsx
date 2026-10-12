@@ -94,6 +94,15 @@ function KeyButton({
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
+      // A split column is narrower than the 44pt minimum touch target, so
+      // the narrowed keys claim the slack around them instead. Only
+      // vertical and right-edge slack: taking it on the left would steal
+      // touches from the key next door.
+      hitSlop={
+        flex < 1
+          ? { top: 6, bottom: 6, right: 8, left: 0 }
+          : { top: 6, bottom: 6, right: 0, left: 0 }
+      }
       style={{ flex }}
     >
       <View className={`items-center justify-center py-3 ${bgClass}`}>
