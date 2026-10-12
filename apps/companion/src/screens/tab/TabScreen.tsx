@@ -69,7 +69,10 @@ export function TabScreen({ projectId, tabId }: TabScreenProps) {
     }
   }, [spacerHeight, insets.bottom])
 
-  const openSwitcher = () => router.push('/switcher')
+  // The sheet marks the session you are already in, so a glance does not
+  // make you work out where you are before deciding where to go.
+  const openSwitcher = () =>
+    router.push({ pathname: '/switcher', params: { current: tabId } })
 
   // GestureHandlerRootView wraps THIS screen rather than the app, per the
   // repo's standing rule about keeping it out of _layout.tsx.
