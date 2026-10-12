@@ -52,6 +52,14 @@
     // is pre-existing; it grew slightly with the autoConnect / probe
     // helpers but stayed under the pre-Phase-2B risk envelope.
     "ignore": [
+      // Four small pure predicates (shape guards, index reconciliation,
+      // active-device selection) with direct unit tests in
+      // $devices.helpers.test.ts. Fallow ESTIMATES CRAP from export
+      // reference counts rather than measuring coverage, so a file with
+      // several tested exports and several importers reads as untested
+      // complexity. The flag is a coupling heuristic here, not a real
+      // one: `fallow health --coverage` gives the true score.
+      "src/modules/stores/$devices.helpers.ts",
       // Thin React glue around an async store read. The pure logic this
       // screen depends on (URL canonicalisation, fingerprint parsing,
       // device-record construction) is tested directly in

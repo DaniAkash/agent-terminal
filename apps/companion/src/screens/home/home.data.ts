@@ -1,12 +1,12 @@
 import { useStore } from '@nanostores/react'
 import { router } from 'expo-router'
 import { Alert } from 'react-native'
-import { $device, clearDevice } from '@/modules/stores/$device'
+import { $activeDevice, clearDevice } from '@/modules/stores/$devices'
 import { $session } from '@/modules/stores/$session'
 import { autoConnect, disconnect } from '@/modules/wss/client'
 
 /**
- * Home screen state. Three-way split driven by `$device` (has a
+ * Home screen state. Three-way split driven by `$activeDevice` (has a
  * paired record?) + `$session.status` (WSS live?):
  *
  * - `unpaired`: no DeviceRecord in secure-store; show the CTA.
@@ -18,7 +18,7 @@ import { autoConnect, disconnect } from '@/modules/wss/client'
  */
 export function useHomeData() {
   const session = useStore($session)
-  const device = useStore($device)
+  const device = useStore($activeDevice)
   const record = device.record
   const status = session.status
 

@@ -12,6 +12,7 @@ import {
   sendReorderTabs,
 } from '@/modules/wss/client'
 import type { ProjectSummary, TabSummary } from '@/modules/wss/protocol.gen'
+import { tabHref } from '@/screens/tab/tab.helpers'
 import { NewProjectSheet } from './NewProjectSheet'
 import { NewTabSheet } from './NewTabSheet'
 import { useProjectsData } from './projects.data'
@@ -222,7 +223,11 @@ function ProjectRow({
         onDragEnd={({ data }) => handleDragEnd(data)}
         activationDistance={5}
         renderItem={(params) => (
-          <TabRow {...params} onLongPress={() => onTabLongPress(params.item)} />
+          <TabRow
+            {...params}
+            projectId={project.project_id}
+            onLongPress={() => onTabLongPress(params.item)}
+          />
         )}
       />
     </View>
@@ -230,15 +235,16 @@ function ProjectRow({
 }
 
 interface TabRowProps extends RenderItemParams<TabSummary> {
+  projectId: string
   onLongPress: () => void
 }
 
 // fallow-ignore-next-line complexity
-function TabRow({ item, drag, isActive, onLongPress }: TabRowProps) {
+function TabRow({ item, drag, isActive, projectId, onLongPress }: TabRowProps) {
   const sleeping = !item.is_spawned
   const displayCwd = item.last_cwd ?? item.cwd
   return (
-    <Link href={`/tab/${item.tab_id}`} asChild>
+    <Link href={tabHref(projectId, item.tab_id)} asChild>
       <Pressable
         onLongPress={() => {
           drag()

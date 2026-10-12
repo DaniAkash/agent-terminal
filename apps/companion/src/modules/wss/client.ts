@@ -1,4 +1,4 @@
-import { $device } from '@/modules/stores/$device'
+import { $activeDevice } from '@/modules/stores/$devices'
 import { $session, resetSession } from '@/modules/stores/$session'
 import type {
   ClientFrame,
@@ -104,7 +104,7 @@ function connect(url: string, token: string): void {
  * `/connect`) can bypass the ladder entirely.
  */
 export async function autoConnect(
-  device: import('@/modules/stores/$device').DeviceRecord,
+  device: import('@/modules/stores/$devices').DeviceRecord,
 ): Promise<void> {
   const { resolveWssCandidates } = await import('./resolver')
   const candidates = resolveWssCandidates(device)
@@ -141,7 +141,7 @@ function probeSocket(url: string, timeoutMs: number): Promise<boolean> {
       done = true
       resolve(ok)
     }
-    const fingerprint = $device.get().record?.fingerprint
+    const fingerprint = $activeDevice.get().record?.fingerprint
     if (!fingerprint) {
       finish(false)
       return
@@ -395,10 +395,10 @@ function isCurrentGeneration(generation: number): boolean {
 }
 
 function tryConstructSocket(url: string): PinnedWebSocket | null {
-  const fingerprint = $device.get().record?.fingerprint
+  const fingerprint = $activeDevice.get().record?.fingerprint
   if (!fingerprint) {
     console.error(
-      '[wss.client] openSocket blocked: no paired device fingerprint in $device',
+      '[wss.client] openSocket blocked: no paired device fingerprint in $activeDevice',
     )
     $session.setKey('status', 'auth_failed')
     $session.setKey('lastError', 'not paired')
@@ -482,7 +482,13 @@ function dispatchFrame(frame: ServerFrame): void {
     return
   }
   if (frame.op === 'projects') {
-    $session.setKey('projects', frame.body.data)
+    // One write, so a subscriber never sees the new tree with the flag still
+    // down (or the flag up with the old tree).
+    $session.set({
+      ...$session.get(),
+      projects: frame.body.data,
+      projectsLoaded: true,
+    })
     return
   }
   if (frame.op === 'snapshot') {
@@ -545,18 +551,21 @@ function handleAuthOk(deviceName: string): void {
   $session.set({
     status: 'connected',
     deviceName,
+    // The previous connection's tree is kept so the UI does not blank out
+    // mid-reconnect, but it is explicitly not this connection's answer yet.
     projects: $session.get().projects,
+    projectsLoaded: false,
     lastError: null,
     lastConnectedAt: Date.now(),
   })
   // Remember which resolver rung actually worked so the next cold
   // start goes straight to the fast path. Parses out the host+port
   // from the connected URL; import is lazy so the client module has
-  // no eager dep on the $device store.
+  // no eager dep on the $activeDevice store.
   if (state.url) {
     const parsed = parseWssHostPort(state.url)
     if (parsed) {
-      void import('@/modules/stores/$device').then((mod) => {
+      void import('@/modules/stores/$devices').then((mod) => {
         void mod.updateLastEndpoint(parsed.host, parsed.port)
       })
     }

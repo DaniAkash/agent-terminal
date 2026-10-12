@@ -2,7 +2,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { useStore } from '@nanostores/react'
 import { useForm } from 'react-hook-form'
 import { savePairingConfig } from '@/modules/env/dev-config'
-import { saveDeviceToSecureStore } from '@/modules/stores/$device'
+import { saveDeviceToSecureStore } from '@/modules/stores/$devices'
 import { $session } from '@/modules/stores/$session'
 import { disconnect } from '@/modules/wss/client'
 import {
@@ -38,7 +38,7 @@ export function useConnectData() {
     }
 
     // Drop any live socket first. Persisting the record wakes the
-    // $device subscriber in the wss bootstrap, which runs autoConnect
+    // $activeDevice subscriber in the wss bootstrap, which runs autoConnect
     // against the resolver ladder; that subscriber skips while a socket
     // is already connected or negotiating, so a resubmit with new
     // credentials would otherwise be silently ignored.

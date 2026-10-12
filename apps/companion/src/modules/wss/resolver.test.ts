@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import type { DeviceRecord } from '@/modules/stores/$device'
+import type { DeviceRecord } from '@/modules/stores/$devices'
 import { classifyRung, resolveWssCandidates } from './resolver'
 
 function fakeDevice(overrides: Partial<DeviceRecord> = {}): DeviceRecord {
