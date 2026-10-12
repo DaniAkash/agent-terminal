@@ -10,15 +10,15 @@ describe('cwdBasename', () => {
   test('matches the desktop helper it mirrors', () => {
     // Same cases the desktop documents on `cwdBasename`. If these drift,
     // the same session reads differently on the two screens.
-    expect(cwdBasename('/Users/dani/code/agent-terminal')).toBe(
+    expect(cwdBasename('/Users/example/code/agent-terminal')).toBe(
       '/agent-terminal',
     )
-    expect(cwdBasename('/Users/dani')).toBe('/dani')
+    expect(cwdBasename('/Users/example')).toBe('/example')
     expect(cwdBasename('/')).toBe('/')
   })
 
   test('ignores a trailing slash', () => {
-    expect(cwdBasename('/Users/dani/code/')).toBe('/code')
+    expect(cwdBasename('/Users/example/code/')).toBe('/code')
   })
 
   test('handles a bare segment with no separator', () => {
@@ -30,7 +30,7 @@ describe('sessionLabel', () => {
   test('keeps a name the user typed, whatever the directory', () => {
     expect(
       sessionLabel(
-        tab({ label: 'my-test-1', user_renamed: true, cwd: '/Users/dani' }),
+        tab({ label: 'my-test-1', user_renamed: true, cwd: '/Users/example' }),
       ),
     ).toBe('my-test-1')
   })
@@ -40,7 +40,7 @@ describe('sessionLabel', () => {
     // while the phone showed "shell 4" for the same session.
     expect(
       sessionLabel(
-        tab({ label: 'shell 4', cwd: '/Users/dani/code/control-center' }),
+        tab({ label: 'shell 4', cwd: '/Users/example/code/control-center' }),
       ),
     ).toBe('/control-center')
   })
@@ -55,7 +55,7 @@ describe('sessionLabel', () => {
     expect(sessionLabel(tab({ cwd: '/from-cwd', last_cwd: '/older' }))).toBe(
       '/from-cwd',
     )
-    expect(sessionLabel(tab({ last_cwd: '/Users/dani/only-stored' }))).toBe(
+    expect(sessionLabel(tab({ last_cwd: '/Users/example/only-stored' }))).toBe(
       '/only-stored',
     )
   })
