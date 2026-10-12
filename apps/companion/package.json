@@ -45,7 +45,7 @@
     "@expo/config-plugins": "~56.0.0",
     "@types/bun": "^1.4.2",
     "@types/react": "~19.2.18",
-    "concurrently": "^10.0.4",
+    "concurrently": "^10.0.6",
     "fallow": "^2.104.0",
     "react-doctor": "0.9.17",
     "typescript": "~6.0.3"
