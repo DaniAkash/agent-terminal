@@ -3,7 +3,7 @@ import { Redirect } from 'expo-router'
 import { $session } from '@/modules/stores/$session'
 import { ProjectsScreen } from '@/screens/projects/ProjectsScreen'
 
-export default function ProjectsRoute() {
+export default function SwitcherRoute() {
   const session = useStore($session)
   if (session.status !== 'connected') {
     return <Redirect href="/connect" />

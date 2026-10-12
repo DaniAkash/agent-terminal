@@ -176,7 +176,7 @@ function PairedHome({
         <StatTile label="Projects" value={projectCount} />
         <StatTile label="Tabs" value={tabCount} />
       </View>
-      <Link href="/projects" asChild>
+      <Link href="/switcher" asChild>
         <Pressable className="items-center rounded-md bg-accent px-4 py-3">
           <Text className="font-semibold text-accent-foreground text-base">
             Browse projects

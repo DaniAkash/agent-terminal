@@ -4,6 +4,7 @@ import {
   loadDevicesFromSecureStore,
 } from '@/modules/stores/$devices'
 import { migrateDevicesV1ToV2 } from '@/modules/stores/$devices.migrate'
+import { loadLastSessions } from '@/modules/stores/$lastSession'
 import { $session } from '@/modules/stores/$session'
 import { autoConnect, disconnect } from './client'
 import { initLifecycleWiring, resetLifecycleWiring } from './lifecycle'
@@ -97,6 +98,10 @@ export async function initWssBootstrap(): Promise<void> {
   // multi-desktop layout. Must run before the load below, which only
   // knows about v2 keys.
   await migrateDevicesV1ToV2()
+
+  // Landing shortcut for the resolver. Independent of the connection, so
+  // a failure here only costs the shortcut.
+  await loadLastSessions()
 
   // Cold-start read. Fires the device subscriber above as a side
   // effect of the `$devices.set(...)` inside; if the phone was

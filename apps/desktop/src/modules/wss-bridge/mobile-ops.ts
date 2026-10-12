@@ -36,6 +36,17 @@ interface MobileOp {
   body: unknown
 }
 
+/**
+ * Mobile addresses tabs by `TabSummary.tab_id`, which the Rust side
+ * composes as `<project_id>:<raw_id>`, while the store actions here key
+ * on the raw id. Accept either form so an op is correct whichever the
+ * client sends.
+ */
+function rawTabId(projectId: string, tabId: string): string {
+  const prefix = `${projectId}:`
+  return tabId.startsWith(prefix) ? tabId.slice(prefix.length) : tabId
+}
+
 // fallow-ignore-next-line complexity
 function applyOp(op: string, body: unknown): void {
   switch (op) {
@@ -95,7 +106,7 @@ function applyOp(op: string, body: unknown): void {
     }
     case 'set_tab_pinned': {
       const b = body as { project_id: string; tab_id: string; pinned: boolean }
-      setTabPinned(b.project_id, b.tab_id, b.pinned)
+      setTabPinned(b.project_id, rawTabId(b.project_id, b.tab_id), b.pinned)
       return
     }
     case 'set_project_pinned': {
@@ -105,7 +116,7 @@ function applyOp(op: string, body: unknown): void {
     }
     case 'bump_recency': {
       const b = body as { project_id: string; tab_id: string }
-      bumpTabRecency(makeTabKey(b.project_id, b.tab_id))
+      bumpTabRecency(makeTabKey(b.project_id, rawTabId(b.project_id, b.tab_id)))
       return
     }
     default:
