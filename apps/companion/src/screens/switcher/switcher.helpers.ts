@@ -1,6 +1,7 @@
 import { recencyOrder } from '@/modules/stores/$recency.helpers'
 import type { ProjectSummary } from '@/modules/wss/protocol.gen'
 import { rawTabId } from '@/screens/tab/tab.helpers'
+import { sessionLabel } from '@/screens/tab/tab-label.helpers'
 import { type TabGlyph, tabGlyph } from '@/screens/tab/tab-status.helpers'
 
 /**
@@ -51,7 +52,7 @@ export function switcherOrder(
       key: entry.key,
       projectId: entry.projectId,
       tabId: rawTabId(entry.projectId, entry.key),
-      label: tab?.label ?? entry.tabId,
+      label: tab ? sessionLabel(tab) : entry.tabId,
       projectName: names.get(entry.projectId) ?? '',
       glyph,
       section: sectionFor(glyph, entry.lastActiveAt),

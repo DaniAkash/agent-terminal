@@ -17,6 +17,7 @@ import {
 import type { TabSummary } from '@/modules/wss/protocol.gen'
 import { NewTabSheet } from '@/screens/projects/NewTabSheet'
 import { RenameSheet, type RenameTarget } from '@/screens/projects/RenameSheet'
+import { sessionLabel } from '@/screens/tab/tab-label.helpers'
 import { reorderMove } from './workspace-edit.helpers'
 
 /**
@@ -55,7 +56,7 @@ export function WorkspaceEditSheet({ projectId }: { projectId: string }) {
         options: [tab.pinned ? 'Unpin' : 'Pin', 'Rename', 'Delete', 'Cancel'],
         destructiveButtonIndex: 2,
         cancelButtonIndex: 3,
-        title: tab.label,
+        title: sessionLabel(tab),
       },
       (idx) => {
         if (idx === 0) {
@@ -72,7 +73,7 @@ export function WorkspaceEditSheet({ projectId }: { projectId: string }) {
             currentLabel: tab.label,
           })
         } else if (idx === 2) {
-          Alert.alert('Delete session?', tab.label, [
+          Alert.alert('Delete session?', sessionLabel(tab), [
             { text: 'Cancel', style: 'cancel' },
             {
               text: 'Delete',
@@ -228,7 +229,7 @@ function EditableTabRow({ item, drag, isActive, onMore }: EditableTabRowProps) {
       delayLongPress={350}
       disabled={isActive}
       accessibilityRole="button"
-      accessibilityLabel={`${item.label}${item.pinned ? ', pinned' : ''}${sleeping ? ', sleeping' : ''}. Long press for options.`}
+      accessibilityLabel={`${sessionLabel(item)}${item.pinned ? ', pinned' : ''}${sleeping ? ', sleeping' : ''}. Long press for options.`}
       className={`mb-1 flex-row items-center gap-2 rounded-md border border-border bg-card p-3 ${sleeping ? 'opacity-60' : ''} ${isActive ? 'opacity-80' : ''}`}
     >
       <Text className="text-muted-foreground text-xs">⠿</Text>
@@ -236,7 +237,7 @@ function EditableTabRow({ item, drag, isActive, onMore }: EditableTabRowProps) {
         numberOfLines={1}
         className="flex-1 font-mono text-foreground text-sm"
       >
-        {item.label}
+        {sessionLabel(item)}
       </Text>
       {item.pinned && <Text className="text-foreground text-xs">★</Text>}
       {sleeping && (

@@ -1,5 +1,6 @@
 import type { ProjectSummary } from '@/modules/wss/protocol.gen'
 import { splitTabId } from './tab.helpers'
+import { sessionLabel } from './tab-label.helpers'
 import { type TabGlyph, tabGlyph } from './tab-status.helpers'
 
 export interface ActiveTabInfo {
@@ -25,7 +26,9 @@ export function activeTabInfo(
   const project = projects.find((p) => p.project_id === projectId)
   const tab = project?.tabs.find((t) => t.tab_id === composedTabId)
   return {
-    label: tab?.label ?? splitTabId(composedTabId)?.tabId ?? 'session',
+    label: tab
+      ? sessionLabel(tab)
+      : (splitTabId(composedTabId)?.tabId ?? 'session'),
     projectName: project?.name ?? '',
     glyph: tabGlyph(tab?.agent_state, tab?.agent_state_at, now),
   }

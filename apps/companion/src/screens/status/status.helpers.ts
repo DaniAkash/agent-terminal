@@ -3,6 +3,7 @@ import type {
   TabStateSummary,
 } from '@/modules/wss/protocol.gen'
 import { relativeAge } from '@/screens/switcher/switcher.helpers'
+import { sessionLabel } from '@/screens/tab/tab-label.helpers'
 import {
   glyphLabel,
   type TabGlyph,
@@ -50,7 +51,7 @@ export function sessionStatus(
   const ports = state?.ports ?? []
 
   return {
-    label: tab.label,
+    label: sessionLabel(tab, state?.cwd),
     glyph,
     state: since ? `${glyphLabel(glyph)} · ${since}` : glyphLabel(glyph),
     fields: [
