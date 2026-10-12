@@ -21,6 +21,7 @@
   --color-input: var(--input);
   --color-destructive: var(--destructive);
   --color-success: var(--success);
+  --color-warning: var(--warning);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -51,6 +52,7 @@
       --input: rgba(0, 0, 0, 0.08);
       --destructive: #c23648;
       --success: #2e8b3d;
+      --warning: #b26a00;
     }
 
     @variant dark {
@@ -67,6 +69,7 @@
       --input: rgba(255, 255, 255, 0.08);
       --destructive: #f7768e;
       --success: #9ece6a;
+      --warning: #e0af68;
     }
   }
 }

@@ -1,6 +1,7 @@
 import { $activeDevice } from '@/modules/stores/$devices'
 import { $session, resetSession } from '@/modules/stores/$session'
 import type {
+  BumpRecencyBody,
   ClientFrame,
   CreateProjectBody,
   CreateTabBody,
@@ -320,6 +321,12 @@ export function sendRemoveProject(body: RemoveProjectBody): Promise<void> {
 export function sendRemoveTab(body: RemoveTabBody): Promise<void> {
   const op_id = nextOpId++
   const frame: ClientFrame = { op: 'remove_tab', body: { op_id, body } }
+  return sendPending(op_id, frame)
+}
+
+export function sendBumpRecency(body: BumpRecencyBody): Promise<void> {
+  const op_id = nextOpId++
+  const frame: ClientFrame = { op: 'bump_recency', body: { op_id, body } }
   return sendPending(op_id, frame)
 }
 
