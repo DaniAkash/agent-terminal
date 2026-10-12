@@ -22,7 +22,7 @@ import {
   drainWrites,
   enqueueWrite,
   type QueuedWrite,
-  queuedFor,
+  tallyByTab,
 } from './outbox.helpers'
 
 export type TabHandlers = {
@@ -196,13 +196,44 @@ export function disconnect(): void {
   clearTimers()
   state.socket?.close()
   state.socket = null
-  subscriptions.clear()
+  // The map mirrors what is mounted on screen, not what this socket was
+  // carrying: clearing it here left a mounted terminal with nothing for
+  // the next connection to replay, because its subscribe effect is keyed
+  // on the session it shows and never re-runs. The cursors go, so the
+  // next desktop answers with a fresh snapshot rather than resuming from
+  // a sequence number that was another connection's.
+  forgetStreamCursors()
   clearTabStates()
   // Queued keystrokes belong to the connection being torn down. Carrying
   // them into whatever is connected next is exactly what flushOutbox
   // refuses to do, so they go with it.
   outbox = []
   resetSession()
+}
+
+/**
+ * Keep every registration but forget where its stream had got to.
+ *
+ * Unmounting is what removes a registration; a dead socket must not,
+ * or the screen still showing a session has no way to ask for it again.
+ */
+function forgetStreamCursors(): void {
+  for (const sub of subscriptions.values()) sub.lastSeq = null
+}
+
+/**
+ * Whether a frame other than `auth` may go out right now.
+ *
+ * An open socket is not an authenticated one. The desktop closes any
+ * connection whose first frame is not `Auth` (wss_server, connection_task),
+ * so anything that overtakes the handshake does not merely fail: it kills
+ * the connection it was sent on.
+ */
+function canSend(): boolean {
+  return (
+    state.socket?.readyState === PinnedWebSocket.OPEN &&
+    $session.get().status === 'connected'
+  )
 }
 
 export function subscribeToTab(
@@ -238,16 +269,25 @@ export function unsubscribeFromTab(tabId: string): void {
 let outbox: QueuedWrite[] = []
 
 export function writeToTab(tabId: string, data: string): void {
-  if (state.socket?.readyState !== PinnedWebSocket.OPEN) {
+  if (!canSend()) {
     outbox = enqueueWrite(outbox, { tabId, data })
     return
   }
   send({ op: 'write', body: { tab_id: tabId, data } })
 }
 
-/** How many keystrokes are waiting to be replayed into a session. */
-export function queuedWritesFor(tabId: string): number {
-  return queuedFor(outbox, tabId)
+/**
+ * What the last reconnect actually replayed, per session.
+ *
+ * Read after the fact rather than before: `flushOutbox` runs inside
+ * auth_ok and empties the queue, so by the time anything renders the
+ * reconnect there is nothing left to count.
+ */
+let flushed = new Map<string, number>()
+
+/** How many keystrokes the last reconnect replayed into a session. */
+export function flushedWritesFor(tabId: string): number {
+  return flushed.get(tabId) ?? 0
 }
 
 /**
@@ -259,11 +299,13 @@ export function queuedWritesFor(tabId: string): number {
  * dropping keystrokes is the safe side of that trade.
  */
 function flushOutbox(): void {
-  if (outbox.length === 0) return
   const { flush, dropped } = drainWrites(outbox, (tabId) =>
     subscriptions.has(tabId),
   )
   outbox = []
+  // Recomputed on every reconnect, including an empty one, so a later
+  // outage with nothing typed cannot report the previous one's count.
+  flushed = tallyByTab(flush)
   if (dropped.length > 0) {
     console.log('[wss.client] dropped queued writes', { count: dropped.length })
   }
@@ -320,12 +362,12 @@ function rejectAllPending(err: Error): void {
 // server-close-and-reconnect loop.
 function sendPending(opId: number, frame: ClientFrame): Promise<void> {
   return new Promise<void>((resolve, reject) => {
-    // Fast-fail if the socket is closed. `send(frame)` silently no-ops
-    // when readyState !== OPEN, which without this check would leave
-    // the pending entry armed and the caller waiting the full 10 s
-    // timeout for a misleading "timed out" error when the actual state
-    // is "not connected".
-    if (state.socket?.readyState !== PinnedWebSocket.OPEN) {
+    // Fast-fail while there is no authenticated connection. `send(frame)`
+    // silently no-ops then, which without this check would leave the
+    // pending entry armed and the caller waiting the full 10 s timeout for
+    // a misleading "timed out" error when the actual state is "not
+    // connected".
+    if (!canSend()) {
       reject(new Error(`${frame.op} failed: not connected`))
       return
     }
@@ -424,6 +466,7 @@ function sendSubscribeOrResume(tabId: string, sub: TabSubscription): void {
 
 function send(frame: ClientFrame): void {
   if (state.socket?.readyState !== PinnedWebSocket.OPEN) return
+  if (frame.op !== 'auth' && !canSend()) return
   state.socket.send(JSON.stringify(frame))
 }
 

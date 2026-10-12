@@ -3,7 +3,7 @@ import { useRouter } from 'expo-router'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { $recency } from '@/modules/stores/$recency'
 import { $session } from '@/modules/stores/$session'
-import { queuedWritesFor, sendBumpRecency } from '@/modules/wss/client'
+import { flushedWritesFor, sendBumpRecency } from '@/modules/wss/client'
 import {
   INITIAL_NOTICE_STATE,
   type NoticeState,
@@ -139,7 +139,7 @@ export function useConnectionNotices(
     const { state, notice } = nextNotice(
       noticeState.current,
       session.status,
-      queuedWritesFor(tabId),
+      flushedWritesFor(tabId),
     )
     noticeState.current = state
     if (notice) write(renderNotice(notice))

@@ -2,9 +2,10 @@ import { describe, expect, test } from 'bun:test'
 import {
   drainWrites,
   enqueueWrite,
+  MAX_QUEUED_CHARS,
   MAX_QUEUED_WRITES,
   type QueuedWrite,
-  queuedFor,
+  tallyByTab,
 } from './outbox.helpers'
 
 const w = (tabId: string, data: string): QueuedWrite => ({ tabId, data })
@@ -20,13 +21,17 @@ describe('enqueueWrite', () => {
     // The newest keystrokes are the ones still connected to what the user
     // currently intends, so the buffer forgets from the front.
     let q: QueuedWrite[] = []
-    for (const c of ['a', 'b', 'c', 'd']) q = enqueueWrite(q, w('p1:t1', c), 3)
+    for (const c of ['a', 'b', 'c', 'd']) {
+      q = enqueueWrite(q, w('p1:t1', c), { maxWrites: 3 })
+    }
     expect(q.map((x) => x.data)).toEqual(['b', 'c', 'd'])
   })
 
   test('never grows past the cap however much is typed', () => {
     let q: QueuedWrite[] = []
-    for (let i = 0; i < 1000; i += 1) q = enqueueWrite(q, w('p1:t1', 'x'), 10)
+    for (let i = 0; i < 1000; i += 1) {
+      q = enqueueWrite(q, w('p1:t1', 'x'), { maxWrites: 10 })
+    }
     expect(q.length).toBe(10)
   })
 
@@ -36,6 +41,29 @@ describe('enqueueWrite', () => {
       q = enqueueWrite(q, w('p1:t1', 'x'))
     }
     expect(q.length).toBe(MAX_QUEUED_WRITES)
+  })
+
+  test('bounds total input, not just the number of entries', () => {
+    // The write cap alone leaves the queue unbounded in size: pasted text
+    // arrives as one entry of any length.
+    let q: QueuedWrite[] = []
+    for (let i = 0; i < 20; i += 1) {
+      q = enqueueWrite(q, w('p1:t1', 'x'.repeat(100)), { maxChars: 250 })
+    }
+    expect(q.length).toBe(2)
+    expect(q.reduce((n, x) => n + x.data.length, 0)).toBeLessThanOrEqual(250)
+  })
+
+  test('refuses a single write too big to fit rather than emptying the queue', () => {
+    const q = enqueueWrite([w('p1:t1', 'typed')], w('p1:t1', 'x'.repeat(400)), {
+      maxChars: 250,
+    })
+    expect(q.map((x) => x.data)).toEqual(['typed'])
+  })
+
+  test('has a size bound even when none is passed', () => {
+    const q = enqueueWrite([], w('p1:t1', 'x'.repeat(MAX_QUEUED_CHARS + 1)))
+    expect(q).toEqual([])
   })
 
   test('does not mutate the queue it was given', () => {
@@ -77,11 +105,19 @@ describe('drainWrites', () => {
   })
 })
 
-describe('queuedFor', () => {
-  test('counts only the session asked about', () => {
-    const queue = [w('p1:t1', 'a'), w('p1:t2', 'b'), w('p1:t1', 'c')]
-    expect(queuedFor(queue, 'p1:t1')).toBe(2)
-    expect(queuedFor(queue, 'p1:t2')).toBe(1)
-    expect(queuedFor(queue, 'p1:gone')).toBe(0)
+describe('tallyByTab', () => {
+  test('counts what was replayed per session', () => {
+    const counts = tallyByTab([
+      w('p1:t1', 'a'),
+      w('p1:t2', 'b'),
+      w('p1:t1', 'c'),
+    ])
+    expect(counts.get('p1:t1')).toBe(2)
+    expect(counts.get('p1:t2')).toBe(1)
+    expect(counts.get('p1:gone')).toBeUndefined()
+  })
+
+  test('nothing replayed is no counts at all', () => {
+    expect(tallyByTab([]).size).toBe(0)
   })
 })
