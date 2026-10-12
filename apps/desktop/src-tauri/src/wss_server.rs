@@ -690,6 +690,64 @@ async fn pairing_flow(mut socket: WebSocket, state: &Arc<ServerState>, pairing_t
     // reconnects with the new device_token for normal session mode.
 }
 
+/// Make sure a tab a mobile client asked for has a live PTY behind it.
+///
+/// Mobile clients see every tab the desktop knows about, including
+/// sleeping ones, so an ask can land here with no PtyHandle in the map.
+/// One is created from the cache's TabSummary metadata so mobile can
+/// drive the shell without the desktop having to visit the tab first.
+///
+/// cwd chain: TabSummary.last_cwd (OSC 7-derived, persisted) →
+/// TabSummary.cwd → spawn_pty's HOME default. Shell comes from `cmd`
+/// when set, matching desktop's semantics.
+///
+/// We do NOT gate on `pty_map.contains_key` here. A just-died reader
+/// thread leaves the entry present with `reader_alive=false`, and
+/// spawn_pty_if_absent's internal check handles both "healthy PTY, skip"
+/// and "zombie entry, respawn" correctly. Duplicating the check outside
+/// the helper would miss the zombie case.
+fn ensure_tab_spawned(state: &Arc<ServerState>, tab_id: &str) {
+    let (Some(app), Some(tab)) = (
+        state.app_handle.as_ref(),
+        state.projects_cache.find_tab(tab_id),
+    ) else {
+        return;
+    };
+    // Desktop's addTab initializes `cmd: ''` for every new tab; that
+    // arrives here as Some("") which spawn_pty would try to run as the
+    // shell path, spawning an empty command that crashes on write and hits
+    // the reader thread's respawn-rate limit within seconds. Normalise
+    // empty strings to None so spawn_pty falls back to $SHELL / /bin/zsh,
+    // matching the desktop open_tab path, which never passes `shell` at
+    // all.
+    let cwd = tab
+        .last_cwd
+        .clone()
+        .or_else(|| tab.cwd.clone())
+        .filter(|s| !s.is_empty());
+    let shell = tab.cmd.clone().filter(|s| !s.is_empty());
+    match spawn_pty_if_absent(
+        app.clone(),
+        &state.pty_map,
+        state.mod_engine_handle.clone(),
+        state.cwd_table.clone(),
+        Arc::clone(&state.hub),
+        Some(Arc::clone(&state.projects_cache)),
+        tab_id.to_string(),
+        cwd,
+        shell,
+    ) {
+        Ok(true) => {
+            // is_spawned overlay just flipped for this tab; broadcast so
+            // every mobile client sees the change in the next Projects
+            // push.
+            state.projects_cache.notify_spawn_change();
+        }
+        Ok(false) => {}
+        Err(e) => eprintln!("[wss] auto-spawn {tab_id} failed: {e}"),
+    }
+}
+
 /// Route a single ClientFrame to its handler. Kept as a standalone
 /// function so the main connection_task select! stays legible.
 async fn dispatch_client_frame(
@@ -706,61 +764,7 @@ async fn dispatch_client_frame(
         ClientFrame::Auth { .. } => {}
 
         ClientFrame::Subscribe { tab_id, scrollback } => {
-            // Auto-spawn: mobile clients see every tab the desktop knows
-            // about, including sleeping ones. Tapping a sleeping tab
-            // lands here with no PtyHandle in the map. Create one from
-            // the cache's TabSummary metadata so mobile can drive the
-            // shell without the desktop having to visit the tab first.
-            //
-            // cwd chain: TabSummary.last_cwd (OSC 7-derived, persisted)
-            // → TabSummary.cwd → spawn_pty's HOME default. Shell comes
-            // from `cmd` when set, matching desktop's semantics.
-            //
-            // We do NOT gate on `pty_map.contains_key` here — a
-            // just-died reader thread leaves the entry present with
-            // `reader_alive=false`, and spawn_pty_if_absent's internal
-            // check handles both "healthy PTY, skip" and "zombie entry,
-            // respawn" correctly. Duplicating the check outside the
-            // helper would miss the zombie case.
-            if let (Some(app), Some(tab)) = (
-                state.app_handle.as_ref(),
-                state.projects_cache.find_tab(&tab_id),
-            ) {
-                // Desktop's addTab initializes `cmd: ''` for every new
-                // tab; that arrives here as Some("") which spawn_pty
-                // would try to run as the shell path, spawning an empty
-                // command that crashes on write and hits the reader
-                // thread's respawn-rate limit within seconds. Normalise
-                // empty strings to None so spawn_pty falls back to
-                // $SHELL / /bin/zsh — matching the desktop open_tab
-                // path, which never passes `shell` at all.
-                let cwd = tab
-                    .last_cwd
-                    .clone()
-                    .or_else(|| tab.cwd.clone())
-                    .filter(|s| !s.is_empty());
-                let shell = tab.cmd.clone().filter(|s| !s.is_empty());
-                match spawn_pty_if_absent(
-                    app.clone(),
-                    &state.pty_map,
-                    state.mod_engine_handle.clone(),
-                    state.cwd_table.clone(),
-                    Arc::clone(&state.hub),
-                    Some(Arc::clone(&state.projects_cache)),
-                    tab_id.clone(),
-                    cwd,
-                    shell,
-                ) {
-                    Ok(true) => {
-                        // is_spawned overlay just flipped for this
-                        // tab; broadcast so every mobile client sees
-                        // the change in the next Projects push.
-                        state.projects_cache.notify_spawn_change();
-                    }
-                    Ok(false) => {}
-                    Err(e) => eprintln!("[wss] auto-spawn {tab_id} failed: {e}"),
-                }
-            }
+            ensure_tab_spawned(state, &tab_id);
 
             // Drop any prior subscription on the same tab first so we
             // don't leak SubscriberIds if a client re-subscribes.
@@ -784,6 +788,14 @@ async fn dispatch_client_frame(
             scrollback,
             last_seq,
         } => {
+            // A resume is a subscribe that remembers where it was, so it
+            // needs the same live tab underneath. A desktop that restarted
+            // has every PTY gone while the client still holds a sequence
+            // number from the old process: without this it attaches to a
+            // tab nothing is writing to, which looks connected, shows an
+            // empty snapshot, and silently swallows everything typed.
+            ensure_tab_spawned(state, &tab_id);
+
             if let Some(prev) = subscriptions.remove(&tab_id) {
                 state.hub.unsubscribe(&tab_id, prev);
             }

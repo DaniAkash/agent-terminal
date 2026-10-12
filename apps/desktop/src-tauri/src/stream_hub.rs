@@ -380,11 +380,21 @@ impl StreamHub {
             .or_insert_with(|| Arc::new(TabState::new(80, 24, self.ring_cap_bytes)))
             .clone();
 
+        // Both ends matter. A cursor below the ring's front is the
+        // familiar gap-too-wide case. A cursor ABOVE its back means the
+        // stream restarted under the client: a desktop that was relaunched
+        // numbers its tabs from scratch, so every byte the new shell has
+        // written looks older than what the client claims to have seen and
+        // the replay filter silently discards all of it. Neither is a
+        // resume; both want a snapshot.
         let can_replay = {
             let ring = state.ring.lock().expect("ring lock poisoned");
-            !ring.entries.is_empty()
-                && ring.entries.front().expect("checked non-empty above").0
-                    <= last_seq.saturating_add(1)
+            match (ring.entries.front(), ring.entries.back()) {
+                (Some(front), Some(back)) => {
+                    front.0 <= last_seq.saturating_add(1) && back.0 >= last_seq
+                }
+                _ => false,
+            }
         };
 
         if can_replay {
@@ -949,6 +959,37 @@ mod tests {
                 .any(|f| matches!(f, ServerFrame::Snapshot { .. })),
             "no Snapshot on the in-ring resume path"
         );
+    }
+
+    #[tokio::test]
+    async fn remote_resume_ahead_of_ring_falls_through_to_snapshot() {
+        // What a restarted desktop looks like to a client that never
+        // noticed: the tab numbers from scratch, so the cursor it is
+        // holding is ahead of everything the new shell has written. Taking
+        // that as a resume replays nothing and leaves a connected-looking
+        // terminal that never updates again.
+        let hub = new_hub();
+        hub.ensure_tab("t1", 80, 24);
+        for i in 0..3u8 {
+            hub.broadcast("t1", &[i], "x");
+        }
+        let (tx, mut rx) = mpsc::unbounded_channel::<ServerFrame>();
+        let _id = hub.resume_remote("t1", tx, 900, 500).await;
+        let frames = drain(&mut rx);
+        assert!(
+            frames
+                .iter()
+                .any(|f| matches!(f, ServerFrame::Snapshot { .. })),
+            "a cursor past the ring must send a fresh Snapshot"
+        );
+        let byte_seqs: Vec<u64> = frames
+            .iter()
+            .filter_map(|f| match f {
+                ServerFrame::Bytes { seq, .. } => Some(*seq),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(byte_seqs, vec![0, 1, 2], "and everything the new tab wrote");
     }
 
     #[tokio::test]
