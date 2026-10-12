@@ -508,4 +508,60 @@ mod tests {
         assert!(!projects[0].tabs[0].is_spawned);
         assert!(!projects[0].tabs[1].is_spawned);
     }
+
+    /// The renderer sends camelCase JSON through `sync_projects_to_wss`.
+    /// This pins the exact seam where that payload becomes a wire
+    /// `TabSummary`: if either side renames a field, mobile silently loses
+    /// agent state or recency rather than failing loudly.
+    #[test]
+    fn renderer_sync_payload_carries_agent_state_and_recency() {
+        let json = serde_json::json!({
+            "id": "p1",
+            "name": "browseros",
+            "path": "/tmp/browseros",
+            "pinned": false,
+            "isExpanded": true,
+            "tabs": [{
+                "id": "t1",
+                "label": "claude",
+                "cmd": "",
+                "pinned": false,
+                "lastCwd": "/tmp",
+                "userRenamed": false,
+                "agentState": "awaiting",
+                "agentStateAt": 1_700_000_000_123_u64,
+                "lastActiveAt": 1_700_000_000_456_u64
+            }]
+        });
+
+        let stored: StoredProject =
+            serde_json::from_value(json).expect("renderer payload must deserialise");
+        let summary: ProjectSummary = stored.into();
+        let tab = &summary.tabs[0];
+
+        assert_eq!(tab.agent_state.as_deref(), Some("awaiting"));
+        assert_eq!(tab.agent_state_at, Some(1_700_000_000_123));
+        assert_eq!(tab.last_active_at, Some(1_700_000_000_456));
+        assert_eq!(tab.tab_id, "p1:t1", "tab_id stays the composed key");
+    }
+
+    /// A projects.json written before this change has none of the three
+    /// fields. Cold start must still load rather than fail to parse.
+    #[test]
+    fn disk_payload_without_the_new_fields_still_loads() {
+        let json = serde_json::json!({
+            "id": "p1",
+            "name": "legacy",
+            "tabs": [{ "id": "t1", "label": "shell" }]
+        });
+
+        let stored: StoredProject =
+            serde_json::from_value(json).expect("legacy payload must deserialise");
+        let summary: ProjectSummary = stored.into();
+        let tab = &summary.tabs[0];
+
+        assert!(tab.agent_state.is_none());
+        assert!(tab.agent_state_at.is_none());
+        assert!(tab.last_active_at.is_none());
+    }
 }
