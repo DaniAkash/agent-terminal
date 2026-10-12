@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'bun:test'
-import { isDeviceRecord } from './$device.helpers'
+import {
+  isDeviceRecord,
+  isDevicesIndex,
+  nextActiveId,
+  reconcileIndex,
+} from './$devices.helpers'
 
 function base() {
   return {
@@ -62,5 +67,64 @@ describe('isDeviceRecord', () => {
     expect(isDeviceRecord({ ...base(), port: Number.POSITIVE_INFINITY })).toBe(
       false,
     )
+  })
+})
+
+describe('isDevicesIndex', () => {
+  it('accepts a well-formed index', () => {
+    expect(isDevicesIndex({ ids: ['a', 'b'], activeId: 'a' })).toBe(true)
+    expect(isDevicesIndex({ ids: [], activeId: null })).toBe(true)
+  })
+
+  it('rejects shapes that would strand the loader', () => {
+    expect(isDevicesIndex(null)).toBe(false)
+    expect(isDevicesIndex({ ids: 'a', activeId: null })).toBe(false)
+    expect(isDevicesIndex({ ids: [1], activeId: null })).toBe(false)
+    expect(isDevicesIndex({ ids: [''], activeId: null })).toBe(false)
+    expect(isDevicesIndex({ ids: [], activeId: 7 })).toBe(false)
+  })
+})
+
+describe('nextActiveId', () => {
+  it('keeps the current active when a different device is removed', () => {
+    expect(nextActiveId(['a', 'b'], 'b', 'a')).toBe('a')
+  })
+
+  it('falls to another paired desktop rather than to nothing', () => {
+    expect(nextActiveId(['a', 'b'], 'a', 'a')).toBe('b')
+  })
+
+  it('returns null only when the last desktop goes', () => {
+    expect(nextActiveId(['a'], 'a', 'a')).toBeNull()
+  })
+})
+
+describe('reconcileIndex', () => {
+  const rec = {
+    token: 't',
+    deviceId: 'a',
+    ips: [],
+    port: 1,
+    fingerprint: 'f',
+    deviceHint: 'h',
+    lastIp: null,
+    lastPort: null,
+  }
+
+  it('drops ids whose record failed to load', () => {
+    const out = reconcileIndex(['a', 'ghost'], { a: rec }, 'a')
+    expect(out.ids).toEqual(['a'])
+    expect(out.activeId).toBe('a')
+  })
+
+  it('repoints the active id when it names a missing record', () => {
+    const out = reconcileIndex(['ghost', 'a'], { a: rec }, 'ghost')
+    expect(out.activeId).toBe('a')
+  })
+
+  it('yields no active device when nothing loaded', () => {
+    const out = reconcileIndex(['ghost'], {}, 'ghost')
+    expect(out.ids).toEqual([])
+    expect(out.activeId).toBeNull()
   })
 })

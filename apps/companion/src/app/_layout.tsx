@@ -30,7 +30,7 @@ Uniwind.setTheme('system')
 // native-module setup runs after expo-router has bootstrapped rather
 // than during the first import of _layout.tsx.
 export default function RootLayout() {
-  // Wire the reactive `$device` → `autoConnect` subscription once at
+  // Wire the reactive `$activeDevice` → `autoConnect` subscription once at
   // app boot. From then on, any device transition — cold-start load
   // from secure-store, a fresh pair completing, a Revoke clearing
   // the record — routes through the subscription in bootstrap.ts,

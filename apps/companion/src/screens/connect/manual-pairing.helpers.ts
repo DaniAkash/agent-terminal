@@ -1,4 +1,4 @@
-import type { DeviceRecord } from '@/modules/stores/$device.types'
+import type { DeviceRecord } from '@/modules/stores/$devices.types'
 
 /**
  * Pure helpers for the manual (non-QR) pairing path. Split out of

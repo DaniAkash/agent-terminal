@@ -1,7 +1,7 @@
 import Constants from 'expo-constants'
 import { Platform } from 'react-native'
-import type { DeviceRecord } from '@/modules/stores/$device'
-import { saveDeviceToSecureStore } from '@/modules/stores/$device'
+import type { DeviceRecord } from '@/modules/stores/$devices'
+import { saveDeviceToSecureStore } from '@/modules/stores/$devices'
 import { PinnedWebSocket } from '../../../modules/pinned-websocket'
 import {
   buildPairingAttemptUrls,

@@ -77,7 +77,7 @@ export interface LifecycleDeps<TRecord> {
 
 /**
  * Execute the foreground action chosen by decideForegroundAction. Pure
- * with respect to deps: does not touch $device / $session / imports
+ * with respect to deps: does not touch $activeDevice / $session / imports
  * itself; everything flows in through the deps arg. Kept here (rather
  * than as another switch in lifecycle.ts) so the branching is unit-
  * testable without mocking react-native.

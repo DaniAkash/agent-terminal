@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { isDeviceRecord } from '@/modules/stores/$device.helpers'
+import { isDeviceRecord } from '@/modules/stores/$devices.helpers'
 import {
   canonicalStreamUrl,
   deviceRecordFromManualInput,
