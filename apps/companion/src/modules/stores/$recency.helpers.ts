@@ -1,9 +1,12 @@
 import type { ProjectSummary } from '@/modules/wss/protocol.gen'
+import { rawTabId } from '@/screens/tab/tab.helpers'
 
 /**
- * Mirrors the desktop's `makeTabKey`. The desktop keys both its MRU list
- * and its tab metadata this way, and the Rust side composes `tab_id` the
- * same, so the two must not drift.
+ * Mirrors the desktop's `makeTabKey`, for the callers holding a raw tab id.
+ *
+ * Note that `TabSummary.tab_id` off the wire is ALREADY this composed shape:
+ * Rust composes it in `projects_cache.rs`. Passing one back through here
+ * yields `p1:p1:claude`, which matches no desktop recency key and no route.
  */
 export function tabKey(projectId: string, tabId: string): string {
   return `${projectId}:${tabId}`
@@ -31,9 +34,10 @@ export function recencyOrder(projects: ProjectSummary[]): RecencyEntry[] {
   for (const project of projects) {
     for (const tab of project.tabs) {
       entries.push({
-        key: tabKey(project.project_id, tab.tab_id),
+        // Already composed on the wire; the raw half is what routes want.
+        key: tab.tab_id,
         projectId: project.project_id,
-        tabId: tab.tab_id,
+        tabId: rawTabId(project.project_id, tab.tab_id),
         lastActiveAt: tab.last_active_at,
       })
     }

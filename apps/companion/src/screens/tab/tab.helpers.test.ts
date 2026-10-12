@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { composedTabId, splitTabId } from './tab.helpers'
+import { composedTabId, rawTabId, splitTabId } from './tab.helpers'
 
 describe('composedTabId', () => {
   test('joins the two route params into the wire identifier', () => {
@@ -32,5 +32,20 @@ describe('splitTabId', () => {
     expect(splitTabId('noseparator')).toBeNull()
     expect(splitTabId(':leading')).toBeNull()
     expect(splitTabId('trailing:')).toBeNull()
+  })
+})
+
+describe('rawTabId', () => {
+  test('strips the project prefix the wire composes on', () => {
+    expect(rawTabId('p1', 'p1:shell-a3f9')).toBe('shell-a3f9')
+  })
+
+  test('leaves an already-raw id alone, so it is safe to apply twice', () => {
+    expect(rawTabId('p1', 'shell-a3f9')).toBe('shell-a3f9')
+    expect(rawTabId('p1', rawTabId('p1', 'p1:shell-a3f9'))).toBe('shell-a3f9')
+  })
+
+  test('only strips its own project, not another one', () => {
+    expect(rawTabId('p1', 'p2:shell')).toBe('p2:shell')
   })
 })

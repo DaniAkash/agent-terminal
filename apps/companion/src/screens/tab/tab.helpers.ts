@@ -13,6 +13,20 @@ export function composedTabId(projectId: string, tabId: string): string {
   return tabId.startsWith(prefix) ? tabId : `${prefix}${tabId}`
 }
 
+/**
+ * The raw tab id, with the project prefix taken back off.
+ *
+ * `TabSummary.tab_id` is composed by Rust, so anything that wants the bare id
+ * (route params, desktop store lookups) has to strip it rather than assume the
+ * wire value is already raw.
+ */
+export function rawTabId(projectId: string, wireTabId: string): string {
+  const prefix = `${projectId}:`
+  return wireTabId.startsWith(prefix)
+    ? wireTabId.slice(prefix.length)
+    : wireTabId
+}
+
 /** Split a composed wire id back into its parts for route params. */
 export function splitTabId(
   composed: string,
@@ -31,9 +45,5 @@ export function splitTabId(
  * fill the two route params.
  */
 export function tabHref(projectId: string, wireTabId: string): Href {
-  const prefix = `${projectId}:`
-  const raw = wireTabId.startsWith(prefix)
-    ? wireTabId.slice(prefix.length)
-    : wireTabId
-  return `/tab/${projectId}/${raw}` as Href
+  return `/tab/${projectId}/${rawTabId(projectId, wireTabId)}` as Href
 }

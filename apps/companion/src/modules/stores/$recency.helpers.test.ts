@@ -8,8 +8,12 @@ import {
   tabKey,
 } from './$recency.helpers'
 
-function tab(tab_id: string, last_active_at?: number) {
-  return { tab_id, label: tab_id, last_active_at }
+/**
+ * Tabs arrive with `tab_id` already composed by Rust, so the fixture composes
+ * it too. Feeding raw ids here is what let a double-prefixed key through.
+ */
+function tab(projectId: string, rawId: string, last_active_at?: number) {
+  return { tab_id: `${projectId}:${rawId}`, label: rawId, last_active_at }
 }
 
 function tree(): ProjectSummary[] {
@@ -18,13 +22,13 @@ function tree(): ProjectSummary[] {
       project_id: 'p1',
       name: 'browseros',
       is_expanded: true,
-      tabs: [tab('claude', 500), tab('tests', 300)],
+      tabs: [tab('p1', 'claude', 500), tab('p1', 'tests', 300)],
     },
     {
       project_id: 'p2',
       name: 'aalai',
       is_expanded: true,
-      tabs: [tab('codex', 900), tab('shell')],
+      tabs: [tab('p2', 'codex', 900), tab('p2', 'shell')],
     },
   ] as unknown as ProjectSummary[]
 }
@@ -56,7 +60,7 @@ describe('recencyOrder', () => {
         project_id: 'p1',
         name: 'a',
         is_expanded: true,
-        tabs: [tab('x', 100), tab('y', 100)],
+        tabs: [tab('p1', 'x', 100), tab('p1', 'y', 100)],
       },
     ] as unknown as ProjectSummary[]
     expect(recencyOrder(t).map((e) => e.key)).toEqual(['p1:x', 'p1:y'])
@@ -64,6 +68,19 @@ describe('recencyOrder', () => {
 
   test('yields nothing for an empty tree', () => {
     expect(recencyOrder([])).toEqual([])
+  })
+
+  test('keys by the wire id as-is, so the project prefix is never doubled', () => {
+    expect(recencyOrder(tree()).map((e) => e.key)).not.toContain('p1:p1:claude')
+  })
+
+  test('splits the wire id back into the two route params', () => {
+    const entry = recencyOrder(tree())[0]
+    expect(entry).toMatchObject({
+      key: 'p2:codex',
+      projectId: 'p2',
+      tabId: 'codex',
+    })
   })
 })
 
