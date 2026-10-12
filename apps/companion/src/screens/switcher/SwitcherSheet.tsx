@@ -99,6 +99,7 @@ export function SwitcherSheet({ currentKey }: SwitcherSheetProps) {
               isCurrent={item.key === currentKey}
               onPress={() => open(item)}
               onLongPress={() => openRowMenu(item)}
+              onMenu={() => openRowMenu(item)}
             />
           </>
         )}
