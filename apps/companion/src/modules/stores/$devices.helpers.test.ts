@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import {
+  deviceStorageSlug,
   isDeviceRecord,
   isDevicesIndex,
   nextActiveId,
@@ -126,5 +127,29 @@ describe('reconcileIndex', () => {
     const out = reconcileIndex(['ghost'], {}, 'ghost')
     expect(out.ids).toEqual([])
     expect(out.activeId).toBeNull()
+  })
+})
+
+describe('deviceStorageSlug', () => {
+  it('emits only characters SecureStore accepts in a key', () => {
+    // Manual pairing builds ids as `manual:<host>:<port>`; the colons
+    // threw on write before this encoding existed.
+    const slug = deviceStorageSlug('manual:host.local:8900')
+    expect(slug).toMatch(/^[0-9a-f]+$/)
+  })
+
+  it('is injective, so two devices cannot share one record', () => {
+    expect(deviceStorageSlug('a:b')).not.toBe(deviceStorageSlug('a_b'))
+    expect(deviceStorageSlug('ab')).not.toBe(deviceStorageSlug('a:b'))
+  })
+
+  it('is stable, so a record is found again on the next boot', () => {
+    expect(deviceStorageSlug('qr-device-1')).toBe(
+      deviceStorageSlug('qr-device-1'),
+    )
+  })
+
+  it('handles non-ascii ids without emitting invalid characters', () => {
+    expect(deviceStorageSlug('desktop-café')).toMatch(/^[0-9a-f]+$/)
   })
 })

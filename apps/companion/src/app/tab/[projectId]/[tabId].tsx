@@ -3,8 +3,8 @@ import { Redirect, Stack, useLocalSearchParams } from 'expo-router'
 import { $activeDevice } from '@/modules/stores/$devices'
 import { noteActiveSession } from '@/modules/stores/$lastSession'
 import { $session } from '@/modules/stores/$session'
-import { composedTabId } from '@/screens/tab/tab.helpers'
 import { TabScreen } from '@/screens/tab/TabScreen'
+import { composedTabId } from '@/screens/tab/tab.helpers'
 
 export default function TabRoute() {
   const session = useStore($session)

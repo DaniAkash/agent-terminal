@@ -1,4 +1,5 @@
 import * as SecureStore from 'expo-secure-store'
+import { deviceStorageSlug } from './$devices.helpers'
 import { planDevicesMigration } from './$devices.migrate.helpers'
 
 const V1_KEY = 'agent-terminal.device.v1'
@@ -20,7 +21,7 @@ export async function migrateDevicesV1ToV2(): Promise<void> {
     if (plan.kind === 'none') return
     if (plan.kind === 'migrate') {
       await SecureStore.setItemAsync(
-        `${RECORD_PREFIX}${plan.deviceId}`,
+        `${RECORD_PREFIX}${deviceStorageSlug(plan.deviceId)}`,
         plan.record,
       )
       await SecureStore.setItemAsync(

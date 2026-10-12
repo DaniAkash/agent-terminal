@@ -1,6 +1,7 @@
 import * as SecureStore from 'expo-secure-store'
 import { computed, map } from 'nanostores'
 import {
+  deviceStorageSlug,
   isDeviceRecord,
   isDevicesIndex,
   nextActiveId,
@@ -20,7 +21,7 @@ const INDEX_KEY = 'agent-terminal.devices.index.v2'
 const RECORD_PREFIX = 'agent-terminal.device.v2.'
 
 function recordKey(deviceId: string): string {
-  return `${RECORD_PREFIX}${deviceId}`
+  return `${RECORD_PREFIX}${deviceStorageSlug(deviceId)}`
 }
 
 // Consumed today only through `$activeDevice` below; the desktop picker

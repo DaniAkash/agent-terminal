@@ -12,9 +12,9 @@ import {
   sendReorderTabs,
 } from '@/modules/wss/client'
 import type { ProjectSummary, TabSummary } from '@/modules/wss/protocol.gen'
+import { tabHref } from '@/screens/tab/tab.helpers'
 import { NewProjectSheet } from './NewProjectSheet'
 import { NewTabSheet } from './NewTabSheet'
-import { tabHref } from '@/screens/tab/tab.helpers'
 import { useProjectsData } from './projects.data'
 import { RenameSheet, type RenameTarget } from './RenameSheet'
 

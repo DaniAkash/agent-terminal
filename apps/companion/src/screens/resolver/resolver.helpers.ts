@@ -1,30 +1,42 @@
+import type { Href } from 'expo-router'
 import type { ProjectSummary } from '@/modules/wss/protocol.gen'
 import { splitTabId } from '@/screens/tab/tab.helpers'
 
 export interface LandingInput {
   deviceLoaded: boolean
   hasDevice: boolean
-  connected: boolean
+  /** Raw WSS status, not a boolean: "still connecting" and "gave up" must
+   *  lead to different landings. */
+  status: string
   projects: ProjectSummary[]
   /** Composed wire id of the session last worked in on this desktop. */
   lastTabId: string | null
 }
 
 /**
- * Where a cold start lands.
+ * Where a cold start lands, or `null` to keep waiting.
  *
- * The "still in the tree" check matters: a session deleted on the desktop
- * while the phone slept would otherwise deep link into a dead tab, so an
- * unknown id falls back to the home surface rather than rendering an
- * error.
+ * Returning null matters: the stores settle asynchronously, and a
+ * resolver that commits on first render always decides before the socket
+ * is up, so it would send every launch to home and never restore the
+ * last session. Waiting is bounded, since the ladder lands on
+ * `unreachable` or `auth_failed` rather than retrying forever.
  */
-export function resolveLanding(input: LandingInput): string {
-  if (!input.deviceLoaded) return '/home'
+export function resolveLanding(input: LandingInput): Href | null {
+  if (!input.deviceLoaded) return null
   if (!input.hasDevice) return '/pair'
-  if (!input.connected) return '/home'
+
+  if (input.status !== 'connected') {
+    // Terminal failures stop the wait; anything else is still in flight.
+    return input.status === 'unreachable' || input.status === 'auth_failed'
+      ? '/home'
+      : null
+  }
 
   if (input.lastTabId) {
     const parts = splitTabId(input.lastTabId)
+    // A session deleted while the phone slept would otherwise deep link
+    // into a dead tab, so an unknown id falls back rather than erroring.
     const stillThere =
       parts !== null &&
       input.projects.some(
@@ -33,7 +45,7 @@ export function resolveLanding(input: LandingInput): string {
           project.tabs.some((tab) => tab.tab_id === input.lastTabId),
       )
     if (parts && stillThere) {
-      return `/tab/${parts.projectId}/${parts.tabId}`
+      return `/tab/${parts.projectId}/${parts.tabId}` as Href
     }
   }
   return '/home'
@@ -52,7 +64,7 @@ export function landingInput(
   return {
     deviceLoaded: device.loaded,
     hasDevice: device.record !== null,
-    connected: session.status === 'connected',
+    status: session.status,
     projects: session.projects,
     lastTabId: deviceId ? (lastSessions[deviceId] ?? null) : null,
   }

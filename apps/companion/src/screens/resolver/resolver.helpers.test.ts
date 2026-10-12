@@ -14,22 +14,30 @@ const projects = [
 const base = {
   deviceLoaded: true,
   hasDevice: true,
-  connected: true,
+  status: 'connected',
   projects,
   lastTabId: null,
 }
 
 describe('resolveLanding', () => {
-  test('waits on home until the stored devices have loaded', () => {
-    expect(resolveLanding({ ...base, deviceLoaded: false })).toBe('/home')
+  test('waits while the stored devices are still being read', () => {
+    expect(resolveLanding({ ...base, deviceLoaded: false })).toBeNull()
   })
 
   test('sends an unpaired phone to pairing', () => {
     expect(resolveLanding({ ...base, hasDevice: false })).toBe('/pair')
   })
 
-  test('stays on home while the socket is still coming up', () => {
-    expect(resolveLanding({ ...base, connected: false })).toBe('/home')
+  test('waits while the socket is still coming up', () => {
+    // The bug this guards: committing here lands every cold start on
+    // home, because the first render always precedes the connection.
+    expect(resolveLanding({ ...base, status: 'connecting' })).toBeNull()
+    expect(resolveLanding({ ...base, status: 'disconnected' })).toBeNull()
+  })
+
+  test('stops waiting once the ladder has actually given up', () => {
+    expect(resolveLanding({ ...base, status: 'unreachable' })).toBe('/home')
+    expect(resolveLanding({ ...base, status: 'auth_failed' })).toBe('/home')
   })
 
   test('lands straight in the last session, the point of the resolver', () => {
@@ -82,12 +90,12 @@ describe('landingInput', () => {
     expect(input.lastTabId).toBeNull()
   })
 
-  test('treats any status other than connected as not connected', () => {
+  test('passes the status through rather than flattening to a boolean', () => {
     const input = landingInput(
       { loaded: true, record: { deviceId: 'd1' } },
       { status: 'connecting', projects },
       {},
     )
-    expect(input.connected).toBe(false)
+    expect(input.status).toBe('connecting')
   })
 })

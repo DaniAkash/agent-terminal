@@ -68,3 +68,20 @@ export function reconcileIndex(
     activeId && present.includes(activeId) ? activeId : (present[0] ?? null)
   return { ids: present, activeId: active }
 }
+
+/**
+ * Encode a device id for use inside a SecureStore key.
+ *
+ * SecureStore rejects any key outside `[A-Za-z0-9._-]`, and device ids
+ * are not constrained to that set: manual pairing builds them as
+ * `manual:<host>:<port>`, whose colons throw on write. Hex keeps the
+ * mapping injective, so two ids can never land on one record, and emits
+ * only `[0-9a-f]`.
+ */
+export function deviceStorageSlug(deviceId: string): string {
+  let out = ''
+  for (const ch of new TextEncoder().encode(deviceId)) {
+    out += ch.toString(16).padStart(2, '0')
+  }
+  return out
+}

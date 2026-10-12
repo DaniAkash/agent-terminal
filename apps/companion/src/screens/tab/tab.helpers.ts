@@ -1,3 +1,4 @@
+import type { Href } from 'expo-router'
 /**
  * Rebuild the wire's tab identifier from the two route params.
  *
@@ -29,10 +30,10 @@ export function splitTabId(
  * wire id arrives composed, so the project prefix is stripped back off to
  * fill the two route params.
  */
-export function tabHref(projectId: string, wireTabId: string): string {
+export function tabHref(projectId: string, wireTabId: string): Href {
   const prefix = `${projectId}:`
   const raw = wireTabId.startsWith(prefix)
     ? wireTabId.slice(prefix.length)
     : wireTabId
-  return `/tab/${projectId}/${raw}`
+  return `/tab/${projectId}/${raw}` as Href
 }
