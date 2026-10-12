@@ -41,7 +41,11 @@ describe('resolveLanding', () => {
     // Projects frame lands, so resolving here reads an empty tree and sends
     // every launch home instead of back to the saved session.
     expect(
-      resolveLanding({ ...base, projectsLoaded: false, lastTabId: 'p1:claude' }),
+      resolveLanding({
+        ...base,
+        projectsLoaded: false,
+        lastTabId: 'p1:claude',
+      }),
     ).toBeNull()
   })
 

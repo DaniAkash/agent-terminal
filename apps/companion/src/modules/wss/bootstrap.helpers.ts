@@ -29,7 +29,9 @@ export function decideDeviceAction(
 ): DeviceAction {
   if (activeDeviceId === null) return 'skip'
   if (drivenDeviceId === activeDeviceId) {
-    return status === 'connected' || status === 'connecting' ? 'skip' : 'connect'
+    return status === 'connected' || status === 'connecting'
+      ? 'skip'
+      : 'connect'
   }
   return drivenDeviceId === null ? 'connect' : 'switch'
 }
