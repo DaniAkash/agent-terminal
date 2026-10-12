@@ -24,7 +24,11 @@ import { beforeEach, describe, expect, test } from 'bun:test'
 import { $projects } from '@/modules/stores/$projects'
 import { $tabRecency, $tabRecencyTimes } from '@/modules/stores/$tabRecency'
 import type { Project } from '@/screens/workspace/workspace.types'
-import { installMobileOpsListener, normalizeTabOpBody } from './mobile-ops'
+import {
+  installMobileOpsListener,
+  normalizeTabOpBody,
+  resolveTabId,
+} from './mobile-ops'
 
 interface MobileOp {
   op: string
@@ -50,6 +54,26 @@ function seed(): void {
     },
   ]
   $projects.set(projects)
+}
+
+/**
+ * A tab whose stored id itself starts with its project's prefix. `StoredTab.id`
+ * is an unconstrained string, so the composed and raw forms of a tab id cannot
+ * be told apart by shape; these fixtures pin that they still resolve correctly.
+ */
+function seedAmbiguous(): void {
+  $projects.set([
+    {
+      id: 'p1',
+      name: 'browseros',
+      path: '/tmp/browseros',
+      pinned: false,
+      tabs: [
+        { id: 'p1:shell', label: 'ambiguous', cmd: '', pinned: false },
+        { id: 'shell', label: 'plain', cmd: '', pinned: false },
+      ],
+    },
+  ])
 }
 
 function send(op: string, body: unknown): void {
@@ -99,9 +123,36 @@ describe('tab ops addressed by the composed wire id', () => {
 })
 
 describe('tab ops addressed by the raw id', () => {
-  test('a raw id is accepted too, so an older client is not broken', () => {
+  test('a raw id naming a real tab is used as-is', () => {
     send('remove_tab', { project_id: 'p1', tab_id: 'shell-a3f9' })
     expect(tabs().map((t) => t.id)).toEqual(['shell-b1c2'])
+  })
+
+  test('an id matching no tab is left alone, so the op no-ops as before', () => {
+    send('remove_tab', { project_id: 'p1', tab_id: 'p1:not-a-tab' })
+    expect(tabs().map((t) => t.id)).toEqual(['shell-a3f9', 'shell-b1c2'])
+  })
+})
+
+describe('a stored id that itself begins with the project prefix', () => {
+  test('the raw form hits that tab rather than stripping into another', () => {
+    // A blind prefix strip turns `p1:shell` into `shell`, which is a
+    // different, real tab in this fixture: it would delete the wrong one.
+    seedAmbiguous()
+    send('remove_tab', { project_id: 'p1', tab_id: 'p1:shell' })
+    expect(tabs().map((t) => t.id)).toEqual(['shell'])
+  })
+
+  test('the composed form of that same tab still resolves to it', () => {
+    seedAmbiguous()
+    send('remove_tab', { project_id: 'p1', tab_id: 'p1:p1:shell' })
+    expect(tabs().map((t) => t.id)).toEqual(['shell'])
+  })
+
+  test('the other tab is still reachable by its own composed form', () => {
+    seedAmbiguous()
+    send('remove_tab', { project_id: 'p1', tab_id: 'p1:shell' })
+    expect(tabs().map((t) => t.id)).toEqual(['shell'])
   })
 })
 
@@ -116,20 +167,45 @@ describe('ops that carry no tab id', () => {
     expect(tabs().map((t) => t.id)).toEqual(['shell-b1c2', 'shell-a3f9'])
   })
 })
+describe('resolveTabId', () => {
+  const known = ['shell-a3f9', 'shell-b1c2']
 
-describe('normalizeTabOpBody', () => {
-  test('strips the project prefix', () => {
-    expect(
-      normalizeTabOpBody({ project_id: 'p1', tab_id: WIRE_TAB_ID }),
-    ).toEqual({ project_id: 'p1', tab_id: 'shell-a3f9' })
+  test('strips the project prefix off a composed id', () => {
+    expect(resolveTabId('p1', WIRE_TAB_ID, known)).toBe('shell-a3f9')
   })
 
   test('is idempotent, so an already-raw id survives', () => {
-    const once = normalizeTabOpBody({ project_id: 'p1', tab_id: WIRE_TAB_ID })
-    expect(normalizeTabOpBody(once)).toEqual(once)
+    const once = resolveTabId('p1', WIRE_TAB_ID, known)
+    expect(resolveTabId('p1', once, known)).toBe(once)
   })
 
-  test('leaves other fields on the body alone', () => {
+  test('only strips the prefix of its own project', () => {
+    expect(resolveTabId('p2', WIRE_TAB_ID, known)).toBe(WIRE_TAB_ID)
+  })
+
+  test('prefers an exact match over the stripped candidate', () => {
+    // Both ids exist here, so the id as given is the unambiguous answer.
+    expect(resolveTabId('p1', 'p1:shell', ['p1:shell', 'shell'])).toBe(
+      'p1:shell',
+    )
+  })
+
+  test('falls back to stripping when only the stripped id is real', () => {
+    expect(resolveTabId('p1', 'p1:shell', ['shell'])).toBe('shell')
+  })
+
+  test('leaves an id matching nothing untouched', () => {
+    expect(resolveTabId('p1', 'p1:gone', known)).toBe('p1:gone')
+    expect(resolveTabId('p1', 'gone', known)).toBe('gone')
+  })
+
+  test('leaves everything untouched when the project has no tabs', () => {
+    expect(resolveTabId('p1', WIRE_TAB_ID, [])).toBe(WIRE_TAB_ID)
+  })
+})
+
+describe('normalizeTabOpBody', () => {
+  test('resolves tab_id while leaving every other field alone', () => {
     expect(
       normalizeTabOpBody({
         project_id: 'p1',
@@ -137,12 +213,6 @@ describe('normalizeTabOpBody', () => {
         new_label: 'x',
       }),
     ).toEqual({ project_id: 'p1', tab_id: 'shell-a3f9', new_label: 'x' })
-  })
-
-  test('only strips the prefix of its own project', () => {
-    expect(
-      normalizeTabOpBody({ project_id: 'p2', tab_id: WIRE_TAB_ID }),
-    ).toEqual({ project_id: 'p2', tab_id: WIRE_TAB_ID })
   })
 
   test('passes through a body with no tab id', () => {
@@ -153,5 +223,11 @@ describe('normalizeTabOpBody', () => {
   test('passes through anything that is not an object', () => {
     expect(normalizeTabOpBody(null)).toBeNull()
     expect(normalizeTabOpBody('nope')).toBe('nope')
+  })
+
+  test('leaves the id alone for a project that does not exist', () => {
+    expect(
+      normalizeTabOpBody({ project_id: 'nope', tab_id: 'nope:x' }),
+    ).toEqual({ project_id: 'nope', tab_id: 'nope:x' })
   })
 })
