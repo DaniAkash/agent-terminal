@@ -163,6 +163,10 @@ export async function updateLastEndpoint(
 /**
  * Switch which desktop is driven. A no-op for an unknown id so a stale
  * deep link cannot strand the app pointing at nothing.
+ *
+ * Moving the socket is not this function's job: the `$activeDevice`
+ * subscriber in `wss/bootstrap.ts` sees the change and swaps the connection,
+ * which keeps the store free of any dependency on the client.
  */
 // fallow-ignore-next-line unused-export
 export async function setActiveDevice(deviceId: string): Promise<void> {

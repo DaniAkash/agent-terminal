@@ -6,8 +6,10 @@ import {
 import { migrateDevicesV1ToV2 } from '@/modules/stores/$devices.migrate'
 import { loadLastSessions } from '@/modules/stores/$lastSession'
 import { $session } from '@/modules/stores/$session'
+import { decideDeviceAction } from './bootstrap.helpers'
 import { autoConnect, disconnect } from './client'
 import { initLifecycleWiring, resetLifecycleWiring } from './lifecycle'
+import type { SessionStatusHint } from './lifecycle.helpers'
 
 /**
  * WSS boot-time wiring. Idempotent; safe to call multiple times but
@@ -35,6 +37,8 @@ import { initLifecycleWiring, resetLifecycleWiring } from './lifecycle'
 let initialized = false
 let unsubscribeDevice: (() => void) | null = null
 let unsubscribeSession: (() => void) | null = null
+/** The desktop the current socket belongs to, so a switch can be spotted. */
+let drivenDeviceId: string | null = null
 
 /**
  * Reasons the desktop returns in `ServerFrame::AuthFail` that mean
@@ -62,12 +66,22 @@ export async function initWssBootstrap(): Promise<void> {
   // when `loaded` flips true.
   unsubscribeDevice = $activeDevice.subscribe((state) => {
     if (!state.loaded) return
-    if (!state.record) return
-    // Don't stack redundant autoConnect calls: skip if the client is
-    // already up or negotiating.
-    const status = $session.get().status
-    if (status === 'connected' || status === 'connecting') return
-    void autoConnect(state.record)
+    const record = state.record
+    const action = decideDeviceAction(
+      drivenDeviceId,
+      record?.deviceId ?? null,
+      $session.get().status as SessionStatusHint,
+    )
+    if (action === 'skip') {
+      // Revoked or unpaired: there is no desktop to be driving any more.
+      if (!record) drivenDeviceId = null
+      return
+    }
+    if (!record) return
+    // A switch tears the old socket down first; see decideDeviceAction.
+    if (action === 'switch') disconnect()
+    drivenDeviceId = record.deviceId
+    void autoConnect(record)
   })
 
   // Server-side revoke recovery. When the desktop closes our
@@ -116,6 +130,7 @@ export function resetWssBootstrap(): void {
   unsubscribeSession?.()
   unsubscribeDevice = null
   unsubscribeSession = null
+  drivenDeviceId = null
   resetLifecycleWiring()
   initialized = false
 }
