@@ -482,7 +482,13 @@ function dispatchFrame(frame: ServerFrame): void {
     return
   }
   if (frame.op === 'projects') {
-    $session.setKey('projects', frame.body.data)
+    // One write, so a subscriber never sees the new tree with the flag still
+    // down (or the flag up with the old tree).
+    $session.set({
+      ...$session.get(),
+      projects: frame.body.data,
+      projectsLoaded: true,
+    })
     return
   }
   if (frame.op === 'snapshot') {
@@ -545,7 +551,10 @@ function handleAuthOk(deviceName: string): void {
   $session.set({
     status: 'connected',
     deviceName,
+    // The previous connection's tree is kept so the UI does not blank out
+    // mid-reconnect, but it is explicitly not this connection's answer yet.
     projects: $session.get().projects,
+    projectsLoaded: false,
     lastError: null,
     lastConnectedAt: Date.now(),
   })

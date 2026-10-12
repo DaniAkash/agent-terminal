@@ -15,6 +15,7 @@ const base = {
   deviceLoaded: true,
   hasDevice: true,
   status: 'connected',
+  projectsLoaded: true,
   projects,
   lastTabId: null,
 }
@@ -35,9 +36,45 @@ describe('resolveLanding', () => {
     expect(resolveLanding({ ...base, status: 'disconnected' })).toBeNull()
   })
 
+  test('waits for the project tree, which arrives after the connection', () => {
+    // The bug this guards: auth_ok flips status to connected before the
+    // Projects frame lands, so resolving here reads an empty tree and sends
+    // every launch home instead of back to the saved session.
+    expect(
+      resolveLanding({ ...base, projectsLoaded: false, lastTabId: 'p1:claude' }),
+    ).toBeNull()
+  })
+
+  test('treats an empty tree as an answer once the frame has landed', () => {
+    expect(resolveLanding({ ...base, projects: [], lastTabId: null })).toBe(
+      '/home',
+    )
+  })
+
+  test('does not resolve against the previous connection stale tree', () => {
+    // A reconnect keeps `projects` so the UI does not blank out, but the saved
+    // tab must be re-confirmed against the new tree before being deep linked.
+    expect(
+      resolveLanding({
+        ...base,
+        status: 'connected',
+        projectsLoaded: false,
+        lastTabId: 'p1:claude',
+      }),
+    ).toBeNull()
+  })
+
   test('stops waiting once the ladder has actually given up', () => {
     expect(resolveLanding({ ...base, status: 'unreachable' })).toBe('/home')
     expect(resolveLanding({ ...base, status: 'auth_failed' })).toBe('/home')
+    // A terminal failure never waits for a tree that will not arrive.
+    expect(
+      resolveLanding({
+        ...base,
+        status: 'unreachable',
+        projectsLoaded: false,
+      }),
+    ).toBe('/home')
   })
 
   test('lands straight in the last session, the point of the resolver', () => {
@@ -64,7 +101,7 @@ describe('resolveLanding', () => {
 })
 
 describe('landingInput', () => {
-  const session = { status: 'connected', projects }
+  const session = { status: 'connected', projects, projectsLoaded: true }
 
   test('picks the last session belonging to the active desktop', () => {
     const input = landingInput(
@@ -93,9 +130,18 @@ describe('landingInput', () => {
   test('passes the status through rather than flattening to a boolean', () => {
     const input = landingInput(
       { loaded: true, record: { deviceId: 'd1' } },
-      { status: 'connecting', projects },
+      { status: 'connecting', projects, projectsLoaded: false },
       {},
     )
     expect(input.status).toBe('connecting')
+  })
+
+  test('passes the tree-loaded flag through', () => {
+    const input = landingInput(
+      { loaded: true, record: { deviceId: 'd1' } },
+      { status: 'connected', projects, projectsLoaded: false },
+      {},
+    )
+    expect(input.projectsLoaded).toBe(false)
   })
 })

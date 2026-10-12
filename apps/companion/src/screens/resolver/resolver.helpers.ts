@@ -8,6 +8,8 @@ export interface LandingInput {
   /** Raw WSS status, not a boolean: "still connecting" and "gave up" must
    *  lead to different landings. */
   status: string
+  /** Whether `projects` is this connection's answer. See `$session`. */
+  projectsLoaded: boolean
   projects: ProjectSummary[]
   /** Composed wire id of the session last worked in on this desktop. */
   lastTabId: string | null
@@ -26,12 +28,16 @@ export function resolveLanding(input: LandingInput): Href | null {
   if (!input.deviceLoaded) return null
   if (!input.hasDevice) return '/pair'
 
-  if (input.status !== 'connected') {
-    // Terminal failures stop the wait; anything else is still in flight.
-    return input.status === 'unreachable' || input.status === 'auth_failed'
-      ? '/home'
-      : null
+  // Terminal failures stop the wait; anything else is still in flight.
+  if (input.status === 'unreachable' || input.status === 'auth_failed') {
+    return '/home'
   }
+  // Not just `connected`: the desktop sends its tree in a frame of its own
+  // after auth_ok, so a freshly connected session still reports an empty (or,
+  // on reconnect, a stale) tree. Resolving there would send every launch home.
+  // An empty tree IS a valid answer once the frame has landed, which is why
+  // this waits on the flag rather than on `projects.length`.
+  if (input.status !== 'connected' || !input.projectsLoaded) return null
 
   if (input.lastTabId) {
     const parts = splitTabId(input.lastTabId)
@@ -57,7 +63,11 @@ export function resolveLanding(input: LandingInput): Href | null {
  */
 export function landingInput(
   device: { loaded: boolean; record: { deviceId: string } | null },
-  session: { status: string; projects: ProjectSummary[] },
+  session: {
+    status: string
+    projects: ProjectSummary[]
+    projectsLoaded: boolean
+  },
   lastSessions: Record<string, string>,
 ): LandingInput {
   const deviceId = device.record?.deviceId
@@ -65,6 +75,7 @@ export function landingInput(
     deviceLoaded: device.loaded,
     hasDevice: device.record !== null,
     status: session.status,
+    projectsLoaded: session.projectsLoaded,
     projects: session.projects,
     lastTabId: deviceId ? (lastSessions[deviceId] ?? null) : null,
   }
