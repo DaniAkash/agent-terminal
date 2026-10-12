@@ -36,14 +36,51 @@ export function resolveSyncAgentState(
   return meta.status
 }
 
+export interface AgentStateStamp {
+  state: SyncAgentState
+  at: number
+}
+
 /**
- * Merge the two renderer-only stores into the tree sent to Rust. Pure so the
+ * Record when each tab's wire state last changed.
+ *
+ * The renderer has no such timestamp to borrow. `doneAt` marks shell
+ * completion and is cleared once the done dot stops lingering, so it can
+ * neither describe an `awaiting` turn nor outlive a finished one. Since the
+ * wire value is derived here, this is the only place that can see it change.
+ *
+ * Keys are rebuilt from the tree each pass, so a closed tab's stamp is
+ * dropped rather than kept alive. A desktop restart stamps everything with
+ * the first sync's clock, the earliest moment it can honestly claim.
+ */
+export function stampAgentStates(
+  projects: Project[],
+  meta: Record<string, TabMeta>,
+  previous: Record<string, AgentStateStamp>,
+  now: number,
+): Record<string, AgentStateStamp> {
+  const next: Record<string, AgentStateStamp> = {}
+  for (const project of projects) {
+    for (const tab of project.tabs) {
+      const key = makeTabKey(project.id, tab.id)
+      const state = resolveSyncAgentState(meta[key])
+      if (state === undefined) continue
+      const prior = previous[key]
+      next[key] = prior?.state === state ? prior : { state, at: now }
+    }
+  }
+  return next
+}
+
+/**
+ * Merge the renderer-only stores into the tree sent to Rust. Pure so the
  * merge is testable without a Tauri host.
  */
 export function buildSyncPayload(
   projects: Project[],
   meta: Record<string, TabMeta>,
   recencyTimes: Record<string, number>,
+  agentStateStamps: Record<string, AgentStateStamp>,
 ): SyncProject[] {
   return projects.map((project) => ({
     ...project,
@@ -53,7 +90,7 @@ export function buildSyncPayload(
       return {
         ...tab,
         agentState: resolveSyncAgentState(tabMeta),
-        agentStateAt: tabMeta?.doneAt,
+        agentStateAt: agentStateStamps[key]?.at,
         lastActiveAt: recencyTimes[key],
       }
     }),
