@@ -16,6 +16,7 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { IPC } from '@/modules/ipc/commands'
 import {
+  $projects,
   addProject,
   addTab,
   removeProject,
@@ -37,18 +38,61 @@ interface MobileOp {
 }
 
 /**
+ * Resolve the `tab_id` a mobile op carries to the id the store keys on.
+ *
  * Mobile addresses tabs by `TabSummary.tab_id`, which the Rust side
- * composes as `<project_id>:<raw_id>`, while the store actions here key
- * on the raw id. Accept either form so an op is correct whichever the
- * client sends.
+ * composes as `<project_id>:<raw_id>`, while every `$projects` action
+ * keys on the bare `t.id`.
+ *
+ * Resolution is against the project's actual tabs rather than a blind
+ * prefix strip, because the two forms are not distinguishable by shape
+ * alone: `StoredTab.id` is an unconstrained string, so an id that itself
+ * begins with `<project_id>:` would strip down to a different tab. An
+ * exact match therefore wins over the stripped candidate, which makes
+ * every form resolve to the tab the client meant. Unmatched ids are
+ * returned untouched so the store action behaves as it always has.
  */
-function rawTabId(projectId: string, tabId: string): string {
+export function resolveTabId(
+  projectId: string,
+  tabId: string,
+  knownIds: readonly string[],
+): string {
+  if (knownIds.includes(tabId)) return tabId
   const prefix = `${projectId}:`
-  return tabId.startsWith(prefix) ? tabId.slice(prefix.length) : tabId
+  if (!tabId.startsWith(prefix)) return tabId
+  const stripped = tabId.slice(prefix.length)
+  return knownIds.includes(stripped) ? stripped : tabId
+}
+
+function tabIdsOf(projectId: string): string[] {
+  const project = $projects.get().find((p) => p.id === projectId)
+  return project ? project.tabs.map((t) => t.id) : []
+}
+
+/**
+ * Resolve `tab_id` on any op body that carries one.
+ *
+ * Applied once before the dispatch rather than inside each case. Leaving
+ * it to the call sites is what let `rename_tab` and `remove_tab` address a
+ * tab that never matched: two of the four tab ops remembered to convert
+ * and two did not, and a miss is silent because no store action throws on
+ * an id it cannot find. Bodies without both fields pass through untouched.
+ */
+export function normalizeTabOpBody(body: unknown): unknown {
+  if (typeof body !== 'object' || body === null) return body
+  const b = body as { project_id?: unknown; tab_id?: unknown }
+  if (typeof b.project_id !== 'string' || typeof b.tab_id !== 'string') {
+    return body
+  }
+  return {
+    ...body,
+    tab_id: resolveTabId(b.project_id, b.tab_id, tabIdsOf(b.project_id)),
+  }
 }
 
 // fallow-ignore-next-line complexity
-function applyOp(op: string, body: unknown): void {
+function applyOp(op: string, rawBody: unknown): void {
+  const body = normalizeTabOpBody(rawBody)
   switch (op) {
     case 'create_project': {
       const b = body as { name: string; path?: string }
@@ -106,7 +150,7 @@ function applyOp(op: string, body: unknown): void {
     }
     case 'set_tab_pinned': {
       const b = body as { project_id: string; tab_id: string; pinned: boolean }
-      setTabPinned(b.project_id, rawTabId(b.project_id, b.tab_id), b.pinned)
+      setTabPinned(b.project_id, b.tab_id, b.pinned)
       return
     }
     case 'set_project_pinned': {
@@ -116,7 +160,7 @@ function applyOp(op: string, body: unknown): void {
     }
     case 'bump_recency': {
       const b = body as { project_id: string; tab_id: string }
-      bumpTabRecency(makeTabKey(b.project_id, rawTabId(b.project_id, b.tab_id)))
+      bumpTabRecency(makeTabKey(b.project_id, b.tab_id))
       return
     }
     default:
