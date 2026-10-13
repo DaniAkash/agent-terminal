@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "companion",
+    "name": "Agent Terminal",
     "slug": "companion",
     "version": "1.0.0",
     "scheme": "agent-terminal-companion",
