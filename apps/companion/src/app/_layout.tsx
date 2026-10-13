@@ -69,11 +69,14 @@ export default function RootLayout() {
               options={{ title: 'Manual connect' }}
             />
             <Stack.Screen name="home" options={{ title: 'Agent Terminal' }} />
+            {/* No header. Every point the navigation bar takes is a point
+                of scrollback the terminal does not get, and ActiveTabBar
+                already names the session the header would have titled.
+                Going back still works: the iOS edge swipe stays enabled
+                without a header, and Android keeps its system back. */}
             <Stack.Screen
               name="tab/[projectId]/[tabId]"
-              options={{
-                headerBackTitle: 'Back',
-              }}
+              options={{ headerShown: false }}
             />
             {/* Sheets. `headerShown: false` is not cosmetic: Android does
                 not render headers inside a form sheet at all, so a title

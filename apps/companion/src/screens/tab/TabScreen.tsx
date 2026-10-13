@@ -84,13 +84,19 @@ export function TabScreen({ projectId, tabId }: TabScreenProps) {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <View className="flex-1 bg-background">
-        <ActiveTabBar
-          label={active.label}
-          projectName={active.projectName}
-          glyph={active.glyph}
-          connected={connected}
-          onPress={openSwitcher}
-        />
+        {/* The navigation header used to hold this screen clear of the
+            status bar. With the header gone the top inset moves here,
+            painted in the bar's own colour so the strip above it reads as
+            part of the bar rather than a second band. */}
+        <View className="bg-muted" style={{ paddingTop: insets.top }}>
+          <ActiveTabBar
+            label={active.label}
+            projectName={active.projectName}
+            glyph={active.glyph}
+            connected={connected}
+            onPress={openSwitcher}
+          />
+        </View>
         <View className="flex-1">
           <TerminalDom
             ref={terminalRef}
