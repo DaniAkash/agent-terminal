@@ -1,5 +1,5 @@
 import { useStore } from '@nanostores/react'
-import { Redirect, Stack, useLocalSearchParams } from 'expo-router'
+import { Redirect, useLocalSearchParams } from 'expo-router'
 import { $activeDevice } from '@/modules/stores/$devices'
 import { noteActiveSession } from '@/modules/stores/$lastSession'
 import { TabScreen } from '@/screens/tab/TabScreen'
@@ -23,10 +23,5 @@ export default function TabRoute() {
   const deviceId = device.record?.deviceId
   if (deviceId) noteActiveSession(deviceId, composed)
 
-  return (
-    <>
-      <Stack.Screen options={{ title: 'Terminal' }} />
-      <TabScreen projectId={projectId} tabId={composed} />
-    </>
-  )
+  return <TabScreen projectId={projectId} tabId={composed} />
 }
