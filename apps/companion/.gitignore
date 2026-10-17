@@ -21,11 +21,25 @@ expo-env.d.ts
 # Native
 .kotlin/
 *.orig.*
+
+# Signing material. An upload keystore and the properties file naming it
+# are what Play checks every build against, so losing one blocks signed
+# updates and leaking one lets someone else ship as us. They live outside
+# the repo; these rules exist so a copy landing in the tree by accident
+# cannot be staged. This repo is public.
 *.jks
+*.keystore
 *.p8
 *.p12
 *.key
 *.mobileprovision
+keystore.properties
+
+# Play Store service account key. Named exactly rather than by extension:
+# the tree is full of legitimate .json config that must stay tracked.
+play-store-key.json
+google-play-key.json
+api-key.json
 
 # Metro
 .metro-health-check*
@@ -39,8 +53,11 @@ yarn-error.*
 .DS_Store
 *.pem
 
-# local env files
-.env*.local
+# local env files. `.env*.local` alone leaves a plain `.env` tracked,
+# which is the file people actually paste tokens into.
+.env
+.env.*
+!.env.example
 
 # typescript
 *.tsbuildinfo
@@ -55,3 +72,13 @@ yarn-error.*
 modules/*/android/build/
 modules/*/android/.gradle/
 modules/*/android/local.properties
+
+# Fastlane. `report.xml` and `Preview.html` are regenerated per run, and
+# the metadata directories hold screenshots that belong to the store
+# listing rather than to source.
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/*.log
+fastlane/test_output/
+fastlane/screenshots/
+fastlane/*.json

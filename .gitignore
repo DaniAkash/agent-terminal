@@ -37,3 +37,17 @@ dist-ssr
 yarn.lock
 package-lock.json
 pnpm-lock.yaml
+
+# Signing and credential material, repeated at the root on purpose. The
+# app that uses these ignores them already; this catches the same file
+# dropped anywhere else in the tree, which is the case that actually
+# happens. Extensions only, so no legitimate tracked config is caught.
+*.jks
+*.keystore
+*.p8
+*.p12
+*.mobileprovision
+keystore.properties
+.env
+.env.*
+!.env.example
