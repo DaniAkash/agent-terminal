@@ -1,0 +1,5 @@
+# Every account-bound value comes from the environment. This repo is
+# public, so a package name is the most that belongs in the file itself,
+# and even that is overridable for a dev-variant upload.
+json_key_file(ENV["PLAY_STORE_JSON_KEY"])
+package_name(ENV["ANDROID_PACKAGE"] || "com.daniakash.agent_terminal")

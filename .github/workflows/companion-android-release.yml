@@ -1,0 +1,164 @@
+# Android release pipeline for the companion app.
+#
+# Two ways in:
+#   - push a `companion-v*` tag, which uploads to the internal track
+#   - run it by hand from the Actions tab, choosing the track
+#
+# Nothing here auto-promotes to production. The `production` track is
+# selectable, but only by a human choosing it in the dispatch form.
+#
+# Required secrets (all account-bound, none ever inlined here):
+#   ANDROID_KEYSTORE_BASE64     base64 of the upload keystore
+#   ANDROID_KEYSTORE_PASSWORD   unlocks the keystore file
+#   ANDROID_KEY_ALIAS           the key entry inside it
+#   ANDROID_KEY_PASSWORD        unlocks that key entry
+#   PLAY_STORE_JSON_KEY         Play service account JSON, whole file
+
+name: Companion Android Release
+
+on:
+  push:
+    tags:
+      - 'companion-v[0-9]*'
+    # TEMPORARY, remove before merge. workflow_dispatch only becomes
+    # runnable once a workflow sits on the default branch, so this is the
+    # only way to prove the pipeline before merging it. Branch pushes build
+    # without uploading, so nothing reaches Play.
+    branches:
+      - 'feat/companion-android-release'
+  workflow_dispatch:
+    inputs:
+      track:
+        description: 'Play track to upload to'
+        type: choice
+        default: internal
+        options: [internal, alpha, production, none]
+      validate_only:
+        description: 'Dry run: validate the upload against Play without publishing'
+        type: boolean
+        default: false
+      build_offset:
+        description: 'Added to the derived versionCode, for a respin of the same version'
+        default: '0'
+
+permissions:
+  contents: read
+
+# Play rejects a versionCode it has already seen, so two concurrent runs of
+# the same version would make the second one fail at upload. Queue instead.
+concurrency:
+  group: companion-android-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Assert the tag matches the version in package.json
+        # The cheapest possible place to catch a mistyped tag: before
+        # anything is built, rather than as a wrong version string sitting
+        # in the Play console.
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          set -euo pipefail
+          tag_version="${GITHUB_REF_NAME#companion-v}"
+          pkg_version=$(jq -r .version apps/companion/package.json)
+          if [ "$tag_version" != "$pkg_version" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} implies version ${tag_version}, but apps/companion/package.json says ${pkg_version}"
+            exit 1
+          fi
+          echo "version ${pkg_version} confirmed"
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Ruby and Fastlane
+        # `bundler: latest` rather than the stock bundler, because the
+        # committed Gemfile.lock records a newer BUNDLED WITH than the one
+        # shipping with this Ruby, and the stock bundler refuses it.
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+          bundler: latest
+          bundler-cache: true
+          working-directory: apps/companion
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Run the companion check gate
+        # A release is the worst time to discover a type error. Same gate
+        # the PR runs, so this should never be the step that fails.
+        run: bun run --filter companion check
+
+      - name: Decode signing and Play credentials
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          PLAY_JSON: ${{ secrets.PLAY_STORE_JSON_KEY }}
+        run: |
+          set -euo pipefail
+          # Everything lands in RUNNER_TEMP rather than the workspace, so
+          # no credential is ever inside a directory git could stage.
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/upload-keystore.jks"
+          mkdir -p apps/companion/android
+          cat > apps/companion/android/keystore.properties <<EOF
+          storeFile=$RUNNER_TEMP/upload-keystore.jks
+          storePassword=$KEYSTORE_PASSWORD
+          keyAlias=$KEY_ALIAS
+          keyPassword=$KEY_PASSWORD
+          EOF
+          printf '%s' "$PLAY_JSON" > "$RUNNER_TEMP/play-store-key.json"
+
+      - name: Build and upload
+        working-directory: apps/companion
+        env:
+          PLAY_STORE_JSON_KEY: ${{ runner.temp }}/play-store-key.json
+          # A tag goes to internal for real. A manual run uses the chosen
+          # track. A branch push validates against Play without publishing,
+          # which exercises auth, package match, versionCode and the
+          # signing key while leaving the listing untouched.
+          TRACK: ${{ github.event_name == 'workflow_dispatch' && inputs.track || 'internal' }}
+          VALIDATE_ONLY: ${{ (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/')) || inputs.validate_only }}
+          BUILD_OFFSET: ${{ inputs.build_offset || '0' }}
+        run: |
+          set -euo pipefail
+          if [ "$TRACK" = "none" ]; then
+            bundle exec fastlane android build build_offset:"$BUILD_OFFSET"
+          elif [ "$VALIDATE_ONLY" = "true" ]; then
+            bundle exec fastlane android validate track:"$TRACK" build_offset:"$BUILD_OFFSET"
+          else
+            bundle exec fastlane android "$TRACK" build_offset:"$BUILD_OFFSET"
+          fi
+
+      - name: Upload the bundle as a workflow artifact
+        # Keeps the exact uploaded artifact inspectable after the fact,
+        # which matters when a Play rejection has to be explained.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: companion-aab
+          path: apps/companion/android/app/build/outputs/bundle/release/*.aab
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Shred the decoded credentials
+        # `always()` so a failed build cannot leave a decoded key behind on
+        # a runner that something later in the job might surface.
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/upload-keystore.jks" \
+                "$RUNNER_TEMP/play-store-key.json" \
+                apps/companion/android/keystore.properties
