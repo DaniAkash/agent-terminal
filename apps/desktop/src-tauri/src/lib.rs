@@ -50,6 +50,7 @@ pub mod net;
 pub mod mdns;
 // pub so integration tests can drive the server directly (spin up on
 // 127.0.0.1:0 with an in-process client).
+mod usage;
 pub mod wss_server;
 
 use hook_config::ensure_hooks_installed;
@@ -192,7 +193,11 @@ pub fn run() {
         // re-focuses the window.
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             if let Some(window) = app.get_webview_window("main") {
-                let _ = window.show();
+                if window.show().is_ok() {
+                    if let Some(service) = app.try_state::<usage::UsageService>() {
+                        service.set_window_hidden(false);
+                    }
+                }
                 let _ = window.unminimize();
                 let _ = window.set_focus();
             }
@@ -555,6 +560,11 @@ pub fn run() {
               }
             } // 'wss_setup
 
+            // Jarvis owns collection independently of terminal tabs and renderers.
+            let usage_service = usage::UsageService::new(app.handle().clone());
+            app.manage(usage_service.clone());
+            usage_service.start();
+
             // Window focus → suppression signal only.
             // (The previous focus-event-based click heuristic is gone — it
             // only "sometimes worked" in dev mode and was actively wrong:
@@ -564,9 +574,25 @@ pub fn run() {
             // callback — see `notifications::backend` (release path).)
             if let Some(window) = app.get_webview_window("main") {
                 let svc = notification_service.clone();
+                let window_for_tray = window.clone();
                 window.on_window_event(move |event| {
                     if let tauri::WindowEvent::Focused(focused) = event {
                         svc.set_app_focus(*focused);
+                    }
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        let snapshot = usage_service.snapshot();
+                        // Keep sessions running only while a usable tray provides
+                        // a visible way back into the app.
+                        if snapshot.preferences.enabled && snapshot.preferences.show_tray
+                            && snapshot.tray_error.is_none()
+                            && window_for_tray.app_handle().tray_by_id("jarvis").is_some()
+                            && window_for_tray.hide().is_ok()
+                        {
+                            usage_service.set_window_hidden(true);
+                            api.prevent_close();
+                        } else {
+                            usage::close_popover(window_for_tray.app_handle());
+                        }
                     }
                 });
             }
@@ -595,9 +621,21 @@ pub fn run() {
             notifications::notif_set_app_focus,
             notifications::notif_set_enabled,
             notifications::notif_cancel,
+            usage::jarvis_snapshot,
+            usage::jarvis_refresh,
+            usage::jarvis_rescan_agents,
+            usage::jarvis_set_preferences,
+            usage::jarvis_authorize_claude_keychain,
+            usage::jarvis_open_main,
+            usage::jarvis_dismiss_tray,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                app.state::<usage::UsageService>().stop();
+            }
+        });
 }
 
 /// Builds and installs a custom macOS menu that intentionally omits the

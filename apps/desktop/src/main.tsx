@@ -1,6 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { IPC } from '@/modules/ipc/commands'
+import { startJarvis } from '@/modules/jarvis/store'
 import { startCwdPersist } from '@/modules/mods/cwd-persist'
 import { startModListener } from '@/modules/mods/mod-listener'
 import { startNotificationsBridge } from '@/modules/notifications/notificationsBridge'
@@ -14,15 +15,31 @@ import {
   initSidebarWidthFromStorage,
 } from '@/modules/stores/$sidebarWidth'
 import { initTabRecencySubscriber } from '@/modules/stores/$tabRecency.init'
-import { initThemeFromStorage } from '@/modules/stores/$theme'
+import {
+  $theme,
+  applyThemeToDocument,
+  initThemeFromStorage,
+} from '@/modules/stores/$theme'
 import { installMobileOpsListener } from '@/modules/wss-bridge/mobile-ops'
 import { initProjectsSync } from '@/modules/wss-bridge/projects-sync.init'
 import { WorkspaceLayout } from '@/screens/workspace/WorkspaceLayout'
 import type { Project } from '@/screens/workspace/workspace.types'
 import '@xterm/xterm/css/xterm.css'
 import './index.css'
+import '@/components/Jarvis/jarvis.css'
+
+// Suppress the webview's Inspect/Reload menu in every app window. Let events
+// propagate so the app's own project and tab context menus still work.
+const preventBrowserContextMenu = (event: MouseEvent) => event.preventDefault()
+document.addEventListener('contextmenu', preventBrowserContextMenu)
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    document.removeEventListener('contextmenu', preventBrowserContextMenu)
+  })
+}
 
 async function bootstrap() {
+  void startJarvis()
   await startModListener()
 
   startCwdPersist()
@@ -74,4 +91,26 @@ async function bootstrap() {
   )
 }
 
-bootstrap()
+if (window.location.hash === '#jarvis-tray') {
+  // Tray windows subscribe only to normalized usage, never workspace services.
+  initThemeFromStorage()
+  window.addEventListener('storage', (event) => {
+    if (event.key !== null && event.key !== 'agent-terminal:theme') return
+    const theme =
+      event.newValue === 'light' || event.newValue === 'dark'
+        ? event.newValue
+        : 'system'
+    $theme.set(theme)
+    applyThemeToDocument(theme)
+  })
+  void startJarvis()
+  void import('@/components/Jarvis/JarvisTray').then(({ JarvisTray }) => {
+    ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
+      <React.StrictMode>
+        <JarvisTray />
+      </React.StrictMode>,
+    )
+  })
+} else {
+  bootstrap()
+}

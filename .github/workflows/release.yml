@@ -29,7 +29,7 @@
 # All values stored in repo Settings → Secrets and variables → Actions.
 # Never inline any of them here, even as examples.
 
-name: Release (signed + notarized per-arch macOS builds)
+name: Release (macOS and Linux)
 
 on:
   push:
@@ -270,14 +270,58 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # Job 3: create the draft release with BOTH .dmgs attached. Lives
+  build-linux:
+    name: Build Linux x86_64
+    needs: [changelog]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    env:
+      CARGO_BUILD_BUILD_DIR: ${{ github.workspace }}/apps/desktop/target
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Tauri Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libdbus-1-dev libayatana-appindicator3-dev librsvg2-dev
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop -> target
+      - run: bun install --frozen-lockfile
+      - name: Build Debian and AppImage bundles
+        working-directory: apps/desktop
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: bunx tauri build
+      - name: Normalize artifact names for release URLs
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          for path in Path('apps/desktop/target/release/bundle').rglob('*'):
+              if path.is_file() and ' ' in path.name:
+                  path.rename(path.with_name(path.name.replace(' ', '.')))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bundles-linux-x86_64
+          path: |
+            apps/desktop/target/release/bundle/deb/*.deb
+            apps/desktop/target/release/bundle/appimage/*.AppImage
+            apps/desktop/target/release/bundle/appimage/*.AppImage.sig
+          if-no-files-found: error
+          retention-days: 7
+
+  # Job 3: create the draft release with all desktop artifacts. Lives
   # outside the matrix because softprops/action-gh-release running inside
   # the matrix would create two separate releases (one per matrix entry)
   # and the second would 422 because the tag already has a release.
   # Linux runner — this job just downloads artifacts + POSTs to the API.
   release:
     name: Create draft release
-    needs: [changelog, build]
+    needs: [changelog, build, build-linux]
     runs-on: ubuntu-latest
     steps:
       - name: Download all build artifacts
@@ -313,6 +357,10 @@ jobs:
           X64_BASENAME=$(basename "${X64_TAR}")
           AARCH64_SIG=$(cat "${AARCH64_TAR}.sig")
           X64_SIG=$(cat "${X64_TAR}.sig")
+          LINUX_BUNDLE=$(find artifacts -type f -name '*.AppImage' -print -quit)
+          test -n "$LINUX_BUNDLE"
+          LINUX_BASENAME=$(basename "${LINUX_BUNDLE}")
+          LINUX_SIG=$(cat "${LINUX_BUNDLE}.sig")
           PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
           jq -n \
@@ -323,13 +371,16 @@ jobs:
             --arg aarch64_url "https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/${AARCH64_BASENAME}" \
             --arg x64_sig "${X64_SIG}" \
             --arg x64_url "https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/${X64_BASENAME}" \
+            --arg linux_sig "${LINUX_SIG}" \
+            --arg linux_url "https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/${LINUX_BASENAME}" \
             '{
               version: $version,
               notes: $notes,
               pub_date: $pub_date,
               platforms: {
                 "darwin-aarch64": { signature: $aarch64_sig, url: $aarch64_url },
-                "darwin-x86_64":  { signature: $x64_sig,     url: $x64_url     }
+                "darwin-x86_64":  { signature: $x64_sig,     url: $x64_url     },
+                "linux-x86_64":   { signature: $linux_sig,   url: $linux_url   }
               }
             }' > manifest/latest.json
 
@@ -359,6 +410,9 @@ jobs:
             artifacts/**/*.dmg
             artifacts/**/*.app.tar.gz
             artifacts/**/*.app.tar.gz.sig
+            artifacts/**/*.deb
+            artifacts/**/*.AppImage
+            artifacts/**/*.AppImage.sig
             manifest/latest.json
           fail_on_unmatched_files: true
 
