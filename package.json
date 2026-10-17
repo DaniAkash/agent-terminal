@@ -25,6 +25,6 @@
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",
     "@tauri-apps/cli": "^2",
-    "concurrently": "^10.0.4"
+    "concurrently": "^10.0.6"
   }
 }
