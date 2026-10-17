@@ -4,6 +4,8 @@
 # `match` credentials that do not exist yet. They land with the iOS pass
 # rather than sitting here failing.
 
+require "shellwords"
+
 APP_DIR     = File.expand_path("..", __dir__)
 ANDROID_DIR = File.join(APP_DIR, "android")
 AAB_PATH    = File.join(ANDROID_DIR, "app", "build", "outputs", "bundle", "release", "app-release.aab")
@@ -24,6 +26,44 @@ def derived_version_code(offset = 0)
     UI.user_error!("version #{package_version} has a component above 99, which would break versionCode ordering")
   end
   (major * 10_000) + (minor * 100) + patch + offset.to_i
+end
+
+# `prebuild --clean` deletes and regenerates android/, so the signing
+# properties have to be written after it rather than before. Writing them
+# here instead of in the workflow also keeps the lane self-contained: the
+# same command works locally with the same four variables exported.
+def write_keystore_properties
+  store = ENV["ANDROID_KEYSTORE_PATH"].to_s
+  if store.empty?
+    UI.important("ANDROID_KEYSTORE_PATH unset, so the release build will fall back to the debug key and Play will refuse it")
+    return
+  end
+  UI.user_error!("ANDROID_KEYSTORE_PATH points at #{store}, which does not exist") unless File.exist?(store)
+
+  File.write(
+    File.join(ANDROID_DIR, "keystore.properties"),
+    <<~PROPS,
+      storeFile=#{store}
+      storePassword=#{ENV.fetch("ANDROID_KEYSTORE_PASSWORD")}
+      keyAlias=#{ENV.fetch("ANDROID_KEY_ALIAS")}
+      keyPassword=#{ENV.fetch("ANDROID_KEY_PASSWORD")}
+    PROPS
+  )
+  UI.success("wrote signing properties for the release build")
+end
+
+# Play answers a debug-signed bundle with "APK has been signed in debug
+# mode" after the whole upload, which on a cold runner is about 25 minutes
+# of feedback latency. The debug certificate is identifiable, so check it
+# here and fail in seconds instead.
+def assert_release_signed(aab)
+  certs = `keytool -printcert -jarfile #{Shellwords.escape(aab)} 2>&1`
+  return unless certs.include?("Android Debug")
+
+  UI.user_error!(
+    "#{File.basename(aab)} is signed with the debug key, which Play rejects. " \
+    "keystore.properties was missing when Gradle ran: check ANDROID_KEYSTORE_PATH and that nothing regenerated android/ after it was written.",
+  )
 end
 
 default_platform(:android)
@@ -50,9 +90,22 @@ platform :android do
       sh("bunx", "expo", "prebuild", "--platform", "android", "--clean", "--no-install")
     end
 
+    write_keystore_properties
+
     gradle(project_dir: ANDROID_DIR, task: "bundle", build_type: "Release")
 
     UI.user_error!("gradle reported success but no bundle exists at #{AAB_PATH}") unless File.exist?(AAB_PATH)
+
+    # Deterministic companion to the certificate check below. If signing was
+    # configured but the properties file is gone by the time Gradle finished,
+    # something regenerated android/ mid-build and the bundle is debug
+    # signed. This is the failure that cost a 25 minute round trip to Play.
+    props = File.join(ANDROID_DIR, "keystore.properties")
+    if !ENV["ANDROID_KEYSTORE_PATH"].to_s.empty? && !File.exist?(props)
+      UI.user_error!("signing was configured but #{props} no longer exists, so Gradle fell back to the debug key")
+    end
+
+    assert_release_signed(AAB_PATH)
     UI.success("built #{AAB_PATH}")
     AAB_PATH
   end
