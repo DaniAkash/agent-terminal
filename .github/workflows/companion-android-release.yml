@@ -20,12 +20,6 @@ on:
   push:
     tags:
       - 'companion-v[0-9]*'
-    # TEMPORARY, remove before merge. workflow_dispatch only becomes
-    # runnable once a workflow sits on the default branch, so this is the
-    # only way to prove the pipeline before merging it. Branch pushes build
-    # without uploading, so nothing reaches Play.
-    branches:
-      - 'feat/companion-android-release'
   workflow_dispatch:
     inputs:
       track:
