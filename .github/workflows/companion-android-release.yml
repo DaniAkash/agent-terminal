@@ -136,12 +136,11 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          # A tag goes to internal for real. A manual run uses the chosen
-          # track. A branch push validates against Play without publishing,
-          # which exercises auth, package match, versionCode and the
-          # signing key while leaving the listing untouched.
+          # A tag or a branch push uploads to the internal track. A manual
+          # run picks its own track, and can tick validate_only for a dry
+          # run that checks the whole upload path and commits nothing.
           TRACK: ${{ github.event_name == 'workflow_dispatch' && inputs.track || 'internal' }}
-          VALIDATE_ONLY: ${{ (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/')) || inputs.validate_only }}
+          VALIDATE_ONLY: ${{ inputs.validate_only || false }}
           BUILD_OFFSET: ${{ inputs.build_offset || '0' }}
         run: |
           set -euo pipefail
