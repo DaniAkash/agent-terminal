@@ -343,12 +343,30 @@ impl BoundNet {
     /// so there is no reason to cache it. Falls back to the startup values
     /// if enumeration comes back empty, which beats handing out nothing.
     pub fn current(&self) -> (Option<String>, Vec<String>) {
-        let hostname = net::local_hostname().or_else(|| self.hostname.clone());
-        let ips: Vec<String> = net::lan_ipv4s().iter().map(ToString::to_string).collect();
-        if ips.is_empty() {
+        self.resolve(
+            net::local_hostname(),
+            net::lan_ipv4s().iter().map(ToString::to_string).collect(),
+        )
+    }
+
+    /// Choose between what the machine reports now and the startup
+    /// snapshot, given values already enumerated.
+    ///
+    /// Split out from [`BoundNet::current`] because the choice is the part
+    /// worth testing and interface enumeration is not controllable from a
+    /// test: whether a host has an RFC 1918 address decides which branch
+    /// runs, so a test calling `current` asserts whatever the machine it
+    /// runs on happens to have.
+    fn resolve(
+        &self,
+        hostname: Option<String>,
+        live_ips: Vec<String>,
+    ) -> (Option<String>, Vec<String>) {
+        let hostname = hostname.or_else(|| self.hostname.clone());
+        if live_ips.is_empty() {
             return (hostname, self.ips.clone());
         }
-        (hostname, ips)
+        (hostname, live_ips)
     }
 }
 
@@ -527,37 +545,42 @@ fn projects_config_path() -> Result<std::path::PathBuf, String> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn current_prefers_live_addresses_over_the_startup_snapshot() {
-        // The snapshot carries an address the machine no longer has, which
-        // is exactly the state after a DHCP renewal onto another subnet.
-        let stale = BoundNet {
+    fn snapshot() -> BoundNet {
+        BoundNet {
             hostname: Some("old-host.local".into()),
             ips: vec!["10.9.9.9".into()],
             port: 47823,
-        };
-        let (_, ips) = stale.current();
-        // Whatever this machine is actually on, it is not the fabricated
-        // address above, and that is the whole point of the method.
-        assert!(
-            !ips.contains(&"10.9.9.9".to_string()) || ips.len() > 1,
-            "current() must enumerate interfaces rather than echo the snapshot"
-        );
+        }
     }
 
     #[test]
-    fn current_falls_back_to_the_snapshot_when_nothing_is_enumerable() {
+    fn live_addresses_displace_the_startup_snapshot() {
+        // The snapshot carries an address the machine no longer has, which
+        // is the state after a DHCP renewal onto another subnet.
+        let (hostname, ips) = snapshot().resolve(
+            Some("new-host.local".into()),
+            vec!["192.168.1.42".into()],
+        );
+        assert_eq!(hostname.as_deref(), Some("new-host.local"));
+        assert_eq!(ips, vec!["192.168.1.42".to_string()]);
+    }
+
+    #[test]
+    fn an_empty_live_list_falls_back_to_the_snapshot() {
         // A host with no private IPv4 at all still has to hand the QR
         // something, so the startup values are the floor rather than an
         // empty list.
-        let snapshot = BoundNet {
-            hostname: Some("fallback.local".into()),
-            ips: vec!["192.0.2.1".into()],
-            port: 47823,
-        };
-        let (hostname, ips) = snapshot.current();
-        assert!(hostname.is_some(), "a hostname is always produced");
-        assert!(!ips.is_empty(), "never hand the QR an empty address list");
+        let (_, ips) = snapshot().resolve(Some("new-host.local".into()), Vec::new());
+        assert_eq!(ips, vec!["10.9.9.9".to_string()]);
+    }
+
+    #[test]
+    fn an_unresolvable_hostname_falls_back_without_dragging_the_ips_with_it() {
+        // The two fall back independently: losing the name is not a reason
+        // to also discard addresses the machine currently answers on.
+        let (hostname, ips) = snapshot().resolve(None, vec!["192.168.1.42".into()]);
+        assert_eq!(hostname.as_deref(), Some("old-host.local"));
+        assert_eq!(ips, vec!["192.168.1.42".to_string()]);
     }
 
     #[tokio::test]
