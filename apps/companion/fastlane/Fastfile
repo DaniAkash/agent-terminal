@@ -1,0 +1,185 @@
+# Android lanes for the Agent Terminal companion.
+#
+# iOS is deliberately absent: those lanes need App Store Connect API and
+# `match` credentials that do not exist yet. They land with the iOS pass
+# rather than sitting here failing.
+
+require "shellwords"
+
+APP_DIR     = File.expand_path("..", __dir__)
+ANDROID_DIR = File.join(APP_DIR, "android")
+AAB_PATH    = File.join(ANDROID_DIR, "app", "build", "outputs", "bundle", "release", "app-release.aab")
+
+# `apps/companion/package.json` is the single source of truth for the
+# version, mirroring how the desktop app is released.
+def package_version
+  require "json"
+  JSON.parse(File.read(File.join(APP_DIR, "package.json")))["version"]
+end
+
+# Play rejects a versionCode it has already accepted, so it has to rise on
+# every upload. Deriving it from the version keeps the two in step and
+# makes the number readable: 1.2.3 becomes 10203.
+def derived_version_code(offset = 0)
+  major, minor, patch = package_version.split(".").map(&:to_i)
+  if minor > 99 || patch > 99
+    UI.user_error!("version #{package_version} has a component above 99, which would break versionCode ordering")
+  end
+  (major * 10_000) + (minor * 100) + patch + offset.to_i
+end
+
+# `prebuild --clean` deletes and regenerates android/, so the signing
+# properties have to be written after it rather than before. Writing them
+# here instead of in the workflow also keeps the lane self-contained: the
+# same command works locally with the same four variables exported.
+# Escape a value for a Java `.properties` file.
+#
+# Properties.load treats a backslash as an escape, so a secret containing
+# one decodes differently from what was stored and signing fails with
+# credentials that look correct everywhere you inspect them. The Gradle
+# side loads through an InputStream, which Java reads as ISO-8859-1, so
+# anything above that range has to leave as \uXXXX as well.
+def properties_escape(value)
+  escaped = +""
+  value.to_s.each_char do |char|
+    case char
+    when "\\" then escaped << "\\\\"
+    when "\n" then escaped << "\\n"
+    when "\r" then escaped << "\\r"
+    when "\t" then escaped << "\\t"
+    else
+      code = char.ord
+      escaped << (code > 0xFF ? format("\\u%04X", code) : char)
+    end
+  end
+  # A leading space is otherwise eaten as padding after the separator.
+  escaped.start_with?(" ") ? "\\#{escaped}" : escaped
+end
+
+def write_keystore_properties
+  store = ENV["ANDROID_KEYSTORE_PATH"].to_s
+  if store.empty?
+    UI.important("ANDROID_KEYSTORE_PATH unset, so the release build will fall back to the debug key and Play will refuse it")
+    return
+  end
+  UI.user_error!("ANDROID_KEYSTORE_PATH points at #{store}, which does not exist") unless File.exist?(store)
+
+  File.write(
+    File.join(ANDROID_DIR, "keystore.properties"),
+    <<~PROPS,
+      storeFile=#{properties_escape(store)}
+      storePassword=#{properties_escape(ENV.fetch("ANDROID_KEYSTORE_PASSWORD"))}
+      keyAlias=#{properties_escape(ENV.fetch("ANDROID_KEY_ALIAS"))}
+      keyPassword=#{properties_escape(ENV.fetch("ANDROID_KEY_PASSWORD"))}
+    PROPS
+  )
+  UI.success("wrote signing properties for the release build")
+end
+
+# Play answers a debug-signed bundle with "APK has been signed in debug
+# mode" after the whole upload, which on a cold runner is about 25 minutes
+# of feedback latency. The debug certificate is identifiable, so check it
+# here and fail in seconds instead.
+def assert_release_signed(aab)
+  certs = `keytool -printcert -jarfile #{Shellwords.escape(aab)} 2>&1`
+  return unless certs.include?("Android Debug")
+
+  UI.user_error!(
+    "#{File.basename(aab)} is signed with the debug key, which Play rejects. " \
+    "keystore.properties was missing when Gradle ran: check ANDROID_KEYSTORE_PATH and that nothing regenerated android/ after it was written.",
+  )
+end
+
+default_platform(:android)
+
+platform :android do
+  desc "Generate the native project and build a signed release AAB"
+  lane :build do |options|
+    version_code = options[:version_code] || derived_version_code(options[:build_offset] || 0)
+
+    UI.message("version #{package_version}, versionCode #{version_code}")
+
+    # Read by app.config.ts. The variant drops the `.dev` identifier
+    # suffix; without it a production upload would carry the dev package.
+    ENV["APP_VARIANT"] = "production"
+    ENV["BUILD_NUMBER"] = version_code.to_s
+
+    # --clean because a tree generated under the other variant keeps its
+    # old applicationId, and that mistake only surfaces as a rejected
+    # upload minutes later.
+    # --no-install because dependencies are already installed by the time
+    # this runs, locally and in CI alike, and letting prebuild run its own
+    # package manager can leave package.json modified mid-build.
+    Dir.chdir(APP_DIR) do
+      sh("bunx", "expo", "prebuild", "--platform", "android", "--clean", "--no-install")
+    end
+
+    write_keystore_properties
+
+    gradle(project_dir: ANDROID_DIR, task: "bundle", build_type: "Release")
+
+    UI.user_error!("gradle reported success but no bundle exists at #{AAB_PATH}") unless File.exist?(AAB_PATH)
+
+    # Deterministic companion to the certificate check below. If signing was
+    # configured but the properties file is gone by the time Gradle finished,
+    # something regenerated android/ mid-build and the bundle is debug
+    # signed. This is the failure that cost a 25 minute round trip to Play.
+    props = File.join(ANDROID_DIR, "keystore.properties")
+    if !ENV["ANDROID_KEYSTORE_PATH"].to_s.empty? && !File.exist?(props)
+      UI.user_error!("signing was configured but #{props} no longer exists, so Gradle fell back to the debug key")
+    end
+
+    assert_release_signed(AAB_PATH)
+    UI.success("built #{AAB_PATH}")
+    AAB_PATH
+  end
+
+  desc "Build and upload to the internal track"
+  lane :internal do |options|
+    deploy(options.merge(track: "internal"))
+  end
+
+  desc "Build and upload to the closed testing track (default: alpha)"
+  lane :closed do |options|
+    deploy(options.merge(track: options[:track] || "alpha"))
+  end
+
+  desc "Build and upload to production"
+  lane :production do |options|
+    deploy(options.merge(track: "production"))
+  end
+
+  desc "Build and dry-run the upload, without publishing anything"
+  lane :validate do |options|
+    deploy(options.merge(track: options[:track] || "internal", validate_only: true))
+  end
+
+  desc "Check the Play service account key is valid before trusting a release to it"
+  lane :check_play_key do
+    validate_play_store_json_key(json_key: ENV.fetch("PLAY_STORE_JSON_KEY"))
+  end
+
+  private_lane :deploy do |options|
+    aab = build(options)
+
+    # Metadata and images are skipped until the store listing is managed
+    # from the repo. Uploading nothing is safer than uploading empty
+    # directories, which `supply` treats as a request to blank the listing.
+    upload_to_play_store(
+      track: options[:track],
+      aab: aab,
+      release_status: options[:release_status] || "completed",
+      # Runs the whole upload path against Play, auth, package match,
+      # versionCode and signing key included, then discards the edit
+      # instead of releasing. The cheapest way to find out that an upload
+      # key does not match before it matters.
+      validate_only: options[:validate_only].to_s == "true",
+      # Without this supply also goes looking for APKs beside the bundle.
+      skip_upload_apk: true,
+      skip_upload_metadata: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true,
+      skip_upload_changelogs: true,
+    )
+  end
+end
