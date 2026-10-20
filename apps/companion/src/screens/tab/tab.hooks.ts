@@ -1,7 +1,5 @@
 import { useStore } from '@nanostores/react'
-import { useRouter } from 'expo-router'
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { $recency } from '@/modules/stores/$recency'
+import { useEffect, useRef, useState } from 'react'
 import { $session } from '@/modules/stores/$session'
 import { flushedWritesFor, sendBumpRecency } from '@/modules/wss/client'
 import {
@@ -10,18 +8,13 @@ import {
   nextNotice,
   renderNotice,
 } from './connection-notice.helpers'
-import { rawTabId, splitTabId } from './tab.helpers'
+import { splitTabId } from './tab.helpers'
 import {
   type ActiveTabInfo,
   activeStateStamp,
   activeTabInfo,
 } from './tab-info.helpers'
 import { doneExpiresAt } from './tab-status.helpers'
-import {
-  advanceSwipe,
-  type SwipeDirection,
-  type SwipeState,
-} from './tab-swipe.helpers'
 
 /**
  * Name and state of the session on screen.
@@ -72,49 +65,6 @@ export function useNoteRecency(composedTabId: string): void {
       tab_id: composedTabId,
     }).catch(() => {})
   }, [composedTabId])
-}
-
-/**
- * Step through session history with a horizontal swipe.
- *
- * Navigation is `setParams`, not `replace`: the route stays the same
- * instance, so the terminal's webview is never torn down and switching
- * costs a stream resubscribe rather than a reload. The URL still changes,
- * so a session reached by swiping is as deep linkable as one reached by
- * tapping.
- */
-export function useSessionSwipe(composedTabId: string) {
-  const router = useRouter()
-  const order = useStore($recency)
-  const runRef = useRef<SwipeState | null>(null)
-
-  const step = useCallback(
-    (direction: SwipeDirection) => {
-      const keys = order.map((entry) => entry.key)
-      const out = advanceSwipe(
-        runRef.current,
-        direction,
-        keys,
-        composedTabId,
-        Date.now(),
-        new Set(keys),
-      )
-      if (!out) return
-      runRef.current = out.state
-      const parts = splitTabId(out.target)
-      if (!parts) return
-      router.setParams({
-        projectId: parts.projectId,
-        tabId: rawTabId(parts.projectId, out.target),
-      })
-    },
-    [order, composedTabId, router],
-  )
-
-  return {
-    swipeBack: useCallback(() => step(1), [step]),
-    swipeForward: useCallback(() => step(-1), [step]),
-  }
 }
 
 /**

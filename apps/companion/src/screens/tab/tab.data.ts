@@ -14,7 +14,6 @@ import {
   useActiveTabInfo,
   useConnectionNotices,
   useNoteRecency,
-  useSessionSwipe,
 } from './tab.hooks'
 
 const SCROLLBACK = 2000
@@ -110,7 +109,6 @@ export function useTabData(projectId: string, tabId: string) {
   useConnectionNotices(tabId, writeToTerminal)
 
   const active = useActiveTabInfo(projectId, tabId)
-  const { swipeBack, swipeForward } = useSessionSwipe(tabId)
   useNoteRecency(tabId)
 
   return {
@@ -125,7 +123,5 @@ export function useTabData(projectId: string, tabId: string) {
     toggleAlt,
     active,
     connected,
-    swipeBack,
-    swipeForward,
   }
 }
