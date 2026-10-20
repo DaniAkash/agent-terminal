@@ -86,8 +86,13 @@ export function buildTerminalHtml(config: TerminalHtmlConfig): string {
       carry = 0;
     }, { passive: true });
     el.addEventListener('touchmove', function (e) {
-      if (lastY === null || e.touches.length !== 1) return;
+      if (e.touches.length !== 1) return;
       var y = e.touches[0].clientY;
+      // A second finger landing fires its own touchstart, which drops the
+      // reference point, and nothing sets it again while a finger stays
+      // down. Re-seed here or a pinch partway through a scroll leaves the
+      // terminal inert until every finger lifts.
+      if (lastY === null) { lastY = y; carry = 0; return; }
       var dy = y - lastY;
       lastY = y;
       var rows = term.rows || 1;

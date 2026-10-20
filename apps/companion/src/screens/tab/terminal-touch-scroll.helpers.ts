@@ -18,6 +18,12 @@ export interface TouchScrollStep {
   carry: number
 }
 
+/** A drag in flight. `lastY` is null while there is no reference point. */
+export interface TouchScrollDrag {
+  lastY: number | null
+  carry: number
+}
+
 /**
  * Accumulate movement in fractional rows rather than truncating per event.
  *
@@ -48,6 +54,29 @@ export function touchScrollStep(
 }
 
 /**
+ * Fold one single-finger move into the drag and report the rows to scroll.
+ *
+ * A reference point can be missing mid-gesture: a second finger landing
+ * fires its own touchstart, which drops it. Re-seeding from the current
+ * position is what keeps the drag usable, since only touchstart and
+ * touchend otherwise set it and neither fires again while a finger stays
+ * down. Without this a pinch partway through a scroll leaves the terminal
+ * inert until every finger lifts.
+ */
+export function touchScrollDrag(
+  drag: TouchScrollDrag,
+  clientY: number,
+  cellHeight: number,
+): { drag: TouchScrollDrag; lines: number } {
+  if (drag.lastY === null) {
+    return { drag: { lastY: clientY, carry: 0 }, lines: 0 }
+  }
+
+  const step = touchScrollStep(clientY - drag.lastY, cellHeight, drag.carry)
+  return { drag: { lastY: clientY, carry: step.carry }, lines: step.lines }
+}
+
+/**
  * Wire a vertical drag on the terminal to its viewport, and return the
  * teardown. `touch-action: none` on the terminal elements is what stops the
  * browser claiming the drag before this sees it.
@@ -56,33 +85,29 @@ export function attachTouchScroll(term: Terminal): () => void {
   const el = term.element
   if (!el) return () => {}
 
-  let lastY: number | null = null
-  let carry = 0
+  let drag: TouchScrollDrag = { lastY: null, carry: 0 }
 
   const onStart = (e: TouchEvent) => {
     const touch = e.touches.length === 1 ? e.touches[0] : undefined
-    if (!touch) {
-      lastY = null
-      return
-    }
-    lastY = touch.clientY
-    carry = 0
+    drag = { lastY: touch ? touch.clientY : null, carry: 0 }
   }
 
   const onMove = (e: TouchEvent) => {
     const touch = e.touches.length === 1 ? e.touches[0] : undefined
-    if (lastY === null || !touch) return
-    const dy = touch.clientY - lastY
-    lastY = touch.clientY
-    const step = touchScrollStep(dy, el.clientHeight / (term.rows || 1), carry)
-    carry = step.carry
-    if (step.lines === 0) return
-    term.scrollLines(step.lines)
+    if (!touch) return
+    const next = touchScrollDrag(
+      drag,
+      touch.clientY,
+      el.clientHeight / (term.rows || 1),
+    )
+    drag = next.drag
+    if (next.lines === 0) return
+    term.scrollLines(next.lines)
     e.preventDefault()
   }
 
   const onEnd = () => {
-    lastY = null
+    drag = { lastY: null, carry: 0 }
   }
 
   el.addEventListener('touchstart', onStart, { passive: true })
