@@ -1,0 +1,75 @@
+<!--
+  Play Store feature graphic, 1024x500 exactly, which is the only size Google
+  accepts for this slot.
+
+  The app mark is not redrawn here. ICON_DATA_URI below is a placeholder that
+  ./build-feature-graphic.sh replaces with the real ../assets/icon.png at render
+  time, so this graphic cannot drift from the icon that actually ships. It is
+  substituted rather than stored inline because librsvg refuses to load files
+  outside the SVG's own directory, and a base64 blob in source is unreviewable.
+
+  The session card on the right is a deliberate copy of the real switcher: an
+  amber dot for a session waiting on you, green for the ones still running. That
+  distinction is the product, so it is the thing the graphic shows.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1024" height="500" viewBox="0 0 1024 500">
+  <title>Agent Terminal: the AI coding agents on your Mac, live on your phone</title>
+
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#101316"/>
+      <stop offset="55%" stop-color="#0A0B0C"/>
+      <stop offset="100%" stop-color="#07080A"/>
+    </linearGradient>
+    <linearGradient id="glow" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#7BC97F" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#7BC97F" stop-opacity="0"/>
+    </linearGradient>
+    <clipPath id="iconClip"><rect x="72" y="149" width="104" height="104" rx="24"/></clipPath>
+  </defs>
+
+  <rect width="1024" height="500" fill="url(#bg)"/>
+  <rect width="430" height="500" fill="url(#glow)"/>
+
+  <image x="72" y="149" width="104" height="104" clip-path="url(#iconClip)"
+         xlink:href="ICON_DATA_URI"/>
+  <rect x="72" y="149" width="104" height="104" rx="24" fill="none" stroke="#23262A" stroke-width="1.5"/>
+
+  <text x="200" y="220" font-family="Helvetica Neue, Helvetica, Arial, sans-serif"
+        font-size="54" font-weight="700" fill="#F2F4F6" letter-spacing="-1.2">Agent Terminal</text>
+
+  <text x="202" y="262" font-family="Helvetica Neue, Helvetica, Arial, sans-serif"
+        font-size="21" fill="#9AA0A6">The AI coding agents on your Mac,</text>
+  <text x="202" y="290" font-family="Helvetica Neue, Helvetica, Arial, sans-serif"
+        font-size="21" fill="#9AA0A6">live on your phone.</text>
+
+  <rect x="202" y="322" width="4" height="30" rx="2" fill="#7BC97F"/>
+  <text x="220" y="344" font-family="Menlo, DejaVu Sans Mono, monospace"
+        font-size="18" fill="#AEB4BA">Claude Code  ·  Codex  ·  opencode</text>
+
+  <rect x="624" y="104" width="328" height="292" rx="22" fill="#141719" stroke="#23262A" stroke-width="1.5"/>
+
+  <text x="652" y="146" font-family="Helvetica Neue, Helvetica, Arial, sans-serif"
+        font-size="13" font-weight="700" fill="#6B7177" letter-spacing="1.6">NEEDS YOU</text>
+  <circle cx="660" cy="178" r="7" fill="#E8A33D"/>
+  <text x="684" y="185" font-family="Helvetica Neue, Helvetica, Arial, sans-serif"
+        font-size="21" font-weight="600" fill="#E8EAED">native-app</text>
+  <text x="924" y="185" text-anchor="end" font-family="Helvetica Neue, Helvetica, Arial, sans-serif"
+        font-size="17" fill="#6B7177">10m</text>
+
+  <line x1="652" y1="212" x2="924" y2="212" stroke="#202327" stroke-width="1"/>
+
+  <text x="652" y="248" font-family="Helvetica Neue, Helvetica, Arial, sans-serif"
+        font-size="13" font-weight="700" fill="#6B7177" letter-spacing="1.6">RUNNING</text>
+  <circle cx="660" cy="280" r="7" fill="#7BC97F"/>
+  <text x="684" y="287" font-family="Helvetica Neue, Helvetica, Arial, sans-serif"
+        font-size="21" font-weight="600" fill="#E8EAED">ios-build</text>
+  <text x="924" y="287" text-anchor="end" font-family="Helvetica Neue, Helvetica, Arial, sans-serif"
+        font-size="17" fill="#6B7177">1m</text>
+
+  <circle cx="660" cy="336" r="7" fill="#7BC97F"/>
+  <text x="684" y="343" font-family="Helvetica Neue, Helvetica, Arial, sans-serif"
+        font-size="21" font-weight="600" fill="#E8EAED">android-build</text>
+  <text x="924" y="343" text-anchor="end" font-family="Helvetica Neue, Helvetica, Arial, sans-serif"
+        font-size="17" fill="#6B7177">8m</text>
+</svg>
