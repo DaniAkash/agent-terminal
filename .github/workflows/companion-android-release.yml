@@ -1,25 +1,47 @@
-# Android release pipeline for the companion app.
+# Tag-triggered signed Android release for the companion app.
 #
-# Two ways in:
-#   - push a `companion-v*` tag, which uploads to the internal track
-#   - run it by hand from the Actions tab, choosing the track
+# Push a `companion-v*` tag (e.g. `companion-v1.0.1`) → this workflow builds
+# a signed .aab, uploads it to the Play **internal** track, creates a DRAFT
+# GitHub Release for that tag, and attaches the bundle.
 #
-# Nothing here auto-promotes to production. The `production` track is
-# selectable, but only by a human choosing it in the dispatch form.
+# The GitHub Release stays in DRAFT state, and Play only ever receives the
+# internal track. Both final steps are human: publish the draft from the
+# Releases page, promote the track from the Play Console. Nothing here
+# reaches the public on its own, which is the same contract the desktop
+# release workflow keeps.
 #
-# Required secrets (all account-bound, none ever inlined here):
-#   ANDROID_KEYSTORE_BASE64     base64 of the upload keystore
-#   ANDROID_KEYSTORE_PASSWORD   unlocks the keystore file
-#   ANDROID_KEY_ALIAS           the key entry inside it
-#   ANDROID_KEY_PASSWORD        unlocks that key entry
-#   PLAY_STORE_JSON_KEY         Play service account JSON, whole file
+# How to cut a release:
+#   1. Bump version in apps/companion/package.json
+#   2. Commit ("chore(release): companion-vX.Y.Z") — the `chore(release)`
+#      scope is filtered out by cliff.toml so the version-bump commit does
+#      not show up in the next release's changelog.
+#   3. git tag companion-vX.Y.Z && git push origin main --tags
+#   4. Wait ~25 min, then publish the draft from the Releases page and
+#      promote the track in the Play Console
+#
+# Required repo secrets (settings → Secrets and variables → Actions):
+#   ANDROID_KEYSTORE_BASE64     — base64 of the upload keystore
+#   ANDROID_KEYSTORE_PASSWORD   — unlocks the keystore file
+#   ANDROID_KEY_ALIAS           — the key entry inside it
+#   ANDROID_KEY_PASSWORD        — unlocks that key entry
+#   PLAY_STORE_JSON_KEY         — Play service account JSON, whole file
+#
+# All values stored in repo Settings → Secrets and variables → Actions.
+# Never inline any of them here, even as examples.
 
-name: Companion Android Release
+name: Companion Release (signed Android build)
 
 on:
   push:
     tags:
+      # Scoped to `companion-v…` so the desktop's own `v…` tags, which the
+      # other release workflow owns, never start an Android build.
       - 'companion-v[0-9]*'
+  # Kept alongside the tag trigger rather than dropped to match the desktop,
+  # because it is the only way to reach the dry run: `validate_only` checks
+  # the whole Play upload path, signing key included, and commits nothing.
+  # That is worth keeping for diagnosing a rejection without burning a
+  # versionCode, which Play never lets you reuse.
   workflow_dispatch:
     inputs:
       track:
@@ -35,17 +57,77 @@ on:
         description: 'Added to the derived versionCode, for a respin of the same version'
         default: '0'
 
+# `contents: write` is required for softprops/action-gh-release to create
+# the draft release. Everything else stays at default-deny.
 permissions:
-  contents: read
+  contents: write
 
 # Play rejects a versionCode it has already seen, so two concurrent runs of
 # the same version would make the second one fail at upload. Queue instead.
 concurrency:
-  group: companion-android-release
+  group: companion-release
   cancel-in-progress: false
 
 jobs:
-  release:
+  # Job 1: work out the changelog once, on a free Linux runner, and pass it
+  # to the release step as a job output. Doing it inside the build job would
+  # mix a cheap git operation into a 25 minute Gradle run for no reason.
+  changelog:
+    name: Compute changelog
+    runs-on: ubuntu-latest
+    outputs:
+      first_release: ${{ steps.previous_tag.outputs.first_release }}
+      # Falls back to the literal string when the step was skipped: the very
+      # first companion tag has no ancestor to diff against, and a manual
+      # run has no tag at all.
+      content: ${{ steps.changelog.outputs.content || 'first release' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Full history is required so git-cliff (and `git describe`) can
+          # walk back to the previous tag and compute the changelog range.
+          fetch-depth: 0
+
+      - name: Determine previous tag (for changelog range)
+        id: previous_tag
+        run: |
+          # `--match 'companion-v[0-9]*'` keeps the desktop's `v…` tags out
+          # of the range. Without it the previous tag would usually be a
+          # desktop release and the changelog would cover the wrong window.
+          set +e
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 --match 'companion-v[0-9]*' "${GITHUB_REF_NAME}^" 2>/dev/null)
+          set -e
+          if [ -z "$PREVIOUS_TAG" ]; then
+            echo "first_release=true" >> "$GITHUB_OUTPUT"
+            echo "No previous companion tag found — treating as the first release."
+          else
+            echo "first_release=false" >> "$GITHUB_OUTPUT"
+            echo "previous_tag=$PREVIOUS_TAG" >> "$GITHUB_OUTPUT"
+            echo "Previous tag: $PREVIOUS_TAG"
+          fi
+
+      - name: Generate changelog (subsequent releases only)
+        if: steps.previous_tag.outputs.first_release == 'false'
+        id: changelog
+        # Same cliff.toml the desktop release uses, so both changelogs group
+        # commits the same way. `--include-path` is the one difference: it
+        # restricts the range to commits that touched the companion, so a
+        # desktop fix does not appear in mobile release notes.
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          args: >-
+            --strip header
+            --include-path "apps/companion/**"
+            ${{ steps.previous_tag.outputs.previous_tag }}..${{ github.ref_name }}
+
+  # Job 2: build and sign the bundle, then hand it to Play's internal track.
+  # One runner, no matrix: an .aab carries every ABI, so unlike the desktop
+  # there is nothing to build in parallel.
+  build:
+    name: Build signed bundle
+    needs: [changelog]
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -130,9 +212,9 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          # A tag or a branch push uploads to the internal track. A manual
-          # run picks its own track, and can tick validate_only for a dry
-          # run that checks the whole upload path and commits nothing.
+          # A tag always goes to internal. A manual run picks its own track,
+          # and can tick validate_only for a dry run that checks the whole
+          # upload path and commits nothing.
           TRACK: ${{ github.event_name == 'workflow_dispatch' && inputs.track || 'internal' }}
           VALIDATE_ONLY: ${{ inputs.validate_only || false }}
           BUILD_OFFSET: ${{ inputs.build_offset || '0' }}
@@ -147,8 +229,10 @@ jobs:
           fi
 
       - name: Upload the bundle as a workflow artifact
-        # Keeps the exact uploaded artifact inspectable after the fact,
-        # which matters when a Play rejection has to be explained.
+        # Carries the bundle to the release job, which runs on a different
+        # runner and cannot reach this filesystem. Also keeps the exact
+        # artifact inspectable afterwards, which matters when a Play
+        # rejection has to be explained.
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -165,3 +249,31 @@ jobs:
           rm -f "$RUNNER_TEMP/upload-keystore.jks" \
                 "$RUNNER_TEMP/play-store-key.json" \
                 apps/companion/android/keystore.properties
+
+  # Job 3: create the draft release with the bundle attached. Separate from
+  # the build so it runs on a free Linux runner that only downloads an
+  # artifact and POSTs to the API, and so a manual dispatch cannot create a
+  # GitHub Release for a tag that does not exist.
+  release:
+    name: Create draft release
+    needs: [changelog, build]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download the bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: companion-aab
+          path: artifacts
+
+      - name: Create draft release with the bundle
+        uses: softprops/action-gh-release@v2
+        with:
+          # DRAFT — never auto-publish. The release is reviewed, edited if
+          # needed, and published by hand, exactly as the desktop does.
+          draft: true
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          body: ${{ needs.changelog.outputs.content }}
+          files: artifacts/*.aab
+          fail_on_unmatched_files: true
