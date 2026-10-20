@@ -8,7 +8,11 @@ import { ExtraKeysBar } from './ExtraKeysBar'
 import TerminalDom from './TerminalDom'
 import { useTabData } from './tab.data'
 
-const DOM_PROPS = { scrollEnabled: false, hideKeyboardAccessoryView: true }
+// The host scroller has to stay on. xterm keeps its scrollback in its own
+// `.xterm-viewport`, and that element only scrolls under a finger when the
+// surface hosting it is scrollable: with this off, 2000 lines of history
+// exist and none of them can be reached on a touch device.
+const DOM_PROPS = { scrollEnabled: true, hideKeyboardAccessoryView: true }
 
 interface TabScreenProps {
   projectId: string
