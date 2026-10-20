@@ -6,7 +6,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { ActiveTabBar } from './ActiveTabBar'
 import { ExtraKeysBar } from './ExtraKeysBar'
 import TerminalDom from './TerminalDom'
-import { TerminalGestureLayer } from './TerminalGestureLayer'
 import { useTabData } from './tab.data'
 
 const DOM_PROPS = { scrollEnabled: false, hideKeyboardAccessoryView: true }
@@ -31,8 +30,6 @@ export function TabScreen({ projectId, tabId }: TabScreenProps) {
     toggleAlt,
     active,
     connected,
-    swipeBack,
-    swipeForward,
   } = useTabData(projectId, tabId)
   const insets = useSafeAreaInsets()
   // Rests at the bottom inset rather than zero so the last key row clears
@@ -106,20 +103,14 @@ export function TabScreen({ projectId, tabId }: TabScreenProps) {
             dom={DOM_PROPS}
           />
         </View>
-        <TerminalGestureLayer
-          onSwipeUp={openSwitcher}
-          onSwipeBack={swipeBack}
-          onSwipeForward={swipeForward}
-        >
-          <ExtraKeysBar
-            ctrlArmed={ctrlArmed}
-            altArmed={altArmed}
-            onKey={onKey}
-            onToggleCtrl={toggleCtrl}
-            onToggleAlt={toggleAlt}
-            onMore={openSwitcher}
-          />
-        </TerminalGestureLayer>
+        <ExtraKeysBar
+          ctrlArmed={ctrlArmed}
+          altArmed={altArmed}
+          onKey={onKey}
+          onToggleCtrl={toggleCtrl}
+          onToggleAlt={toggleAlt}
+          onMore={openSwitcher}
+        />
         <Animated.View style={{ height: spacerHeight }} />
       </View>
     </GestureHandlerRootView>
