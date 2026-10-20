@@ -73,6 +73,12 @@ modules/*/android/build/
 modules/*/android/.gradle/
 modules/*/android/local.properties
 
+# Bundler vendors gems here whenever CI caches them. They are third-party
+# Ruby packages that happen to ship JavaScript, and both biome and fallow
+# read this .gitignore to decide what to scan: without this they lint and
+# dead-code-analyse rdoc's syntax highlighter as if we wrote it.
+vendor/
+
 # Fastlane. `report.xml` and `Preview.html` are regenerated per run, and
 # the metadata directories hold screenshots that belong to the store
 # listing rather than to source.
