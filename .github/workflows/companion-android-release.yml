@@ -220,12 +220,20 @@ jobs:
           BUILD_OFFSET: ${{ inputs.build_offset || '0' }}
         run: |
           set -euo pipefail
+          # `alpha` is Play's name for the closed testing track, and the
+          # lane is named after the concept rather than the track, so the
+          # two have to be mapped. Without this the option resolves to a
+          # lane that does not exist and fails before uploading.
+          LANE="$TRACK"
+          if [ "$LANE" = "alpha" ]; then LANE=closed; fi
+
           if [ "$TRACK" = "none" ]; then
             bundle exec fastlane android build build_offset:"$BUILD_OFFSET"
           elif [ "$VALIDATE_ONLY" = "true" ]; then
+            # validate takes the Play track by name, not the lane.
             bundle exec fastlane android validate track:"$TRACK" build_offset:"$BUILD_OFFSET"
           else
-            bundle exec fastlane android "$TRACK" build_offset:"$BUILD_OFFSET"
+            bundle exec fastlane android "$LANE" build_offset:"$BUILD_OFFSET"
           fi
 
       - name: Upload the bundle as a workflow artifact

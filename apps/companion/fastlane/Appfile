@@ -1,5 +1,10 @@
-# Every account-bound value comes from the environment. This repo is
-# public, so a package name is the most that belongs in the file itself,
-# and even that is overridable for a dev-variant upload.
+# The Play service account key is account-bound and comes from the
+# environment. The package name is public, it is on the store listing, so
+# it is a literal.
+#
+# There is deliberately no ANDROID_PACKAGE override: the build lane always
+# sets APP_VARIANT=production, so pointing supply at a different package
+# than the one the bundle declares could only ever produce a mismatch Play
+# rejects. One source of truth instead of two that can disagree.
 json_key_file(ENV["PLAY_STORE_JSON_KEY"])
-package_name(ENV["ANDROID_PACKAGE"] || "com.daniakash.agent_terminal")
+package_name("com.daniakash.agent_terminal")

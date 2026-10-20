@@ -32,6 +32,30 @@ end
 # properties have to be written after it rather than before. Writing them
 # here instead of in the workflow also keeps the lane self-contained: the
 # same command works locally with the same four variables exported.
+# Escape a value for a Java `.properties` file.
+#
+# Properties.load treats a backslash as an escape, so a secret containing
+# one decodes differently from what was stored and signing fails with
+# credentials that look correct everywhere you inspect them. The Gradle
+# side loads through an InputStream, which Java reads as ISO-8859-1, so
+# anything above that range has to leave as \uXXXX as well.
+def properties_escape(value)
+  escaped = +""
+  value.to_s.each_char do |char|
+    case char
+    when "\\" then escaped << "\\\\"
+    when "\n" then escaped << "\\n"
+    when "\r" then escaped << "\\r"
+    when "\t" then escaped << "\\t"
+    else
+      code = char.ord
+      escaped << (code > 0xFF ? format("\\u%04X", code) : char)
+    end
+  end
+  # A leading space is otherwise eaten as padding after the separator.
+  escaped.start_with?(" ") ? "\\#{escaped}" : escaped
+end
+
 def write_keystore_properties
   store = ENV["ANDROID_KEYSTORE_PATH"].to_s
   if store.empty?
@@ -43,10 +67,10 @@ def write_keystore_properties
   File.write(
     File.join(ANDROID_DIR, "keystore.properties"),
     <<~PROPS,
-      storeFile=#{store}
-      storePassword=#{ENV.fetch("ANDROID_KEYSTORE_PASSWORD")}
-      keyAlias=#{ENV.fetch("ANDROID_KEY_ALIAS")}
-      keyPassword=#{ENV.fetch("ANDROID_KEY_PASSWORD")}
+      storeFile=#{properties_escape(store)}
+      storePassword=#{properties_escape(ENV.fetch("ANDROID_KEYSTORE_PASSWORD"))}
+      keyAlias=#{properties_escape(ENV.fetch("ANDROID_KEY_ALIAS"))}
+      keyPassword=#{properties_escape(ENV.fetch("ANDROID_KEY_PASSWORD"))}
     PROPS
   )
   UI.success("wrote signing properties for the release build")
