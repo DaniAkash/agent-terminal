@@ -157,7 +157,7 @@ function UnreachableHome({
 type PairedHomeProps = ReturnType<typeof useHomeData>
 
 function PairedHome({
-  session,
+  hint,
   projectCount,
   tabCount,
   disconnect,
@@ -168,8 +168,13 @@ function PairedHome({
         <Text className="text-muted-foreground text-xs uppercase tracking-wide">
           Connected to
         </Text>
+        {/* The desktop's name, not this phone's. `session.deviceName` is
+            the name the phone sent at pairing so the desktop could mint a
+            token, which makes it the wrong end of the connection to show
+            here. The connecting and unreachable states above already use
+            `hint`; this is the one that did not. */}
         <Text className="font-semibold text-2xl text-foreground">
-          {session.deviceName}
+          {hint ?? 'your desktop'}
         </Text>
       </View>
       <View className="flex-row gap-3">
