@@ -1,4 +1,5 @@
 use crate::mod_engine::ModEngine;
+use crate::net;
 use crate::pairing::{PairedDevice, PairedTokens, PairingWindow};
 use crate::projects_cache::{ProjectsCache, StoredProject};
 use crate::protocol::ServerFrame;
@@ -310,14 +311,63 @@ pub async fn list_projects() -> Result<serde_json::Value, String> {
     serde_json::from_str(&raw).map_err(|e| e.to_string())
 }
 
-/// Snapshot of the network endpoints the desktop is currently reachable
-/// at. Populated once at startup and read by `get_pairing_qr_payload`.
-/// `port` is 0 when the WSS bind failed on every port in the trio.
+/// The network endpoints the desktop is reachable at.
+///
+/// `port` is genuinely fixed: it is whichever of the port trio the server
+/// bound to, and it cannot change while the process lives. `port` is 0
+/// when the bind failed on every port in the trio.
+///
+/// `hostname` and `ips` are a startup snapshot and are **not** read
+/// directly. Use [`BoundNet::current`]: a machine that changes network
+/// keeps these stale, and a QR built from them advertises an address
+/// nothing answers on.
 #[derive(Debug, Clone)]
 pub struct BoundNet {
     pub hostname: Option<String>,
     pub ips: Vec<String>,
     pub port: u16,
+}
+
+impl BoundNet {
+    /// The hostname and LAN addresses as they are now, not as they were
+    /// when the server bound.
+    ///
+    /// A DHCP renewal onto a different subnet, or switching network, moves
+    /// the machine without restarting the app. The startup snapshot then
+    /// describes somewhere the desktop no longer is, so every pairing
+    /// attempt fails on every endpoint while the desktop sits there
+    /// listening perfectly well. Restarting the app "fixed" it, which is
+    /// the tell that the value was cached rather than wrong.
+    ///
+    /// Enumerating interfaces is cheap and this runs once per pairing QR,
+    /// so there is no reason to cache it. Falls back to the startup values
+    /// if enumeration comes back empty, which beats handing out nothing.
+    pub fn current(&self) -> (Option<String>, Vec<String>) {
+        self.resolve(
+            net::local_hostname(),
+            net::lan_ipv4s().iter().map(ToString::to_string).collect(),
+        )
+    }
+
+    /// Choose between what the machine reports now and the startup
+    /// snapshot, given values already enumerated.
+    ///
+    /// Split out from [`BoundNet::current`] because the choice is the part
+    /// worth testing and interface enumeration is not controllable from a
+    /// test: whether a host has an RFC 1918 address decides which branch
+    /// runs, so a test calling `current` asserts whatever the machine it
+    /// runs on happens to have.
+    fn resolve(
+        &self,
+        hostname: Option<String>,
+        live_ips: Vec<String>,
+    ) -> (Option<String>, Vec<String>) {
+        let hostname = hostname.or_else(|| self.hostname.clone());
+        if live_ips.is_empty() {
+            return (hostname, self.ips.clone());
+        }
+        (hostname, live_ips)
+    }
 }
 
 /// Payload the desktop UI encodes into the pairing QR. Kept in sync
@@ -369,11 +419,12 @@ pub async fn open_pairing_window(
         .clone()
         .ok_or_else(|| "TLS fingerprint unavailable; cannot pair".to_string())?;
     let pairing_token = window.open();
-    let device_hint = derive_device_hint(&net.hostname);
+    let (hostname, ips) = net.current();
+    let device_hint = derive_device_hint(&hostname);
     Ok(PairingQrPayload {
         v: 1,
-        host: net.hostname.clone(),
-        ips: net.ips.clone(),
+        host: hostname,
+        ips,
         port: net.port,
         fingerprint: fp,
         pairing_token,
@@ -415,14 +466,15 @@ pub async fn get_pairing_qr_payload(
     let Some(fp) = fingerprint.0.clone() else {
         return Ok(None);
     };
+    let (hostname, ips) = net.current();
     Ok(Some(PairingQrPayload {
         v: 1,
-        host: net.hostname.clone(),
-        ips: net.ips.clone(),
+        device_hint: derive_device_hint(&hostname),
+        host: hostname,
+        ips,
         port: net.port,
         fingerprint: fp,
         pairing_token: token,
-        device_hint: derive_device_hint(&net.hostname),
     }))
 }
 
@@ -492,6 +544,44 @@ fn projects_config_path() -> Result<std::path::PathBuf, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn snapshot() -> BoundNet {
+        BoundNet {
+            hostname: Some("old-host.local".into()),
+            ips: vec!["10.9.9.9".into()],
+            port: 47823,
+        }
+    }
+
+    #[test]
+    fn live_addresses_displace_the_startup_snapshot() {
+        // The snapshot carries an address the machine no longer has, which
+        // is the state after a DHCP renewal onto another subnet.
+        let (hostname, ips) = snapshot().resolve(
+            Some("new-host.local".into()),
+            vec!["192.168.1.42".into()],
+        );
+        assert_eq!(hostname.as_deref(), Some("new-host.local"));
+        assert_eq!(ips, vec!["192.168.1.42".to_string()]);
+    }
+
+    #[test]
+    fn an_empty_live_list_falls_back_to_the_snapshot() {
+        // A host with no private IPv4 at all still has to hand the QR
+        // something, so the startup values are the floor rather than an
+        // empty list.
+        let (_, ips) = snapshot().resolve(Some("new-host.local".into()), Vec::new());
+        assert_eq!(ips, vec!["10.9.9.9".to_string()]);
+    }
+
+    #[test]
+    fn an_unresolvable_hostname_falls_back_without_dragging_the_ips_with_it() {
+        // The two fall back independently: losing the name is not a reason
+        // to also discard addresses the machine currently answers on.
+        let (hostname, ips) = snapshot().resolve(None, vec!["192.168.1.42".into()]);
+        assert_eq!(hostname.as_deref(), Some("old-host.local"));
+        assert_eq!(ips, vec!["192.168.1.42".to_string()]);
+    }
 
     #[tokio::test]
     async fn atomic_write_leaves_exactly_the_bytes_given() {
