@@ -135,7 +135,7 @@ export default function TerminalDom({
         console.error('[TerminalDom.android] webview error', e.nativeEvent)
       }
       onLoadEnd={() => console.log('[TerminalDom.android] webview loaded')}
-      scrollEnabled={dom?.scrollEnabled ?? false}
+      scrollEnabled={dom?.scrollEnabled ?? true}
       keyboardDisplayRequiresUserAction={false}
       androidLayerType="hardware"
     />

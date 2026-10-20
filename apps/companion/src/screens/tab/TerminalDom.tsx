@@ -7,6 +7,7 @@ import '@xterm/xterm/css/xterm.css'
 import type { DOMImperativeFactory, DOMProps } from 'expo/dom'
 import { useDOMImperativeHandle } from 'expo/dom'
 import { type Ref, useEffect, useRef } from 'react'
+import { attachTouchScroll } from './terminal-touch-scroll.helpers'
 
 type Args = Parameters<DOMImperativeFactory[string]>
 
@@ -23,6 +24,19 @@ interface TerminalDomProps {
   ref: Ref<TerminalHandle>
   dom?: DOMProps
 }
+
+// xterm scrolls its viewport on wheel events and scrollbar drags, neither
+// of which a finger produces. It ships a Gesture module that would cover
+// this, but nothing in the library ever registers a target for it, so no
+// gesture events are emitted and the scrollback is unreachable by touch.
+// `touch-action: none` keeps the browser from claiming the drag so the
+// listener below is the only thing acting on it.
+const VIEWPORT_TOUCH_CSS = `
+  .xterm-viewport,
+  .xterm-screen {
+    touch-action: none;
+  }
+`
 
 export default function TerminalDom({
   onData,
@@ -102,6 +116,8 @@ export default function TerminalDom({
       void onResizeRef.current(cols, rows)
     })
 
+    const detachTouchScroll = attachTouchScroll(term)
+
     fit.fit()
 
     const observer = new ResizeObserver(() => fit.fit())
@@ -110,6 +126,7 @@ export default function TerminalDom({
     void onReadyRef.current()
 
     return () => {
+      detachTouchScroll()
       observer.disconnect()
       dataDisposable.dispose()
       resizeDisposable.dispose()
@@ -120,13 +137,20 @@ export default function TerminalDom({
   }, [])
 
   return (
-    <div
-      ref={containerRef}
-      style={{
-        width: '100vw',
-        height: '100vh',
-        background: '#0e0f10',
-      }}
-    />
+    <>
+      {/* Mirrors the Android HTML's rule. touch-action is the part that
+          matters: without it a vertical drag is claimed by xterm's pointer
+          handlers and becomes a text selection, so the scrollback stays out
+          of reach no matter how the host WebView is configured. */}
+      <style>{VIEWPORT_TOUCH_CSS}</style>
+      <div
+        ref={containerRef}
+        style={{
+          width: '100vw',
+          height: '100vh',
+          background: '#0e0f10',
+        }}
+      />
+    </>
   )
 }
