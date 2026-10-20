@@ -1,6 +1,7 @@
 import { useStore } from '@nanostores/react'
 import { type Href, useNavigation, useRouter } from 'expo-router'
 import { useCallback, useState } from 'react'
+import { $activeDevice } from '@/modules/stores/$devices'
 import { $session } from '@/modules/stores/$session'
 import { tabHref } from '@/screens/tab/tab.helpers'
 import { type SwitcherRow, switcherOrder } from './switcher.helpers'
@@ -55,6 +56,7 @@ function swapSheet(
  */
 export function useSwitcherData() {
   const session = useStore($session)
+  const device = useStore($activeDevice)
   const router = useRouter()
   const navigation = useNavigation<TransitionAware>()
   const [now] = useState(() => Date.now())
@@ -73,7 +75,10 @@ export function useSwitcherData() {
   return {
     rows,
     now,
-    deviceName: session.deviceName,
+    // The paired desktop's name. `session.deviceName` is this phone's own
+    // name echoed back from pairing, which is not what "connected to"
+    // means on a control that switches between desktops.
+    deviceName: device.record?.deviceHint ?? null,
     open,
     // Sibling sheets, not pushes: Android does not allow a nested stack
     // navigator inside a form sheet. Dismissed first rather than replaced,
