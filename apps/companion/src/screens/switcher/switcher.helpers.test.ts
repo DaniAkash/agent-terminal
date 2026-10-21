@@ -1,9 +1,13 @@
 import { describe, expect, test } from 'bun:test'
+import type { DeviceSessionsMap } from '@/modules/stores/$deviceSessions.helpers'
 import type { ProjectSummary } from '@/modules/wss/protocol.gen'
 import {
+  flattenGroups,
   headingAt,
   relativeAge,
   sectionHeading,
+  switcherGroups,
+  switcherListItemKey,
   switcherOrder,
 } from './switcher.helpers'
 
@@ -159,5 +163,114 @@ describe('headingAt', () => {
   test('is null past the end rather than throwing', () => {
     expect(headingAt(rows, rows.length)).toBeNull()
     expect(headingAt([], 0)).toBeNull()
+  })
+})
+
+const DEVICES = [
+  { deviceId: 'd1', deviceHint: 'RMX3750' },
+  { deviceId: 'd2', deviceHint: 'Himanshus-MacBook-Pro-3' },
+]
+
+describe('switcherGroups', () => {
+  test('the active device uses the live tree, not the cache', () => {
+    const cache: DeviceSessionsMap = {
+      d1: { projects: [], syncedAt: NOW - 1000 },
+    }
+    const groups = switcherGroups(DEVICES, 'd1', true, tree(), cache, NOW)
+    const active = groups.find((g) => g.deviceId === 'd1')
+    expect(active?.rows.map((r) => r.key)).toEqual(
+      switcherOrder(tree(), NOW).map((r) => r.key),
+    )
+    expect(active?.connected).toBe(true)
+    expect(active?.syncedAt).toBe(NOW)
+  })
+
+  test('a paired, non-active device falls back to its cached tree', () => {
+    const cache: DeviceSessionsMap = {
+      d2: { projects: tree(), syncedAt: NOW - 5000 },
+    }
+    const groups = switcherGroups(DEVICES, 'd1', true, [], cache, NOW)
+    const other = groups.find((g) => g.deviceId === 'd2')
+    expect(other?.rows.length).toBeGreaterThan(0)
+    expect(other?.connected).toBe(false)
+    expect(other?.syncedAt).toBe(NOW - 5000)
+  })
+
+  test('a paired device with nothing cached yet is empty, not missing', () => {
+    const groups = switcherGroups(DEVICES, 'd1', true, [], {}, NOW)
+    const other = groups.find((g) => g.deviceId === 'd2')
+    expect(other?.rows).toEqual([])
+    expect(other?.syncedAt).toBeNull()
+  })
+
+  test('the active device sorts first regardless of input order', () => {
+    const groups = switcherGroups(DEVICES, 'd2', true, [], {}, NOW)
+    expect(groups[0]?.deviceId).toBe('d2')
+    expect(groups[1]?.deviceId).toBe('d1')
+  })
+
+  test('no active device at all: nothing is marked connected', () => {
+    const groups = switcherGroups(DEVICES, null, true, tree(), {}, NOW)
+    expect(groups.every((g) => g.connected === false)).toBe(true)
+  })
+})
+
+describe('flattenGroups + switcherListItemKey', () => {
+  function groupsOf(rowsByDevice: Record<string, ProjectSummary[]>) {
+    return DEVICES.map((d) => ({
+      deviceId: d.deviceId,
+      deviceName: d.deviceHint,
+      connected: d.deviceId === 'd1',
+      syncedAt: NOW,
+      rows: switcherOrder(rowsByDevice[d.deviceId] ?? [], NOW),
+    }))
+  }
+
+  test('every group gets a header, in order, even when empty', () => {
+    const items = flattenGroups(groupsOf({}), new Set())
+    const headers = items.filter((i) => i.type === 'device')
+    expect(
+      headers.map((i) => (i.type === 'device' ? i.group.deviceId : null)),
+    ).toEqual(['d1', 'd2'])
+  })
+
+  test('an empty group renders a placeholder row instead of nothing', () => {
+    const items = flattenGroups(groupsOf({}), new Set())
+    expect(items.filter((i) => i.type === 'empty')).toHaveLength(2)
+  })
+
+  test('a collapsed device contributes only its header', () => {
+    const items = flattenGroups(groupsOf({ d1: tree() }), new Set(['d1']))
+    const forD1 = items.filter((i) =>
+      i.type === 'device' ? i.group.deviceId === 'd1' : i.deviceId === 'd1',
+    )
+    expect(forD1).toHaveLength(1)
+    expect(forD1[0]?.type).toBe('device')
+  })
+
+  test('section headings still appear once per run inside a device group', () => {
+    const items = flattenGroups(groupsOf({ d1: tree() }), new Set())
+    const headings = items.filter((i) => i.type === 'heading')
+    expect(
+      headings.map((h) => (h.type === 'heading' ? h.section : null)),
+    ).toEqual(['attention', 'recent', 'idle'])
+  })
+
+  test('every item produces a unique, stable key, even across devices with identical ids', () => {
+    // Two different desktops' project/tab ids are not coordinated with
+    // each other, so the same tree on both is the realistic worst case
+    // for key collisions, not a contrived one.
+    const items = flattenGroups(groupsOf({ d1: tree(), d2: tree() }), new Set())
+    const keys = items.map(switcherListItemKey)
+    expect(new Set(keys).size).toBe(keys.length)
+  })
+
+  test('a row key is scoped to its device, not just its tab id', () => {
+    const items = flattenGroups(groupsOf({ d1: tree(), d2: tree() }), new Set())
+    const rowKeys = items
+      .filter((i) => i.type === 'row')
+      .map(switcherListItemKey)
+    expect(rowKeys).toContain('row:d1:p2:codex')
+    expect(rowKeys).toContain('row:d2:p2:codex')
   })
 })

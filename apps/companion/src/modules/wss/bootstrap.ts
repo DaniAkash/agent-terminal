@@ -1,4 +1,9 @@
 import {
+  initDeviceSessionsCache,
+  loadDeviceSessionsFromStorage,
+  resetDeviceSessionsCache,
+} from '@/modules/stores/$deviceSessions'
+import {
   $activeDevice,
   clearDevice,
   loadDevicesFromSecureStore,
@@ -117,6 +122,12 @@ export async function initWssBootstrap(): Promise<void> {
   // a failure here only costs the shortcut.
   await loadLastSessions()
 
+  // Subscribes to $session so every desktop's tree gets cached the
+  // moment it is told, so a desktop that is not currently driving the
+  // socket still has something cached to show in the Sessions list.
+  initDeviceSessionsCache()
+  await loadDeviceSessionsFromStorage()
+
   // Cold-start read. Fires the device subscriber above as a side
   // effect of the `$devices.set(...)` inside; if the phone was
   // previously paired, that immediately kicks the resolver ladder.
@@ -132,5 +143,6 @@ export function resetWssBootstrap(): void {
   unsubscribeSession = null
   drivenDeviceId = null
   resetLifecycleWiring()
+  resetDeviceSessionsCache()
   initialized = false
 }

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { applyAlt, applyCtrl, SEQ } from './extra-keys.helpers'
+import { applyAlt, applyCtrl, COMBOS, SEQ } from './extra-keys.helpers'
 
 describe('SEQ', () => {
   test('arrow keys are the standard CSI sequences', () => {
@@ -61,5 +61,30 @@ describe('applyAlt', () => {
 
   test('works on multi-char input too (Alt+arrow etc.)', () => {
     expect(applyAlt(SEQ.arrowRight)).toBe('\x1b\x1b[C')
+  })
+})
+
+describe('COMBOS', () => {
+  test('each quick-combo matches applyCtrl on its own letter', () => {
+    expect(COMBOS.ctrlC).toBe(applyCtrl('c'))
+    expect(COMBOS.ctrlD).toBe(applyCtrl('d'))
+    expect(COMBOS.ctrlZ).toBe(applyCtrl('z'))
+    expect(COMBOS.ctrlL).toBe(applyCtrl('l'))
+  })
+
+  test('are the exact control bytes a terminal expects', () => {
+    expect(COMBOS.ctrlC).toBe('\x03')
+    expect(COMBOS.ctrlD).toBe('\x04')
+    expect(COMBOS.ctrlZ).toBe('\x1a')
+    expect(COMBOS.ctrlL).toBe('\x0c')
+  })
+
+  test('are single bytes, so an armed Ctrl/Alt on top passes them through', () => {
+    // applyCtrl is a no-op on anything that is not a single a-z/A-Z char,
+    // and these are already-collapsed control bytes — so tapping a combo
+    // while Ctrl happens to be armed cannot double-encode it.
+    for (const seq of Object.values(COMBOS)) {
+      expect(applyCtrl(seq)).toBe(seq)
+    }
   })
 })

@@ -32,9 +32,16 @@ export function useTabData(projectId: string, tabId: string) {
   const [ctrlArmed, setCtrlArmed] = useState(false)
   const [altArmed, setAltArmed] = useState(false)
 
-  // Single funnel for input coming from either xterm.js's onData path
-  // (soft keyboard capture) or the ExtraKeysBar. Applies any armed
-  // modifier, sends the byte sequence over the WSS, then disarms.
+  // Single funnel for input coming from xterm.js's onData path (soft
+  // keyboard capture), the ExtraKeysBar's nav keys, or its quick-combo
+  // buttons. Optionally applies any armed modifier, sends the byte
+  // sequence over the WSS, then disarms either way. A quick-combo's byte
+  // sequence is already exactly what was asked for — passing
+  // `applyModifiers: false` skips re-applying ctrl/alt (which would let a
+  // stray armed Alt silently turn a tapped "Ctrl+C" into Alt+Ctrl+C)
+  // while still disarming, so an armed-but-unused modifier never leaks
+  // into the next keystroke.
+  //
   // Rewritten on every commit to close over the latest state; consumers
   // reach it through the ref so their callback identity stays stable.
   //
@@ -43,13 +50,17 @@ export function useTabData(projectId: string, tabId: string) {
   // onKey which fire from user events after commit, so the one-render-
   // cycle latency between a state change (arm/disarm) and the next
   // input read is invisible.
-  const sendInputRef = useRef<(seq: string) => void>(() => {})
+  const sendInputRef = useRef<
+    (seq: string, opts?: { applyModifiers?: boolean }) => void
+  >(() => {})
   useEffect(() => {
     // fallow-ignore-next-line complexity
-    sendInputRef.current = (seq: string) => {
+    sendInputRef.current = (seq, { applyModifiers = true } = {}) => {
       let out = seq
-      if (ctrlArmed) out = applyCtrl(out)
-      if (altArmed) out = applyAlt(out)
+      if (applyModifiers) {
+        if (ctrlArmed) out = applyCtrl(out)
+        if (altArmed) out = applyAlt(out)
+      }
       writeToTab(tabId, out)
       if (ctrlArmed) setCtrlArmed(false)
       if (altArmed) setAltArmed(false)
@@ -99,6 +110,10 @@ export function useTabData(projectId: string, tabId: string) {
     sendInputRef.current(seq)
   }, [])
 
+  const sendCombo = useCallback((seq: string) => {
+    sendInputRef.current(seq, { applyModifiers: false })
+  }, [])
+
   const toggleCtrl = useCallback(() => setCtrlArmed((v) => !v), [])
   const toggleAlt = useCallback(() => setAltArmed((v) => !v), [])
 
@@ -117,6 +132,7 @@ export function useTabData(projectId: string, tabId: string) {
     onResize,
     onReady,
     onKey,
+    sendCombo,
     ctrlArmed,
     altArmed,
     toggleCtrl,

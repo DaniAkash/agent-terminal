@@ -1,10 +1,21 @@
 import { useStore } from '@nanostores/react'
 import { type Href, useNavigation, useRouter } from 'expo-router'
-import { useCallback, useState } from 'react'
-import { $activeDevice } from '@/modules/stores/$devices'
+import { useCallback, useMemo, useState } from 'react'
+import { $deviceSessions } from '@/modules/stores/$deviceSessions'
+import {
+  $activeDevice,
+  $devices,
+  setActiveDevice,
+} from '@/modules/stores/$devices'
 import { $session } from '@/modules/stores/$session'
 import { tabHref } from '@/screens/tab/tab.helpers'
-import { type SwitcherRow, switcherOrder } from './switcher.helpers'
+import {
+  type DeviceGroup,
+  flattenGroups,
+  type SwitcherListItem,
+  type SwitcherRow,
+  switcherGroups,
+} from './switcher.helpers'
 
 /**
  * Close this sheet, then present another one in its place.
@@ -56,12 +67,55 @@ function swapSheet(
  */
 export function useSwitcherData() {
   const session = useStore($session)
-  const device = useStore($activeDevice)
+  const activeDevice = useStore($activeDevice)
+  const devices = useStore($devices)
+  const deviceSessions = useStore($deviceSessions)
   const router = useRouter()
   const navigation = useNavigation<TransitionAware>()
   const [now] = useState(() => Date.now())
+  // Starts empty: every paired desktop shows its sessions by default,
+  // same as the single-desktop list did before this screen could show
+  // more than one.
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  )
 
-  const rows = switcherOrder(session.projects, now)
+  // DeviceRecord already carries deviceId + deviceHint, so it structurally
+  // satisfies the SwitcherDevice shape switcherGroups expects — no
+  // projection needed, just the values of the existing $devices map.
+  const groups: DeviceGroup[] = useMemo(
+    () =>
+      switcherGroups(
+        Object.values(devices.byId),
+        activeDevice.record?.deviceId ?? null,
+        session.status === 'connected',
+        session.projects,
+        deviceSessions,
+        now,
+      ),
+    [
+      devices.byId,
+      activeDevice.record?.deviceId,
+      session.status,
+      session.projects,
+      deviceSessions,
+      now,
+    ],
+  )
+
+  const items: SwitcherListItem[] = useMemo(
+    () => flattenGroups(groups, collapsed),
+    [groups, collapsed],
+  )
+
+  const toggleCollapsed = useCallback((deviceId: string) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev)
+      if (next.has(deviceId)) next.delete(deviceId)
+      else next.add(deviceId)
+      return next
+    })
+  }, [])
 
   const open = useCallback(
     (row: SwitcherRow) => {
@@ -73,13 +127,12 @@ export function useSwitcherData() {
   )
 
   return {
-    rows,
+    groups,
+    items,
     now,
-    // The paired desktop's name. `session.deviceName` is this phone's own
-    // name echoed back from pairing, which is not what "connected to"
-    // means on a control that switches between desktops.
-    deviceName: device.record?.deviceHint ?? null,
+    toggleCollapsed,
     open,
+    openDevice: setActiveDevice,
     // Sibling sheets, not pushes: Android does not allow a nested stack
     // navigator inside a form sheet. Dismissed first rather than replaced,
     // because replacing one sheet with another leaves the stack holding a

@@ -28,6 +28,7 @@ export function TabScreen({ projectId, tabId }: TabScreenProps) {
     onResize,
     onReady,
     onKey,
+    sendCombo,
     ctrlArmed,
     altArmed,
     toggleCtrl,
@@ -111,6 +112,7 @@ export function TabScreen({ projectId, tabId }: TabScreenProps) {
           ctrlArmed={ctrlArmed}
           altArmed={altArmed}
           onKey={onKey}
+          onCombo={sendCombo}
           onToggleCtrl={toggleCtrl}
           onToggleAlt={toggleAlt}
           onMore={openSwitcher}

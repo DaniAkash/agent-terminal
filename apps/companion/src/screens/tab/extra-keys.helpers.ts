@@ -27,3 +27,14 @@ export function applyCtrl(input: string): string {
 export function applyAlt(input: string): string {
   return `\x1b${input}`
 }
+
+// One tap for the chords used constantly enough to deserve their own
+// button, rather than two taps (arm Ctrl, then supply the letter from
+// the soft keyboard). Precomputed through `applyCtrl` so there is exactly
+// one place that knows how a letter becomes a control code.
+export const COMBOS = {
+  ctrlC: applyCtrl('c'),
+  ctrlD: applyCtrl('d'),
+  ctrlZ: applyCtrl('z'),
+  ctrlL: applyCtrl('l'),
+} as const
