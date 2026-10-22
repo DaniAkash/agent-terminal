@@ -1,7 +1,7 @@
 import type { SessionNode } from '@agent-terminal/core-ui'
 import { Pressable, Text, View } from 'react-native'
 import { DangerBadge, SessionGlyph } from '@/screens/tab/SessionGlyph'
-import { relativeAge } from './switcher.helpers'
+import { relativeAge, spokenAge } from './switcher.helpers'
 
 interface SwitcherRowProps {
   node: SessionNode
@@ -104,6 +104,5 @@ export function SwitcherRowItem({
 function label(node: SessionNode, agent: string | null, age: string): string {
   const who = agent ? `${agent}, ` : ''
   const danger = node.visual.showDanger ? ', all permissions enabled' : ''
-  const when = age ? `, ${age} ago` : ''
-  return `${node.label}, ${who}${node.visual.label}${danger}, in ${node.projectName}${when}`
+  return `${node.label}, ${who}${node.visual.label}${danger}, in ${node.projectName}${spokenAge(age)}`
 }

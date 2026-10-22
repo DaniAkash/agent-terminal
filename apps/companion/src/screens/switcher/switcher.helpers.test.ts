@@ -3,6 +3,7 @@ import type { ProjectSummary } from '@/modules/wss/protocol.gen'
 import {
   recentSessions,
   relativeAge,
+  spokenAge,
   toSessionNodes,
   workspaceGroups,
 } from './switcher.helpers'
@@ -183,5 +184,20 @@ describe('relativeAge', () => {
 
   test('a stamp from a faster clock reads now rather than going negative', () => {
     expect(relativeAge(NOW + 5_000, NOW)).toBe('now')
+  })
+})
+
+describe('the spoken age in a row label', () => {
+  // Caught on a device: the column reads "now", and the label appended
+  // "ago" to whatever it held, so a just-used session announced itself as
+  // "now ago".
+  test('a recent session is "just now", never "now ago"', () => {
+    expect(relativeAge(NOW - 1_000, NOW)).toBe('now')
+    expect(spokenAge('now')).toBe(', just now')
+  })
+
+  test('every other age keeps its "ago"', () => {
+    expect(spokenAge('5m')).toBe(', 5m ago')
+    expect(spokenAge('')).toBe('')
   })
 })

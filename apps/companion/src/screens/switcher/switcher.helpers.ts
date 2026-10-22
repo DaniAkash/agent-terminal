@@ -77,3 +77,15 @@ export function relativeAge(
   if (age.hours < 24) return `${age.hours}h`
   return `${age.days}d`
 }
+
+/**
+ * The age as a screen reader should hear it.
+ *
+ * The column reads as a duration, so it needs "ago" after it, except for
+ * "now", where appending produced "now ago".
+ */
+export function spokenAge(age: string): string {
+  if (age === '') return ''
+  if (age === 'now') return ', just now'
+  return `, ${age} ago`
+}
