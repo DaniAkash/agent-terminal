@@ -1,42 +1,57 @@
-import type { SwitcherRow } from '@/components/TabSwitcher/tab-switcher.helpers'
+import {
+  deriveTabVisual,
+  makeTabKey,
+  resolveTabLabel,
+  type SessionNode,
+} from '@agent-terminal/core-ui'
+import { tabVisualInput } from '@/components/agent.helpers'
+import type { TabMeta } from '@/modules/stores/$tabMeta'
+import type { Project } from '@/screens/workspace/workspace.types'
 
 /**
- * Row shape rendered by SidebarRecent. Deliberately narrower than
- * `SwitcherRow`:
- *   - `rank` and `lastActiveAt` are dropped, the sidebar does not
- *     render rank digits or timestamps.
- *   - `cwd` is dropped, the sidebar row is single-line label + TabChip.
- *   - `projectName` is kept as a separate field so the hover Tooltip
- *     can render it independently from the row body.
- */
-export type SidebarRecentRow = {
-  tabKey: string
-  projectId: string
-  tabId: string
-  label: string
-  projectName: string
-  isCurrent: boolean
-}
-
-/**
- * Trims the Cmd+P `SwitcherRow` output down to what the sidebar's
- * Recent view actually renders.
+ * The desktop's adapter onto the shared session model.
  *
- * Also filters to `rank > 0`, only tabs the user has visited during
- * the tracked window. Tabs the user has never touched clutter the
- * Recent view (defeats its purpose as a "what was I just doing"
- * surface). Cmd+P still shows every tab because search needs full
- * coverage; the sidebar's Recent view has a different job.
+ * Three stores hold what one `SessionNode` carries: `$projects` has the
+ * tree, `$tabMeta` the runtime state, `$tabRecencyTimes` the stamps.
+ * Flattening them here means every ordering and grouping rule above this
+ * line is the same code the phone runs, and the only thing that differs
+ * between the two apps is where the data was kept.
  */
-export function toRecentSidebarRows(rows: SwitcherRow[]): SidebarRecentRow[] {
-  return rows
-    .filter((row) => row.rank > 0)
-    .map((row) => ({
-      tabKey: row.tabKey,
-      projectId: row.projectId,
-      tabId: row.tabId,
-      label: row.label,
-      projectName: row.projectName,
-      isCurrent: row.isCurrent,
-    }))
+export function toSessionNodes(args: {
+  projects: Project[]
+  tabMeta: Record<string, TabMeta>
+  recencyTimes: Record<string, number>
+  activeProjectId: string
+  activeTabIds: Record<string, string>
+  now: number
+}): SessionNode[] {
+  const activeTabId = args.activeTabIds[args.activeProjectId]
+  const activeKey = activeTabId
+    ? makeTabKey(args.activeProjectId, activeTabId)
+    : ''
+
+  const nodes: SessionNode[] = []
+  for (const project of args.projects) {
+    for (const tab of project.tabs) {
+      const key = makeTabKey(project.id, tab.id)
+      const meta = args.tabMeta[key]
+      const isCurrent = key === activeKey
+      nodes.push({
+        key,
+        projectId: project.id,
+        projectName: project.name,
+        projectPinned: project.pinned,
+        // undefined pre-dates the field, and those projects were expanded.
+        projectExpanded: project.isExpanded !== false,
+        tabId: tab.id,
+        // Resolved here so every surface shows one string for one tab.
+        label: resolveTabLabel(tab, meta?.cwd),
+        pinned: tab.pinned,
+        lastActiveAt: args.recencyTimes[key],
+        isCurrent,
+        visual: deriveTabVisual(tabVisualInput(meta, isCurrent), args.now),
+      })
+    }
+  }
+  return nodes
 }

@@ -19,3 +19,23 @@ export {
   type TabVisualInput,
   type WireTabState,
 } from './agent/agent.types'
+export {
+  cwdBasename,
+  makeTabKey,
+  rawTabId,
+  resolveTabLabel,
+} from './sessions/session.label'
+export {
+  ageBuckets,
+  groupByWorkspace,
+  orderByRecency,
+  toRecentRows,
+} from './sessions/session.order'
+export {
+  isSessionView,
+  SESSION_VIEW_KEY,
+  type SessionNode,
+  type SessionRow,
+  type SessionView,
+  type WorkspaceGroup,
+} from './sessions/session.types'
