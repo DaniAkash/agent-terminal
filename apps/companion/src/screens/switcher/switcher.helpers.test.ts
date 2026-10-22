@@ -40,6 +40,10 @@ function tree(): ProjectSummary[] {
       tabs: [
         tab('p2', 'codex', {
           last_active_at: NOW - 3_600_000,
+          // agent_id matters: only an agent can be awaiting, so a tab
+          // without one reads as a shell and never reaches the attention
+          // section. The desktop never sends that combination.
+          agent_id: 'claude-code',
           agent_state: 'awaiting',
         }),
       ],

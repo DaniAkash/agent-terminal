@@ -1,5 +1,5 @@
 import { Pressable, Text, View } from 'react-native'
-import { glyphDotClass, glyphLabel } from '@/screens/tab/tab-status.helpers'
+import { DangerBadge, SessionGlyph } from '@/screens/tab/SessionGlyph'
 import { type SwitcherRow as Row, relativeAge } from './switcher.helpers'
 
 interface SwitcherRowProps {
@@ -38,10 +38,12 @@ export function SwitcherRowItem({
         onLongPress={onLongPress}
         delayLongPress={350}
         accessibilityRole="button"
-        accessibilityLabel={`${row.label}, ${glyphLabel(row.glyph)}, in ${row.projectName}${age ? `, ${age} ago` : ''}`}
+        accessibilityLabel={`${row.label}, ${row.visual.label}, in ${row.projectName}${age ? `, ${age} ago` : ''}`}
         className="flex-1 flex-row items-center gap-3 rounded-lg py-3 pr-2 pl-3 active:bg-accent-soft"
       >
-        <View className={`h-2 w-2 rounded-full ${glyphDotClass(row.glyph)}`} />
+        <View className="h-4 w-4 items-center justify-center">
+          <SessionGlyph visual={row.visual} size={14} />
+        </View>
         <View className="flex-1">
           <Text
             numberOfLines={1}
@@ -53,6 +55,7 @@ export function SwitcherRowItem({
             {row.projectName}
           </Text>
         </View>
+        {row.visual.showDanger && <DangerBadge />}
         <Text className="text-muted-foreground text-xs tabular-nums">
           {age}
         </Text>

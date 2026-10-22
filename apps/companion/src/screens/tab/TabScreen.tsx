@@ -93,7 +93,7 @@ export function TabScreen({ projectId, tabId }: TabScreenProps) {
           <ActiveTabBar
             label={active.label}
             projectName={active.projectName}
-            glyph={active.glyph}
+            visual={active.visual}
             connected={connected}
             onPress={openSwitcher}
           />

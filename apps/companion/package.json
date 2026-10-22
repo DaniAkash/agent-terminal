@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "main": "expo-router/entry",
   "dependencies": {
+    "@agent-terminal/core-ui": "workspace:*",
     "@expo/metro-runtime": "~56.0.18",
     "@expo/react-native-action-sheet": "^4.1.1",
     "@hookform/resolvers": "^5.5.8",
@@ -33,6 +34,7 @@
     "react-native-reanimated": "4.3.1",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "4.26.2",
+    "react-native-svg": "15.15.4",
     "react-native-web": "^0.21.2",
     "react-native-webview": "13.16.1",
     "react-native-worklets": "0.8.3",

@@ -1,8 +1,9 @@
+import type { TabVisual } from '@agent-terminal/core-ui'
 import { recencyOrder } from '@/modules/stores/$recency.helpers'
 import type { ProjectSummary } from '@/modules/wss/protocol.gen'
 import { rawTabId } from '@/screens/tab/tab.helpers'
 import { sessionLabel } from '@/screens/tab/tab-label.helpers'
-import { type TabGlyph, tabGlyph } from '@/screens/tab/tab-status.helpers'
+import { tabVisualFor } from '@/screens/tab/tab-status.helpers'
 
 /**
  * Why a session is where it is in the list. The order is the whole point
@@ -19,7 +20,7 @@ export interface SwitcherRow {
   tabId: string
   label: string
   projectName: string
-  glyph: TabGlyph
+  visual: TabVisual
   section: SwitcherSection
   lastActiveAt: number | undefined
 }
@@ -47,15 +48,15 @@ export function switcherOrder(
 
   const rows = recencyOrder(projects).map((entry): SwitcherRow => {
     const tab = tabs.get(entry.key)
-    const glyph = tabGlyph(tab?.agent_state, tab?.agent_state_at, now)
+    const visual = tabVisualFor(tab, now)
     return {
       key: entry.key,
       projectId: entry.projectId,
       tabId: rawTabId(entry.projectId, entry.key),
       label: tab ? sessionLabel(tab) : entry.tabId,
       projectName: names.get(entry.projectId) ?? '',
-      glyph,
-      section: sectionFor(glyph, entry.lastActiveAt),
+      visual,
+      section: sectionFor(visual, entry.lastActiveAt),
       lastActiveAt: entry.lastActiveAt,
     }
   })
@@ -70,10 +71,10 @@ export function switcherOrder(
 }
 
 function sectionFor(
-  glyph: TabGlyph,
+  visual: TabVisual,
   lastActiveAt: number | undefined,
 ): SwitcherSection {
-  if (glyph === 'awaiting') return 'attention'
+  if (visual.kind === 'agent' && visual.state === 'awaiting') return 'attention'
   return lastActiveAt === undefined ? 'idle' : 'recent'
 }
 

@@ -1,87 +1,120 @@
 import { describe, expect, test } from 'bun:test'
-import {
-  DONE_LINGER_MS,
-  doneExpiresAt,
-  glyphDotClass,
-  glyphLabel,
-  glyphPulses,
-  tabGlyph,
-} from './tab-status.helpers'
+import { DONE_LINGER_MS } from '@agent-terminal/core-ui'
+import type { TabSummary } from '@/modules/wss/protocol.gen'
+import { doneExpiresAt, dotClass, tabVisualFor } from './tab-status.helpers'
 
-const NOW = 1_000_000
+const NOW = 1_700_000_000_000
 
-describe('tabGlyph', () => {
-  test('awaiting wins, because it is the state mobile exists to surface', () => {
-    expect(tabGlyph('awaiting', NOW, NOW)).toBe('awaiting')
+function tab(partial: Partial<TabSummary>): TabSummary {
+  return { tab_id: 'p1:t1', label: 'shell', ...partial }
+}
+
+describe('tabVisualFor', () => {
+  test('a shell tab with no state at all reads idle rather than blank', () => {
+    const visual = tabVisualFor(undefined, NOW)
+    expect(visual).toMatchObject({ kind: 'shell', dot: 'idle', label: 'idle' })
   })
 
-  test('maps the states that do not expire', () => {
-    expect(tabGlyph('running', NOW, NOW)).toBe('running')
-    expect(tabGlyph('error', NOW, NOW)).toBe('error')
-    expect(tabGlyph('idle', NOW, NOW)).toBe('idle')
+  test('reads the agent identity the desktop sent', () => {
+    const visual = tabVisualFor(
+      tab({
+        agent_id: 'claude-code',
+        agent_state: 'awaiting',
+        full_permissions: true,
+      }),
+      NOW,
+    )
+    if (visual.kind !== 'agent') throw new Error('expected an agent visual')
+    expect(visual.brand?.displayName).toBe('Claude Code')
+    expect(visual.state).toBe('awaiting')
+    expect(visual.showDanger).toBe(true)
+    expect(visual.mark?.paths.length).toBeGreaterThan(0)
   })
 
-  test('an unknown or absent state reads as idle rather than throwing', () => {
-    expect(tabGlyph(undefined, undefined, NOW)).toBe('idle')
-    expect(tabGlyph('something-new', NOW, NOW)).toBe('idle')
+  test('a tab with no agent id is a shell, whatever else it carries', () => {
+    const visual = tabVisualFor(tab({ agent_state: 'running' }), NOW)
+    expect(visual).toMatchObject({ kind: 'shell', dot: 'running' })
   })
 
-  test('done stays lit for the linger window', () => {
-    expect(tabGlyph('done', NOW - 1, NOW)).toBe('done')
-    expect(tabGlyph('done', NOW - (DONE_LINGER_MS - 1), NOW)).toBe('done')
+  test('an unrecognised wire state reads idle rather than crashing the list', () => {
+    // The field is a plain string on the wire. An older or newer desktop
+    // sending something outside the vocabulary must not take out a list
+    // the user is trying to scroll.
+    const visual = tabVisualFor(tab({ agent_state: 'something-new' }), NOW)
+    expect(visual).toMatchObject({ kind: 'shell', dot: 'idle' })
   })
 
-  test('done goes dim once the window has passed', () => {
-    expect(tabGlyph('done', NOW - DONE_LINGER_MS, NOW)).toBe('idle')
-    expect(tabGlyph('done', NOW - DONE_LINGER_MS * 10, NOW)).toBe('idle')
+  test('a finished command lingers, then goes out', () => {
+    const lit = tabVisualFor(
+      tab({ agent_state: 'done', agent_state_at: NOW - 1_000 }),
+      NOW,
+    )
+    const gone = tabVisualFor(
+      tab({ agent_state: 'done', agent_state_at: NOW - DONE_LINGER_MS - 1 }),
+      NOW,
+    )
+    expect(lit).toMatchObject({ dot: 'done' })
+    expect(gone).toMatchObject({ dot: 'idle' })
   })
 
-  test('done with no stamp stays lit rather than guessing', () => {
-    // A tree loaded from disk before the first sync looks like this.
-    expect(tabGlyph('done', undefined, NOW)).toBe('done')
-  })
-})
-
-describe('glyph presentation', () => {
-  test('only a turn in flight pulses', () => {
-    expect(glyphPulses('running')).toBe(true)
-    for (const g of ['awaiting', 'done', 'error', 'idle'] as const) {
-      expect(glyphPulses(g)).toBe(false)
+  test('the session on screen is not dimmed, a row in the list is', () => {
+    const onScreen = tabVisualFor(
+      tab({ agent_id: 'codex', agent_state: 'idle' }),
+      NOW,
+      true,
+    )
+    const inList = tabVisualFor(
+      tab({ agent_id: 'codex', agent_state: 'idle' }),
+      NOW,
+    )
+    if (onScreen.kind !== 'agent' || inList.kind !== 'agent') {
+      throw new Error('expected agent visuals')
     }
-  })
-
-  test('each state is visually distinguishable from idle', () => {
-    const idle = glyphDotClass('idle')
-    for (const g of ['awaiting', 'running', 'done', 'error'] as const) {
-      expect(glyphDotClass(g)).not.toBe(idle)
-    }
-  })
-
-  test('running and done share the colour, the pulse is what differs', () => {
-    expect(glyphDotClass('running')).toBe(glyphDotClass('done'))
-  })
-
-  test('every state has a readable label', () => {
-    for (const g of ['awaiting', 'running', 'done', 'error', 'idle'] as const) {
-      expect(glyphLabel(g).length).toBeGreaterThan(0)
-    }
+    expect(onScreen.dimmed).toBe(false)
+    expect(inList.dimmed).toBe(true)
   })
 })
 
 describe('doneExpiresAt', () => {
-  test('arms one timer at the end of the linger window', () => {
-    expect(doneExpiresAt('done', NOW)).toBe(NOW + DONE_LINGER_MS)
+  test('arms a timer for a lit shell dot', () => {
+    expect(
+      doneExpiresAt(tab({ agent_state: 'done', agent_state_at: NOW })),
+    ).toBe(NOW + DONE_LINGER_MS)
   })
 
-  test('has nothing to expire for a state that does not fade', () => {
-    for (const state of ['running', 'awaiting', 'error', 'idle', undefined]) {
-      expect(doneExpiresAt(state, NOW)).toBeNull()
-    }
+  test('nothing to arm for a running tab, an unstamped one, or an agent', () => {
+    expect(doneExpiresAt(tab({ agent_state: 'running' }))).toBeNull()
+    expect(doneExpiresAt(tab({ agent_state: 'done' }))).toBeNull()
+    expect(
+      doneExpiresAt(
+        tab({
+          agent_id: 'claude-code',
+          agent_state: 'done',
+          agent_state_at: NOW,
+        }),
+      ),
+    ).toBeNull()
+  })
+})
+
+describe('dotClass', () => {
+  test('a waiting turn is the warning colour, which nothing else uses', () => {
+    const visual = tabVisualFor(
+      tab({ agent_id: 'claude-code', agent_state: 'awaiting' }),
+      NOW,
+    )
+    expect(dotClass(visual)).toBe('bg-warning')
   })
 
-  test('has nothing to expire when done carries no stamp', () => {
-    // Matches tabGlyph, which keeps an unstamped done lit rather than
-    // guessing; with no stamp there is no moment to count from.
-    expect(doneExpiresAt('done', undefined)).toBeNull()
+  test('a failure is the destructive colour', () => {
+    expect(dotClass(tabVisualFor(tab({ agent_state: 'error' }), NOW))).toBe(
+      'bg-destructive',
+    )
+  })
+
+  test('idle is deliberately low contrast', () => {
+    expect(dotClass(tabVisualFor(undefined, NOW))).toBe(
+      'bg-muted-foreground/40',
+    )
   })
 })

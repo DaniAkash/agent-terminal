@@ -1,12 +1,13 @@
-import type { ProjectSummary } from '@/modules/wss/protocol.gen'
+import type { TabVisual } from '@agent-terminal/core-ui'
+import type { ProjectSummary, TabSummary } from '@/modules/wss/protocol.gen'
 import { splitTabId } from './tab.helpers'
 import { sessionLabel } from './tab-label.helpers'
-import { type TabGlyph, tabGlyph } from './tab-status.helpers'
+import { tabVisualFor } from './tab-status.helpers'
 
 export interface ActiveTabInfo {
   label: string
   projectName: string
-  glyph: TabGlyph
+  visual: TabVisual
 }
 
 /**
@@ -30,17 +31,18 @@ export function activeTabInfo(
       ? sessionLabel(tab)
       : (splitTabId(composedTabId)?.tabId ?? 'session'),
     projectName: project?.name ?? '',
-    glyph: tabGlyph(tab?.agent_state, tab?.agent_state_at, now),
+    // active: this is the session on screen, so an idle agent mark shows
+    // at full strength rather than dimmed the way a background row does.
+    visual: tabVisualFor(tab, now, true),
   }
 }
 
-/** The agent state stamp behind the current glyph, if the tree has one. */
-export function activeStateStamp(
+/** The tree's entry for the session on screen, if it has one yet. */
+export function activeTabSummary(
   projects: readonly ProjectSummary[],
   projectId: string,
   composedTabId: string,
-): { state: string | undefined; at: number | undefined } {
+): TabSummary | undefined {
   const project = projects.find((p) => p.project_id === projectId)
-  const tab = project?.tabs.find((t) => t.tab_id === composedTabId)
-  return { state: tab?.agent_state, at: tab?.agent_state_at }
+  return project?.tabs.find((t) => t.tab_id === composedTabId)
 }

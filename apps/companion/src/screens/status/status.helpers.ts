@@ -1,14 +1,11 @@
+import type { TabVisual } from '@agent-terminal/core-ui'
 import type {
   ProjectSummary,
   TabStateSummary,
 } from '@/modules/wss/protocol.gen'
 import { relativeAge } from '@/screens/switcher/switcher.helpers'
 import { sessionLabel } from '@/screens/tab/tab-label.helpers'
-import {
-  glyphLabel,
-  type TabGlyph,
-  tabGlyph,
-} from '@/screens/tab/tab-status.helpers'
+import { tabVisualFor } from '@/screens/tab/tab-status.helpers'
 
 export interface StatusField {
   label: string
@@ -18,7 +15,7 @@ export interface StatusField {
 
 export interface SessionStatus {
   label: string
-  glyph: TabGlyph
+  visual: TabVisual
   /** "running", "needs you", and so on, plus how long it has been that way. */
   state: string
   fields: StatusField[]
@@ -46,14 +43,14 @@ export function sessionStatus(
   const tab = project?.tabs.find((t) => t.tab_id === tabId)
   if (!tab) return null
 
-  const glyph = tabGlyph(tab.agent_state, tab.agent_state_at, now)
+  const visual = tabVisualFor(tab, now, true)
   const since = relativeAge(tab.agent_state_at, now)
   const ports = state?.ports ?? []
 
   return {
     label: sessionLabel(tab, state?.cwd),
-    glyph,
-    state: since ? `${glyphLabel(glyph)} · ${since}` : glyphLabel(glyph),
+    visual,
+    state: since ? `${visual.label} · ${since}` : visual.label,
     fields: [
       field('Workspace', project?.name),
       field('Directory', state?.cwd ?? tab.last_cwd ?? tab.cwd, true),
