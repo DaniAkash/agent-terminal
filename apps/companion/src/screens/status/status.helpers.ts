@@ -57,7 +57,7 @@ export function sessionStatus(
     fields: [
       field('Workspace', project?.name),
       field('Directory', state?.cwd ?? tab.last_cwd ?? tab.cwd, true),
-      field('Agent', state?.agent ?? tab.agent),
+      field('Agent', state?.agent ?? tab.agent_id),
       field('Branch', state?.git_branch, true),
       field('Ports', ports.length > 0 ? ports.join(', ') : undefined, true),
       field('Running', tab.is_spawned ? 'yes' : 'no, sleeping'),

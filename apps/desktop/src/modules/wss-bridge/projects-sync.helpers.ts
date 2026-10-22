@@ -1,3 +1,4 @@
+import { hasDangerFlag } from '@/components/agent.helpers'
 import type {
   AgentTurnState,
   TabMeta,
@@ -13,6 +14,8 @@ export type SyncTab = Tab & {
   agentState?: SyncAgentState
   agentStateAt?: number
   lastActiveAt?: number
+  agentId?: string
+  fullPermissions?: boolean
 }
 
 export type SyncProject = Omit<Project, 'tabs'> & { tabs: SyncTab[] }
@@ -34,6 +37,35 @@ export function resolveSyncAgentState(
   if (turn === 'in-progress') return 'running'
   if (turn === 'completed') return 'done'
   return meta.status
+}
+
+/**
+ * Which agent a tab is running, and whether it was launched with full
+ * permissions.
+ *
+ * Both are needed on the phone to draw the icon the sidebar draws: the id
+ * picks the brand mark, the flag decides the 🤘 badge. Neither can be
+ * derived from `agentState`, which collapses every tab to one of five
+ * status words.
+ *
+ * The verdict travels, never `agentCmd` itself. An agent command can
+ * carry an API key or an absolute home path, and the wire reaches another
+ * device over the network, so sending it to answer a yes/no question
+ * would be a leak with no upside.
+ *
+ * Shell tabs report neither field, so a tab that stops being an agent
+ * stops claiming an agent rather than keeping the last one it had.
+ */
+export function resolveSyncAgentIdentity(meta: TabMeta | undefined): {
+  agentId?: string
+  fullPermissions?: boolean
+} {
+  if (meta?.type !== 'agent') return {}
+  const identity: { agentId?: string; fullPermissions?: boolean } = {
+    fullPermissions: hasDangerFlag(meta.agentCmd),
+  }
+  if (meta.agentId) identity.agentId = meta.agentId
+  return identity
 }
 
 export interface AgentStateStamp {
@@ -92,6 +124,7 @@ export function buildSyncPayload(
         agentState: resolveSyncAgentState(tabMeta),
         agentStateAt: agentStateStamps[key]?.at,
         lastActiveAt: recencyTimes[key],
+        ...resolveSyncAgentIdentity(tabMeta),
       }
     }),
   }))

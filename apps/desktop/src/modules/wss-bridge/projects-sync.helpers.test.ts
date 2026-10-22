@@ -4,6 +4,7 @@ import type { Project } from '@/screens/workspace/workspace.types'
 import {
   type AgentStateStamp,
   buildSyncPayload,
+  resolveSyncAgentIdentity,
   resolveSyncAgentState,
   stampAgentStates,
 } from './projects-sync.helpers'
@@ -145,5 +146,64 @@ describe('stampAgentStates', () => {
     }
     const out = stampAgentStates(projects, running, stale, 2000)
     expect(out['p1:gone']).toBeUndefined()
+  })
+})
+
+describe('resolveSyncAgentIdentity', () => {
+  test('a shell tab claims no agent, so a tab that stops being one stops claiming', () => {
+    expect(resolveSyncAgentIdentity(undefined)).toEqual({})
+    expect(resolveSyncAgentIdentity(meta({ status: 'running' }))).toEqual({})
+  })
+
+  test('carries the registry id so mobile can pick the same brand mark', () => {
+    const m = meta({ type: 'agent', agentId: 'claude-code' })
+    expect(resolveSyncAgentIdentity(m).agentId).toBe('claude-code')
+  })
+
+  test('sends the permissions verdict, never the command that produced it', () => {
+    const m = meta({
+      type: 'agent',
+      agentId: 'claude-code',
+      agentCmd: 'claude --dangerously-skip-permissions --model opus',
+    })
+    const identity = resolveSyncAgentIdentity(m)
+
+    expect(identity.fullPermissions).toBe(true)
+    expect(JSON.stringify(identity)).not.toContain('--dangerously')
+    expect(JSON.stringify(identity)).not.toContain('--model')
+  })
+
+  test('codex --yolo counts as full permissions too', () => {
+    const m = meta({
+      type: 'agent',
+      agentId: 'codex',
+      agentCmd: 'codex --yolo',
+    })
+    expect(resolveSyncAgentIdentity(m).fullPermissions).toBe(true)
+  })
+
+  test('an agent without the flag reports false rather than nothing', () => {
+    const m = meta({ type: 'agent', agentId: 'codex', agentCmd: 'codex' })
+    expect(resolveSyncAgentIdentity(m).fullPermissions).toBe(false)
+  })
+})
+
+describe('buildSyncPayload agent identity', () => {
+  test('the tree carries the id and the verdict, and no agent command', () => {
+    const tabMeta: Record<string, TabMeta> = {
+      'p1:t1': meta({
+        type: 'agent',
+        agentId: 'claude-code',
+        agentCmd: 'claude --dangerously-skip-permissions',
+      }),
+    }
+    const payload = buildSyncPayload(projects, tabMeta, {}, {})
+    const [agentTab, shellTab] = payload[0]?.tabs ?? []
+
+    expect(agentTab?.agentId).toBe('claude-code')
+    expect(agentTab?.fullPermissions).toBe(true)
+    expect(shellTab?.agentId).toBeUndefined()
+    expect(shellTab?.fullPermissions).toBeUndefined()
+    expect(JSON.stringify(payload)).not.toContain('--dangerously')
   })
 })
