@@ -31,6 +31,7 @@ export function mostConstrained(
   snapshot: UsageSnapshot | null,
   now = Date.now() / 1000,
   providerId?: string | null,
+  period: 'all' | 'hourly' = 'all',
 ) {
   if (!snapshot?.preferences.enabled) return null
   const candidates = snapshot.providers
@@ -40,9 +41,12 @@ export function mostConstrained(
         snapshot.preferences.providers.includes(provider.id) &&
         isCurrent(provider, now),
     )
-    .flatMap((provider) =>
-      provider.windows.map((window) => ({ provider, window })),
-    )
+    .flatMap((provider) => {
+      const hourly = quotaRings(provider).hourly
+      const windows =
+        period === 'hourly' ? (hourly ? [hourly] : []) : provider.windows
+      return windows.map((window) => ({ provider, window }))
+    })
   return candidates.reduce<(typeof candidates)[number] | null>(
     (best, candidate) =>
       !best || candidate.window.usedPercent > best.window.usedPercent

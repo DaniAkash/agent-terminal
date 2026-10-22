@@ -4,7 +4,11 @@ import { Gauge } from 'lucide-react'
 import { useState } from 'react'
 import { buttonVariants } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { mostConstrained, STATUS_LABEL } from '@/modules/jarvis/helpers'
+import {
+  isCurrent,
+  mostConstrained,
+  STATUS_LABEL,
+} from '@/modules/jarvis/helpers'
 import { $jarvis, openJarvis } from '@/modules/jarvis/store'
 import { $activeUsageProviderId } from '@/modules/jarvis/terminal-context'
 import { JarvisDialog } from './JarvisDialog'
@@ -14,13 +18,20 @@ export function JarvisButton() {
   const { snapshot, open } = useStore($jarvis)
   const activeProviderId = useStore($activeUsageProviderId)
   const [hoverOpen, setHoverOpen] = useState(false)
-  const metric = mostConstrained(snapshot, undefined, activeProviderId)
+  const metric = mostConstrained(
+    snapshot,
+    undefined,
+    activeProviderId,
+    'hourly',
+  )
   const activeProvider = snapshot?.providers.find(
     (provider) => provider.id === activeProviderId,
   )
   const providerStatus = activeProvider
     ? activeProvider.status === 'available'
-      ? 'Last known'
+      ? isCurrent(activeProvider)
+        ? 'Hourly unavailable'
+        : 'Last known'
       : STATUS_LABEL[activeProvider.status]
     : 'Unavailable'
   const label = metric
