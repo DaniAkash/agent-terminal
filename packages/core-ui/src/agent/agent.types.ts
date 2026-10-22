@@ -56,6 +56,19 @@ export interface AgentMark {
 }
 
 /**
+ * How to draw one agent's mark: its colours and its geometry.
+ *
+ * One field rather than two, because they are looked up from the same
+ * id and are therefore always both present or both absent. Two nullable
+ * fields invited every renderer to check both and left open a state
+ * ("branded but no geometry") that cannot happen.
+ */
+export interface AgentArt {
+  brand: AgentBrand
+  mark: AgentMark
+}
+
+/**
  * Everything both apps need to draw one session's icon, and nothing
  * either of them has to work out for itself.
  */
@@ -71,9 +84,8 @@ export type TabVisual =
   | {
       kind: 'agent'
       agentId: string
-      /** Null for an agent this build has no brand entry for. */
-      brand: AgentBrand | null
-      mark: AgentMark | null
+      /** Null for an agent this build has no artwork for. */
+      art: AgentArt | null
       state: AgentGlyphState
       pulses: boolean
       /** True when the mark should render dim, which idle marks do unless selected. */

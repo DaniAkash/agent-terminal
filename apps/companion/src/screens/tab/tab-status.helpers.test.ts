@@ -25,10 +25,10 @@ describe('tabVisualFor', () => {
       NOW,
     )
     if (visual.kind !== 'agent') throw new Error('expected an agent visual')
-    expect(visual.brand?.displayName).toBe('Claude Code')
+    expect(visual.art?.brand.displayName).toBe('Claude Code')
     expect(visual.state).toBe('awaiting')
     expect(visual.showDanger).toBe(true)
-    expect(visual.mark?.paths.length).toBeGreaterThan(0)
+    expect(visual.art?.mark.paths.length).toBeGreaterThan(0)
   })
 
   test('a tab with no agent id is a shell, whatever else it carries', () => {

@@ -10,6 +10,7 @@ export {
   STATE_COLORS,
 } from './agent/agent.registry'
 export {
+  type AgentArt,
   type AgentBrand,
   type AgentGlyphState,
   type AgentMark,

@@ -1,6 +1,8 @@
 import type { TabVisual } from '@agent-terminal/core-ui'
 import { Pressable, Text, View } from 'react-native'
-import { DangerBadge, SessionGlyph } from './SessionGlyph'
+import { agentName } from '@/screens/switcher/switcher.helpers'
+import { DangerBadge } from './DangerBadge'
+import { SessionGlyph } from './SessionGlyph'
 
 interface ActiveTabBarProps {
   label: string
@@ -29,10 +31,7 @@ export function ActiveTabBar({
   connected,
   onPress,
 }: ActiveTabBarProps) {
-  const agent =
-    visual.kind === 'agent'
-      ? (visual.brand?.displayName ?? visual.agentId)
-      : null
+  const agent = agentName(visual)
 
   return (
     <Pressable

@@ -1,6 +1,6 @@
-import type { TabVisual } from '@agent-terminal/core-ui'
+import type { AgentArt, TabVisual } from '@agent-terminal/core-ui'
 import { useEffect, useRef } from 'react'
-import { Animated, Text, View } from 'react-native'
+import { Animated, View } from 'react-native'
 import Svg, { Circle, Path } from 'react-native-svg'
 import { dotClass } from './tab-status.helpers'
 
@@ -31,22 +31,34 @@ export function SessionGlyph({
    */
   connected?: boolean
 }) {
+  // A dead socket says nothing about what the agent is doing now, so the
+  // dot reports the connection instead of the last thing it heard.
   if (!connected) {
     return <View className="h-2 w-2 rounded-full bg-destructive" />
   }
-
-  if (visual.kind === 'shell' || !visual.brand || !visual.mark) {
+  // A shell, or an agent this build has no artwork for, is a dot.
+  if (visual.kind === 'shell' || !visual.art) {
     return <Dot visual={visual} pulses={visual.pulses} />
   }
+  return <AgentMark visual={visual} art={visual.art} size={size} />
+}
 
-  // Hoisted so the narrowing above survives into the closures below;
-  // reading them off `visual` inside the map widens them back to
-  // possibly-undefined.
-  const { color } = visual.brand
-  const { viewBox, fillRule, paths } = visual.mark
+/** The brand mark, with whatever badge the turn state calls for. */
+function AgentMark({
+  visual,
+  art,
+  size,
+}: {
+  visual: Extract<TabVisual, { kind: 'agent' }>
+  // Passed in rather than read back off `visual`, because the caller's
+  // null check does not survive into this component's own type.
+  art: AgentArt
+  size: number
+}) {
+  const { color } = art.brand
+  const { viewBox, fillRule, paths } = art.mark
   const badge = Math.max(7, Math.round(size * 0.46))
-  const hasBadge = visual.state === 'completed' || visual.state === 'awaiting'
-  const markSize = hasBadge ? Math.round(size * 0.82) : size
+  const markSize = markSizeFor(visual.state, size)
 
   return (
     <View
@@ -54,7 +66,6 @@ export function SessionGlyph({
       className="items-center justify-center"
     >
       {visual.pulses && <PulseRing size={size} color={color} />}
-
       <View style={{ opacity: visual.dimmed ? 0.45 : 1 }}>
         <Svg width={markSize} height={markSize} viewBox={viewBox}>
           {paths.map((d) => (
@@ -62,11 +73,34 @@ export function SessionGlyph({
           ))}
         </Svg>
       </View>
-
-      {visual.state === 'completed' && <CompletedBadge size={badge} />}
-      {visual.state === 'awaiting' && <AwaitingBadge size={badge} />}
+      <StateBadge state={visual.state} size={badge} />
     </View>
   )
+}
+
+/**
+ * The mark shrinks when a corner badge needs room, matching the desktop,
+ * which scales it by the same factor for the same two states.
+ */
+function markSizeFor(
+  state: Extract<TabVisual, { kind: 'agent' }>['state'],
+  size: number,
+): number {
+  const hasBadge = state === 'completed' || state === 'awaiting'
+  return hasBadge ? Math.round(size * 0.82) : size
+}
+
+/** The corner badge a turn state calls for, if any. */
+function StateBadge({
+  state,
+  size,
+}: {
+  state: Extract<TabVisual, { kind: 'agent' }>['state']
+  size: number
+}) {
+  if (state === 'completed') return <CompletedBadge size={size} />
+  if (state === 'awaiting') return <AwaitingBadge size={size} />
+  return null
 }
 
 /** Plain dot for a shell tab, or an agent this build has no mark for. */
@@ -186,16 +220,4 @@ function usePulse(active: boolean): Animated.Value {
     return () => loop.stop()
   }, [active, pulse])
   return pulse
-}
-
-/** 🤘 when the agent was launched with full permissions. */
-export function DangerBadge({ size = 11 }: { size?: number }) {
-  return (
-    <Text
-      accessibilityLabel="All permissions enabled"
-      style={{ fontSize: size, lineHeight: size * 1.2 }}
-    >
-      🤘
-    </Text>
-  )
 }

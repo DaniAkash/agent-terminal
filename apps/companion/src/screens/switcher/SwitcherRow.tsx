@@ -1,15 +1,14 @@
 import type { SessionNode } from '@agent-terminal/core-ui'
 import { Pressable, Text, View } from 'react-native'
-import { DangerBadge, SessionGlyph } from '@/screens/tab/SessionGlyph'
-import { relativeAge, spokenAge } from './switcher.helpers'
+import { DangerBadge } from '@/screens/tab/DangerBadge'
+import { SessionGlyph } from '@/screens/tab/SessionGlyph'
+import { relativeAge, rowSpokenLabel } from './switcher.helpers'
+import type { RowVariant } from './switcher.list'
 
 interface SwitcherRowProps {
   node: SessionNode
   now: number
-  /** False in the Workspaces view, where the header above already names it. */
-  showProject: boolean
-  /** False in the Workspaces view, where tree position matters, not age. */
-  showAge: boolean
+  variant: RowVariant
   onPress: () => void
   onLongPress: () => void
   /** Same menu as the long press, reachable without knowing it exists. */
@@ -25,17 +24,13 @@ interface SwitcherRowProps {
 export function SwitcherRowItem({
   node,
   now,
-  showProject,
-  showAge,
+  variant,
   onPress,
   onLongPress,
   onMenu,
 }: SwitcherRowProps) {
-  const age = showAge ? relativeAge(node.lastActiveAt, now) : ''
-  const agent =
-    node.visual.kind === 'agent'
-      ? (node.visual.brand?.displayName ?? node.visual.agentId)
-      : null
+  const standalone = variant === 'recent'
+  const age = standalone ? relativeAge(node.lastActiveAt, now) : ''
 
   return (
     <View
@@ -48,41 +43,12 @@ export function SwitcherRowItem({
         onLongPress={onLongPress}
         delayLongPress={350}
         accessibilityRole="button"
-        accessibilityLabel={label(node, agent, age)}
+        accessibilityLabel={rowSpokenLabel(node, age)}
         className={`flex-1 flex-row items-center gap-3 rounded-lg pr-2 ${
-          showProject ? 'py-3 pl-3' : 'py-2.5 pl-6'
+          standalone ? 'py-3 pl-3' : 'py-2.5 pl-6'
         }`}
       >
-        <View className="h-4 w-4 items-center justify-center">
-          <SessionGlyph visual={node.visual} size={14} />
-        </View>
-        <View className="flex-1">
-          <Text
-            numberOfLines={1}
-            className="font-medium text-foreground text-sm"
-          >
-            {node.label}
-          </Text>
-          {showProject && (
-            <Text numberOfLines={1} className="text-muted-foreground text-xs">
-              {node.projectName}
-            </Text>
-          )}
-        </View>
-        {node.pinned && !showProject && (
-          <Text
-            accessibilityLabel="pinned"
-            className="text-[10px] text-muted-foreground"
-          >
-            ⚲
-          </Text>
-        )}
-        {node.visual.showDanger && <DangerBadge />}
-        {age !== '' && (
-          <Text className="text-muted-foreground text-xs tabular-nums">
-            {age}
-          </Text>
-        )}
+        <RowBody node={node} standalone={standalone} age={age} />
       </Pressable>
       {/* A visible way into the workspace and the session details. The long
           press reaches the same menu, but a gesture with no affordance is
@@ -100,9 +66,71 @@ export function SwitcherRowItem({
   )
 }
 
-/** Everything the row shows, spoken, including what only a colour says. */
-function label(node: SessionNode, agent: string | null, age: string): string {
-  const who = agent ? `${agent}, ` : ''
-  const danger = node.visual.showDanger ? ', all permissions enabled' : ''
-  return `${node.label}, ${who}${node.visual.label}${danger}, in ${node.projectName}${spokenAge(age)}`
+/** Glyph, name, and the trailing badges. */
+function RowBody({
+  node,
+  standalone,
+  age,
+}: {
+  node: SessionNode
+  standalone: boolean
+  age: string
+}) {
+  return (
+    <>
+      <View className="h-4 w-4 items-center justify-center">
+        <SessionGlyph visual={node.visual} size={14} />
+      </View>
+      <View className="flex-1">
+        <Text numberOfLines={1} className="font-medium text-foreground text-sm">
+          {node.label}
+        </Text>
+        {standalone && (
+          <Text numberOfLines={1} className="text-muted-foreground text-xs">
+            {node.projectName}
+          </Text>
+        )}
+      </View>
+      <RowTrailing
+        pinned={node.pinned && !standalone}
+        danger={node.visual.showDanger}
+        age={age}
+      />
+    </>
+  )
+}
+
+/**
+ * The badges and age that sit at the end of a row.
+ *
+ * The pin only shows in the Workspaces view: in Recent the order is
+ * recency, so a pin there would describe a rule that view does not use.
+ */
+function RowTrailing({
+  pinned,
+  danger,
+  age,
+}: {
+  pinned: boolean
+  danger: boolean
+  age: string
+}) {
+  return (
+    <>
+      {pinned && (
+        <Text
+          accessibilityLabel="pinned"
+          className="text-[10px] text-muted-foreground"
+        >
+          ⚲
+        </Text>
+      )}
+      {danger && <DangerBadge />}
+      {age !== '' && (
+        <Text className="text-muted-foreground text-xs tabular-nums">
+          {age}
+        </Text>
+      )}
+    </>
+  )
 }

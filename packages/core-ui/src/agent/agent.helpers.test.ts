@@ -76,14 +76,13 @@ describe('deriveTabVisual, shell tabs', () => {
 describe('deriveTabVisual, agent tabs', () => {
   test('carries the brand and the geometry for a known agent', () => {
     const visual = agent({ agentId: 'claude-code', state: 'running' })
-    expect(visual.brand?.displayName).toBe('Claude Code')
-    expect(visual.mark?.paths.length).toBeGreaterThan(0)
+    expect(visual.art?.brand.displayName).toBe('Claude Code')
+    expect(visual.art?.mark.paths.length).toBeGreaterThan(0)
   })
 
   test('an unknown agent degrades to no brand rather than throwing', () => {
     const visual = agent({ agentId: 'some-future-agent', state: 'idle' })
-    expect(visual.brand).toBeNull()
-    expect(visual.mark).toBeNull()
+    expect(visual.art).toBeNull()
     expect(visual.agentId).toBe('some-future-agent')
   })
 

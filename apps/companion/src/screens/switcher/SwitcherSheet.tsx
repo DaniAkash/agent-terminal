@@ -171,8 +171,7 @@ function SwitcherItemRow({
     <SwitcherRowItem
       node={item.node}
       now={now}
-      showProject={item.showProject}
-      showAge={item.age}
+      variant={item.variant}
       onPress={() => onOpen(item.node)}
       onLongPress={() => onMenu(item.node)}
       onMenu={() => onMenu(item.node)}

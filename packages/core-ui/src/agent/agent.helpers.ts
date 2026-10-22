@@ -94,11 +94,12 @@ export function deriveTabVisual(input: TabVisualInput, now: number): TabVisual {
   }
 
   const state = agentStateFor(input.state)
+  const brand = AGENT_BRANDS[input.agentId]
+  const mark = AGENT_MARKS[input.agentId]
   return {
     kind: 'agent',
     agentId: input.agentId,
-    brand: AGENT_BRANDS[input.agentId] ?? null,
-    mark: AGENT_MARKS[input.agentId] ?? null,
+    art: brand && mark ? { brand, mark } : null,
     state,
     pulses: state === 'in-progress',
     dimmed: state === 'idle' && input.active !== true,

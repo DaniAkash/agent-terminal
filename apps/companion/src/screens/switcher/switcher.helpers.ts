@@ -89,3 +89,23 @@ export function spokenAge(age: string): string {
   if (age === 'now') return ', just now'
   return `, ${age} ago`
 }
+
+/** The agent's display name, or null for a shell. */
+export function agentName(visual: SessionNode['visual']): string | null {
+  if (visual.kind !== 'agent') return null
+  return visual.art?.brand.displayName ?? visual.agentId
+}
+
+/**
+ * Everything a session row shows, spoken.
+ *
+ * Pure, and here rather than in the component, because what a screen
+ * reader hears is as much a part of the row's content as its text and
+ * deserves the same test coverage.
+ */
+export function rowSpokenLabel(node: SessionNode, age: string): string {
+  const who = agentName(node.visual)
+  const prefix = who ? `${who}, ` : ''
+  const danger = node.visual.showDanger ? ', all permissions enabled' : ''
+  return `${node.label}, ${prefix}${node.visual.label}${danger}, in ${node.projectName}${spokenAge(age)}`
+}

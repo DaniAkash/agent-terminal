@@ -55,11 +55,9 @@ export function AgentGlyph({
   visual: AgentVisual
   size?: number
 }) {
-  if (!visual.brand || !visual.mark) {
-    return <SparkleFallback visual={visual} size={size} />
-  }
+  if (!visual.art) return <SparkleFallback visual={visual} size={size} />
 
-  const { color, glow } = visual.brand
+  const { color, glow } = visual.art.brand
   const state = visual.state
 
   const markFilter =
@@ -111,7 +109,7 @@ export function AgentGlyph({
           justifyContent: 'center',
         }}
       >
-        <AgentMarkSvg mark={visual.mark} size={size} />
+        <AgentMarkSvg mark={visual.art.mark} size={size} />
       </span>
 
       {state === 'completed' && <CompletedBadge size={badgeSize} />}

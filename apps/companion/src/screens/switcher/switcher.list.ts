@@ -7,6 +7,15 @@ import type {
 import { recentSessions, workspaceGroups } from './switcher.helpers'
 
 /**
+ * How a session row is drawn.
+ *
+ * `tree` sits under a workspace header that already names the workspace
+ * and orders by position, so the row shows neither the project nor an
+ * age. `recent` stands alone and shows both.
+ */
+export type RowVariant = 'tree' | 'recent'
+
+/**
  * One row of the sheet's list.
  *
  * `FlatList` wants a flat array, and the Workspaces view is a tree, so
@@ -16,7 +25,7 @@ import { recentSessions, workspaceGroups } from './switcher.helpers'
  */
 export type SwitcherItem =
   | { type: 'workspace'; group: WorkspaceGroup }
-  | { type: 'session'; node: SessionNode; showProject: boolean; age: boolean }
+  | { type: 'session'; node: SessionNode; variant: RowVariant }
   | { type: 'empty' }
 
 /**
@@ -40,9 +49,7 @@ export function switcherItems(
     return rows.map((node: SessionRow) => ({
       type: 'session' as const,
       node,
-      // The workspace is not above the row here, so each row names its own.
-      showProject: true,
-      age: true,
+      variant: 'recent' as const,
     }))
   }
 
@@ -57,13 +64,7 @@ export function switcherItems(
     // for this session of the sheet.
     if (isCollapsed(group, collapsed)) continue
     for (const node of group.sessions) {
-      items.push({
-        type: 'session',
-        node,
-        // The header directly above already names the workspace.
-        showProject: false,
-        age: false,
-      })
+      items.push({ type: 'session', node, variant: 'tree' })
     }
   }
   return items
