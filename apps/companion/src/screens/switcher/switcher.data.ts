@@ -1,10 +1,13 @@
+import type { SessionNode, WorkspaceGroup } from '@agent-terminal/core-ui'
 import { useStore } from '@nanostores/react'
 import { type Href, useNavigation, useRouter } from 'expo-router'
 import { useCallback, useState } from 'react'
 import { $activeDevice } from '@/modules/stores/$devices'
 import { $session } from '@/modules/stores/$session'
+import { $sessionView, setSessionView } from '@/modules/stores/$sessionView'
 import { tabHref } from '@/screens/tab/tab.helpers'
-import { type SwitcherRow, switcherOrder } from './switcher.helpers'
+import { toSessionNodes } from './switcher.helpers'
+import { switcherItems, toggleWorkspace } from './switcher.list'
 
 /**
  * Close this sheet, then present another one in its place.
@@ -54,27 +57,46 @@ function swapSheet(
  * glance, and a list whose ages shift under the finger is harder to read
  * than one that is a few seconds stale.
  */
-export function useSwitcherData() {
+export function useSwitcherData(currentKey: string | undefined) {
   const session = useStore($session)
+  const view = useStore($sessionView)
   const device = useStore($activeDevice)
   const router = useRouter()
   const navigation = useNavigation<TransitionAware>()
   const [now] = useState(() => Date.now())
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  )
 
-  const rows = switcherOrder(session.projects, now)
+  const nodes = toSessionNodes(session.projects, currentKey, now)
+  const items = switcherItems(nodes, view, collapsed)
 
   const open = useCallback(
-    (row: SwitcherRow) => {
-      // dismiss() first so the sheet is gone before the terminal below it
+    (node: SessionNode) => {
+      // dismissTo() so the sheet is gone before the terminal below it
       // re-points, rather than animating out over a changing screen.
-      router.dismissTo(tabHref(row.projectId, row.key))
+      router.dismissTo(tabHref(node.projectId, node.key))
     },
     [router],
   )
 
   return {
-    rows,
+    items,
+    view,
     now,
+    setView: setSessionView,
+    toggle: useCallback(
+      (group: WorkspaceGroup) =>
+        setCollapsed((prev) => toggleWorkspace(prev, group)),
+      [],
+    ),
+    isCollapsed: useCallback(
+      (group: WorkspaceGroup) =>
+        !items.some(
+          (i) => i.type === 'session' && i.node.projectId === group.projectId,
+        ),
+      [items],
+    ),
     // The paired desktop's name. `session.deviceName` is this phone's own
     // name echoed back from pairing, which is not what "connected to"
     // means on a control that switches between desktops.
@@ -90,13 +112,17 @@ export function useSwitcherData() {
       [navigation, router],
     ),
     openDetails: useCallback(
-      (row: SwitcherRow) =>
-        swapSheet(navigation, router, `/status/${row.projectId}/${row.tabId}`),
+      (node: SessionNode) =>
+        swapSheet(
+          navigation,
+          router,
+          `/status/${node.projectId}/${node.tabId}`,
+        ),
       [navigation, router],
     ),
     openWorkspace: useCallback(
-      (row: SwitcherRow) =>
-        swapSheet(navigation, router, `/project/${row.projectId}/edit`),
+      (projectId: string) =>
+        swapSheet(navigation, router, `/project/${projectId}/edit`),
       [navigation, router],
     ),
   }
