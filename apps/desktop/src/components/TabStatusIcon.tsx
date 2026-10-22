@@ -1,97 +1,53 @@
-import { useStore } from '@nanostores/react'
-import { useEffect } from 'react'
+import type { TabVisual } from '@agent-terminal/core-ui'
 import { AgentGlyph } from '@/components/AgentGlyph'
-import { deriveAgentState } from '@/components/agent.helpers'
 import { RunningDot } from '@/components/RunningDot'
-import { $tabMeta, updateTabMeta } from '@/modules/stores/$tabMeta'
-
-type Props = {
-  tabId: string
-  active?: boolean
-  /**
-   * Icon size in pixels for the AgentGlyph. Default 14 matches the current
-   * uniform density across sidebar / tab bar / command palette. Callers can
-   * bump per surface without touching this file when densities diverge.
-   */
-  size?: number
-}
 
 /**
  * Status indicator for tab pills and sidebar rows.
- * Reads from `$tabMeta` (driven by ProcessTrackerMod + ClaudeCodeMod/CodexMod).
  *
- * ── Shell / task state machine ───────────────────────────────────────────────
+ * Every decision is already made: `visual` comes from the shared
+ * package's `deriveTabVisual`, which the companion also calls, so the
+ * same session cannot look like two different things on the two devices.
+ * This file turns a decision into DOM and does nothing else.
+ *
+ * ── Shell ────────────────────────────────────────────────────────────────
  *
  *   running ──► animated RunningDot (pulsing green)
- *      │
- *      ▼ (exit 0)
- *   done ────► static green dot  ──► [10s elapsed OR tab becomes active] ──► idle
- *      │
- *      │ (exit non-0, bypasses done)
- *      ▼
- *   error ───► static red dot  (persists until the shell starts running again —
- *              error is actionable and should not self-clear)
- *      │
- *      ▼ (user runs another command)
- *   running  (cycle repeats)
- *
+ *   done ────► static green dot, for ten seconds from the transition
+ *   error ───► static red dot, which does not expire, because a failure
+ *              stays actionable until something else happens
  *   idle ────► dim static dot
  *
- * The "done" green is intentionally transient — it signals completion but
- * becomes stale once acknowledged. Two things clear it:
- *   1. 10 seconds elapse (auto-dismiss for unattended tabs)
- *   2. The tab becomes active (user has seen it — clear immediately)
- * Either path transitions the visual to "idle" (dim dot).
+ * ── Agent ────────────────────────────────────────────────────────────────
  *
- * ── Agent ────────────────────────────────────────────────────────────────────
- *
- *   Renders AgentGlyph with the agent's brand mark.
- *   idle   → dim mark (full opacity when the tab/sidebar item is active)
- *   done   → green check badge (bottom-right corner of the mark)
- *   error  → green check badge (same as done — see TECH DEBT note in agent.helpers.ts)
- *
- *   `in-progress` (pulsing ring) and `awaiting` (amber chat-bubble badge)
- *   are defined in AgentState but not yet returned by deriveAgentState —
- *   AgentTurnMod will unlock them when it writes agentState to TabMeta.
+ *   The brand mark, with a badge for the turn state. A finished turn
+ *   keeps its badge rather than expiring: an exited command is news for a
+ *   few seconds, an agent waiting to be read is not.
  */
-
-export function TabStatusIcon({ tabId, active = false, size = 14 }: Props) {
-  const allMeta = useStore($tabMeta)
-  const meta = allMeta[tabId]
-  const status = meta?.status ?? 'idle'
-  const type = meta?.type ?? 'shell'
-  // showDone derived from the store — every instance of this component for
-  // the same tab agrees on the visual. The 10s linger is enforced by a
-  // single per-tab setTimeout in mod-listener that clears `doneAt` directly.
-  const showDone = meta?.doneAt !== undefined
-
-  // Navigating to the tab counts as acknowledgement — clear the done stamp
-  // immediately so the green dot disappears across every surface (sidebar,
-  // tab bar, palette) in the same tick.
-  useEffect(() => {
-    if (active && showDone) updateTabMeta(tabId, { doneAt: undefined })
-  }, [active, showDone, tabId])
-
-  if (type === 'agent') {
-    return (
-      <AgentGlyph
-        agent={meta?.agentId ?? ''}
-        state={deriveAgentState(meta)}
-        size={size}
-        active={active}
-      />
-    )
+export function TabStatusIcon({
+  visual,
+  size = 14,
+}: {
+  visual: TabVisual
+  /**
+   * Icon size in pixels for the AgentGlyph. Default 14 matches the
+   * current uniform density across sidebar / tab bar / command palette.
+   */
+  size?: number
+}) {
+  if (visual.kind === 'agent') {
+    return <AgentGlyph visual={visual} size={size} />
   }
 
-  if (status === 'running') return <RunningDot />
+  if (visual.dot === 'running') return <RunningDot />
 
-  if (showDone) {
+  if (visual.dot === 'done') {
     return (
       <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-green-400 opacity-70" />
     )
   }
 
-  if (status === 'error') {
+  if (visual.dot === 'error') {
     return (
       <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-red-400 opacity-70" />
     )

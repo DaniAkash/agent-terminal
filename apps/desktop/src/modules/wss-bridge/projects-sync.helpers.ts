@@ -1,14 +1,14 @@
-import { hasDangerFlag } from '@/components/agent.helpers'
-import type {
-  AgentTurnState,
-  TabMeta,
-  TabStatus,
-} from '@/modules/stores/$tabMeta'
+import type { WireTabState } from '@agent-terminal/core-ui'
+import { tabAgentIdentity, tabWireState } from '@/components/agent.helpers'
+import type { TabMeta } from '@/modules/stores/$tabMeta'
 import { makeTabKey } from '@/screens/workspace/workspace.helpers'
 import type { Project, Tab } from '@/screens/workspace/workspace.types'
 
-/** Wire-facing status string shared with `TabSummary.agent_state` in Rust. */
-export type SyncAgentState = TabStatus | 'awaiting'
+/**
+ * Wire-facing status string, shared with `TabSummary.agent_state` in
+ * Rust and with the glyph derivation in `@agent-terminal/core-ui`.
+ */
+export type SyncAgentState = WireTabState
 
 export type SyncTab = Tab & {
   agentState?: SyncAgentState
@@ -21,52 +21,17 @@ export type SyncTab = Tab & {
 export type SyncProject = Omit<Project, 'tabs'> & { tabs: SyncTab[] }
 
 /**
- * Collapse the renderer's two state concepts into the one the wire carries.
+ * What the desktop sends for a tab's state.
  *
- * `agentState` wins when the tab is running an agent, because only it can
- * express "awaiting", the state mobile most needs. `status` is the shell
- * fallback. Mapping lives here rather than at the call site so desktop and
- * mobile cannot drift: this is the single place the translation happens.
+ * A re-export of the adapter the desktop also DRAWS from, not a parallel
+ * implementation. Sending one derivation while rendering another is how
+ * two apps end up disagreeing about the same session while each stays
+ * internally consistent, so there is deliberately only one.
  */
-export function resolveSyncAgentState(
-  meta: TabMeta | undefined,
-): SyncAgentState | undefined {
-  if (!meta) return undefined
-  const turn: AgentTurnState | undefined = meta.agentState
-  if (turn === 'awaiting') return 'awaiting'
-  if (turn === 'in-progress') return 'running'
-  if (turn === 'completed') return 'done'
-  return meta.status
-}
+export const resolveSyncAgentState = tabWireState
 
-/**
- * Which agent a tab is running, and whether it was launched with full
- * permissions.
- *
- * Both are needed on the phone to draw the icon the sidebar draws: the id
- * picks the brand mark, the flag decides the 🤘 badge. Neither can be
- * derived from `agentState`, which collapses every tab to one of five
- * status words.
- *
- * The verdict travels, never `agentCmd` itself. An agent command can
- * carry an API key or an absolute home path, and the wire reaches another
- * device over the network, so sending it to answer a yes/no question
- * would be a leak with no upside.
- *
- * Shell tabs report neither field, so a tab that stops being an agent
- * stops claiming an agent rather than keeping the last one it had.
- */
-export function resolveSyncAgentIdentity(meta: TabMeta | undefined): {
-  agentId?: string
-  fullPermissions?: boolean
-} {
-  if (meta?.type !== 'agent') return {}
-  const identity: { agentId?: string; fullPermissions?: boolean } = {
-    fullPermissions: hasDangerFlag(meta.agentCmd),
-  }
-  if (meta.agentId) identity.agentId = meta.agentId
-  return identity
-}
+/** Likewise for the agent id and the permissions verdict. */
+export const resolveSyncAgentIdentity = tabAgentIdentity
 
 export interface AgentStateStamp {
   state: SyncAgentState

@@ -1,90 +1,116 @@
-import type { TabMeta } from '@/modules/stores/$tabMeta'
+import {
+  hasDangerFlag,
+  type TabVisualInput,
+  type WireTabState,
+} from '@agent-terminal/core-ui'
+import type { AgentTurnState, TabMeta } from '@/modules/stores/$tabMeta'
+
+/* ---------------------------------------------------------------------------
+ * The desktop's adapter onto the shared vocabulary.
+ *
+ * `TabMeta` is a renderer-only shape with four overlapping state fields;
+ * `@agent-terminal/core-ui` speaks one. Everything that turns the former
+ * into the latter lives here, and both consumers go through it: the
+ * renderer that draws the icon and the bridge that syncs the tree to
+ * mobile.
+ *
+ * That shared path is the point. If the desktop derived what it draws
+ * separately from what it sends, the two apps could still disagree about
+ * the same session while both being internally consistent, which is the
+ * precise failure the shared package exists to remove.
+ * -------------------------------------------------------------------------*/
+
+export { hasDangerFlag }
 
 /**
- * The four visual states an agent tab can be in.
+ * Collapse the renderer's overlapping state fields into the one word the
+ * wire and the shared glyph derivation both speak.
  *
- * - idle        : process exists, no active turn (dim mark)
- * - in-progress : agent is producing output (pulsing ring)
- * - completed   : session ended — green check badge (bottom-right)
- * - awaiting    : agent is waiting for user confirmation (amber chat-bubble badge)
+ * Agent tabs read from `agentState`, which is the only field that can
+ * express "awaiting", the state mobile most needs. When no hook data has
+ * arrived the fallback is deliberately shy: OSC 133 says the shell is
+ * running, which is not the same as the agent producing output, so an
+ * unhooked agent reads idle rather than claiming a turn it cannot see.
+ * Both `done` and `error` collapse to a finished turn, because nothing at
+ * the OSC 133 level distinguishes a clean agent exit from a failed one.
  *
- * Currently `deriveAgentState` returns `idle` and `completed` only.
- * `in-progress` and `awaiting` are unlocked when AgentTurnMod writes
- * `TabMeta.agentState` directly; add `if (meta.agentState) return meta.agentState`
- * as the first check in `deriveAgentState` at that point.
+ * Shell tabs read from `status`, except that a `done` whose `doneAt` has
+ * been cleared reads idle. Clearing is the acknowledgement: either the
+ * ten second timer in mod-listener fired, or the user navigated to the
+ * tab and saw it. A dot that outlived its own acknowledgement is noise.
  */
-export type AgentState = 'idle' | 'in-progress' | 'completed' | 'awaiting'
+export function tabWireState(
+  meta: TabMeta | undefined,
+): WireTabState | undefined {
+  if (!meta) return undefined
 
-/**
- * Maps live TabMeta → AgentState for rendering.
- *
- * `in-progress` and `awaiting` are intentionally not returned here yet — we
- * have no signal that distinguishes "agent process is alive" from "agent is
- * actively producing output". OSC 133 status only tells us the shell is
- * running, not whether the agent turn is in flight.
- *
- * When AgentTurnMod is built it will write `TabMeta.agentState` directly.
- * At that point, add `if (meta.agentState) return meta.agentState` as the
- * first check below, and the richer states will light up automatically.
- *
- * TECH DEBT: Both `done` and `error` map to `completed` (green check badge).
- * Error exits should ideally show a distinct red badge, but we have no
- * reliable way to distinguish a clean agent exit from an error exit at the
- * OSC 133 level today. Treat any session end as successful for now and
- * revisit when AgentTurnMod provides richer exit metadata.
- */
-export function deriveAgentState(meta: TabMeta | undefined): AgentState {
-  if (meta?.type !== 'agent') return 'idle'
-  // Hook data from AgentTurnMod takes priority — richer and more accurate.
-  if (meta.agentState) return meta.agentState
-  // Fallback: OSC 133 process exit signals a completed session.
-  if (meta.status === 'done' || meta.status === 'error') return 'completed'
-  return 'idle'
+  if (meta.type === 'agent') {
+    const turn: AgentTurnState | undefined = meta.agentState
+    if (turn === 'awaiting') return 'awaiting'
+    if (turn === 'in-progress') return 'running'
+    if (turn === 'completed') return 'done'
+    if (turn === 'idle') return 'idle'
+    if (meta.status === 'done' || meta.status === 'error') return 'done'
+    return 'idle'
+  }
+
+  if (meta.status === 'done' && meta.doneAt === undefined) return 'idle'
+  return meta.status
 }
 
 /**
- * Returns true when the agent command includes a full-permissions flag.
+ * Which agent a tab runs, and whether it was launched with full
+ * permissions.
  *
- * Per-agent flags:
- *   - claude-code → --dangerously-skip-permissions
- *   - codex       → --yolo
+ * The verdict is computed here rather than carried as the command,
+ * because `agentCmd` can hold an API key or an absolute home path and
+ * the same value is what crosses the network to the phone.
  *
- * When adding a new agent, add its full-permissions flag here.
- * The 🤘 badge and tooltip are the same regardless of which flag triggered it.
+ * A shell tab reports neither, so a tab that stops being an agent stops
+ * claiming one rather than keeping the last id it had.
  */
-export function hasDangerFlag(agentCmd: string | undefined): boolean {
-  if (!agentCmd) return false
-  return (
-    agentCmd.includes('--dangerously-skip-permissions') ||
-    agentCmd.includes('--yolo')
-  )
+export function tabAgentIdentity(meta: TabMeta | undefined): {
+  agentId?: string
+  fullPermissions?: boolean
+} {
+  if (meta?.type !== 'agent') return {}
+  const identity: { agentId?: string; fullPermissions?: boolean } = {
+    fullPermissions: hasDangerFlag(meta.agentCmd),
+  }
+  if (meta.agentId) identity.agentId = meta.agentId
+  return identity
+}
+
+/**
+ * Everything `deriveTabVisual` needs, from one `TabMeta` snapshot.
+ *
+ * `doneAt` rather than a transition stamp: it is the moment the renderer
+ * recorded the shell finishing, which is exactly what the shared done
+ * linger counts from, and it is cleared both by the per-tab timer in
+ * mod-listener and by the user navigating to the tab.
+ */
+export function tabVisualInput(
+  meta: TabMeta | undefined,
+  active = false,
+): TabVisualInput {
+  const identity = tabAgentIdentity(meta)
+  return {
+    state: tabWireState(meta) ?? 'idle',
+    stateAt: meta?.doneAt,
+    active,
+    ...identity,
+  }
 }
 
 /**
  * Parses the `--model <name>` flag from an agent command string.
  * Returns null when the flag is absent.
+ *
+ * Desktop-only: the status bar reads it off local `TabMeta`, and the raw
+ * command never travels, so mobile has nothing to parse.
  */
 export function parseModelFlag(agentCmd: string | undefined): string | null {
   if (!agentCmd) return null
   const match = agentCmd.match(/--model\s+(\S+)/)
   return match?.[1] ?? null
-}
-
-/**
- * Composed decision for whether TabChip should render the DangerBadge for
- * a given tab. All three inputs must line up:
- *   1. The consuming surface opted in via `showDanger`
- *   2. The tab is an agent tab (shell tabs never show a danger badge)
- *   3. The agent was launched with a full-permissions flag
- *
- * Split out from the render body so it stays pure and testable, and so the
- * combinatorics live in one place rather than at every consuming site.
- */
-export function shouldShowDangerBadge(
-  meta: TabMeta | undefined,
-  showDanger: boolean,
-): boolean {
-  if (!showDanger) return false
-  if (meta?.type !== 'agent') return false
-  return hasDangerFlag(meta.agentCmd)
 }

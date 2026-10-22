@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import { atom } from 'nanostores'
 import { $projects, addTab } from '@/modules/stores/$projects'
-import { $tabMeta } from '@/modules/stores/$tabMeta'
+import { $tabMeta, updateTabMeta } from '@/modules/stores/$tabMeta'
 import { makeTabKey } from '@/screens/workspace/workspace.helpers'
 import type { Tab } from '@/screens/workspace/workspace.types'
 
@@ -47,6 +47,24 @@ export function navigateToTab(projectId: string, tabId: string): void {
   $activeProjectId.set(projectId)
   $activeTabId.set({ ...$activeTabId.get(), [projectId]: tabId })
   dismissNotification(projectId, tabId)
+  acknowledgeDone(projectId, tabId)
+}
+
+/**
+ * Seeing a finished tab is acknowledging it, so the green dot goes out
+ * everywhere at once rather than lingering for its remaining seconds in
+ * the sidebar, the tab bar and the palette.
+ *
+ * This sits beside `dismissNotification` because it is the same idea
+ * applied to a different surface, and in the handler rather than in a
+ * render effect because the navigation is what caused it. The icon used
+ * to do this from a `useEffect` in every copy of itself, which meant one
+ * store write per rendered instance of the same tab.
+ */
+function acknowledgeDone(projectId: string, tabId: string): void {
+  const key = makeTabKey(projectId, tabId)
+  if ($tabMeta.get()[key]?.doneAt === undefined) return
+  updateTabMeta(key, { doneAt: undefined })
 }
 
 /**
