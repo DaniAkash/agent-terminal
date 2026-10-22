@@ -82,8 +82,6 @@ impl ProviderUsage {
 pub struct Preferences {
     #[serde(default)]
     pub enabled: bool,
-    #[serde(default)]
-    pub show_tray: bool,
     #[serde(default = "default_refresh")]
     pub refresh_seconds: u64,
     #[serde(default)]
@@ -98,7 +96,6 @@ impl Default for Preferences {
     fn default() -> Self {
         Self {
             enabled: false,
-            show_tray: false,
             refresh_seconds: default_refresh(),
             providers: vec![],
         }
@@ -121,26 +118,8 @@ pub struct UsageSnapshot {
     pub preferences: Preferences,
     pub providers: Vec<ProviderUsage>,
     pub refreshing: bool,
-    pub tray_supported: bool,
     pub claude_keychain_supported: bool,
-    pub tray_error: Option<String>,
     pub settings_error: Option<String>,
-}
-
-impl UsageSnapshot {
-    /// Expired windows and failed samples never drive a live meter.
-    pub fn most_constrained(&self) -> Option<(&ProviderUsage, &UsageWindow)> {
-        self.providers
-            .iter()
-            .filter(|p| self.preferences.collects(&p.id) && p.status == UsageStatus::Available)
-            .flat_map(|p| {
-                p.windows
-                    .iter()
-                    .filter(|w| w.resets_at.map_or(true, |r| r > now()))
-                    .map(move |w| (p, w))
-            })
-            .max_by(|a, b| a.1.used_percent.total_cmp(&b.1.used_percent))
-    }
 }
 
 #[derive(Clone, Debug)]

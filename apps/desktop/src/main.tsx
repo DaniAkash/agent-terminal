@@ -15,11 +15,7 @@ import {
   initSidebarWidthFromStorage,
 } from '@/modules/stores/$sidebarWidth'
 import { initTabRecencySubscriber } from '@/modules/stores/$tabRecency.init'
-import {
-  $theme,
-  applyThemeToDocument,
-  initThemeFromStorage,
-} from '@/modules/stores/$theme'
+import { initThemeFromStorage } from '@/modules/stores/$theme'
 import { installMobileOpsListener } from '@/modules/wss-bridge/mobile-ops'
 import { initProjectsSync } from '@/modules/wss-bridge/projects-sync.init'
 import { WorkspaceLayout } from '@/screens/workspace/WorkspaceLayout'
@@ -91,26 +87,4 @@ async function bootstrap() {
   )
 }
 
-if (window.location.hash === '#jarvis-tray') {
-  // Tray windows subscribe only to normalized usage, never workspace services.
-  initThemeFromStorage()
-  window.addEventListener('storage', (event) => {
-    if (event.key !== null && event.key !== 'agent-terminal:theme') return
-    const theme =
-      event.newValue === 'light' || event.newValue === 'dark'
-        ? event.newValue
-        : 'system'
-    $theme.set(theme)
-    applyThemeToDocument(theme)
-  })
-  void startJarvis()
-  void import('@/components/Jarvis/JarvisTray').then(({ JarvisTray }) => {
-    ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
-      <React.StrictMode>
-        <JarvisTray />
-      </React.StrictMode>,
-    )
-  })
-} else {
-  bootstrap()
-}
+bootstrap()

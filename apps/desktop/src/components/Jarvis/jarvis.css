@@ -161,7 +161,7 @@
   font-size: 11px;
 }
 
-/* Usage cards and settings stack vertically in both dialog and tray. */
+/* Usage cards and settings stack vertically in the dialog. */
 .jarvis-usage,
 .jarvis-settings {
   display: grid;

@@ -1,5 +1,5 @@
 import { useStore } from '@nanostores/react'
-import { ArrowUpRight, Clock3 } from 'lucide-react'
+import { Clock3 } from 'lucide-react'
 import { AgentGlyph } from '@/components/AgentGlyph'
 import { Button } from '@/components/ui/button'
 import {
@@ -13,13 +13,7 @@ import {
 import { $jarvis, authorizeClaudeKeychain } from '@/modules/jarvis/store'
 import type { ProviderUsage, UsageWindow } from '@/modules/jarvis/types'
 
-export function JarvisProvider({
-  provider,
-  onManage,
-}: {
-  provider: ProviderUsage
-  onManage?: (settings: boolean) => void
-}) {
+export function JarvisProvider({ provider }: { provider: ProviderUsage }) {
   const { snapshot, authorizing } = useStore($jarvis)
   const stale =
     provider.status === 'stale' ||
@@ -65,24 +59,7 @@ export function JarvisProvider({
           Reading the provider’s existing session…
         </p>
       )}
-      {onManage &&
-        ['not_configured', 'error', 'unsupported', 'stale'].includes(
-          provider.status,
-        ) && (
-          <Button
-            variant="secondary"
-            size="sm"
-            className="mt-3 gap-1.5 text-xs"
-            onClick={() => onManage(false)}
-          >
-            {provider.status === 'not_configured'
-              ? 'Sign-in help'
-              : 'View details'}
-            <ArrowUpRight size={12} aria-hidden="true" />
-          </Button>
-        )}
-      {!onManage &&
-        snapshot?.claudeKeychainSupported &&
+      {snapshot?.claudeKeychainSupported &&
         provider.id === 'claude-code' &&
         provider.status === 'not_configured' && (
           <Button

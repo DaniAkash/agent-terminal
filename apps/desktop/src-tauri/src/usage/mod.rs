@@ -1,11 +1,9 @@
 mod credentials;
 mod discovery;
 mod http;
-mod popover;
 mod preferences;
 mod providers;
 mod service;
-mod tray;
 mod types;
 
 pub use service::UsageService;
@@ -24,20 +22,6 @@ pub fn jarvis_refresh(service: tauri::State<'_, UsageService>) {
 #[tauri::command]
 pub async fn jarvis_rescan_agents(service: tauri::State<'_, UsageService>) -> Result<(), String> {
     service.scan_agents().await
-}
-
-#[tauri::command]
-pub fn jarvis_open_main(app: tauri::AppHandle, settings: bool) -> Result<(), String> {
-    tray::open_main(&app, settings)
-}
-
-#[tauri::command]
-pub fn jarvis_dismiss_tray(app: tauri::AppHandle) {
-    popover::dismiss(&app);
-}
-
-pub fn close_popover(app: &tauri::AppHandle) {
-    popover::destroy(app);
 }
 
 #[tauri::command]

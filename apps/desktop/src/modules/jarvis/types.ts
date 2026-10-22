@@ -29,7 +29,6 @@ export interface ProviderUsage {
 
 export interface JarvisPreferences {
   enabled: boolean
-  showTray: boolean
   refreshSeconds: number
   providers: string[]
 }
@@ -39,8 +38,6 @@ export interface UsageSnapshot {
   preferences: JarvisPreferences
   providers: ProviderUsage[]
   refreshing: boolean
-  traySupported: boolean
   claudeKeychainSupported: boolean
-  trayError: string | null
   settingsError: string | null
 }

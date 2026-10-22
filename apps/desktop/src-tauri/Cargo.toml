@@ -21,7 +21,7 @@ dev-instance = []
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon"] }
+tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 # Ensures only one Agent Terminal instance runs at a time. Critical on macOS
@@ -139,10 +139,6 @@ regex = "1"
 [target.'cfg(target_os = "macos")'.dependencies]
 # Read Claude sessions silently; explicit user actions may authorize access.
 security-framework = "3.7"
-
-[target.'cfg(target_os = "linux")'.dependencies]
-# Check the desktop indicator host before offering background tray behavior.
-dbus = "0.9"
 
 [dev-dependencies]
 # Isolated temp directories for auth_stub round-trip tests.

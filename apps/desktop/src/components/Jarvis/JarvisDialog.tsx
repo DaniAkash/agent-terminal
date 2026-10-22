@@ -26,7 +26,7 @@ export function JarvisDialog({
     const interval = window.setInterval(tick, 30_000)
     return () => window.clearInterval(interval)
   }, [open])
-  const problem = error ?? snapshot?.settingsError ?? snapshot?.trayError
+  const problem = error ?? snapshot?.settingsError
   return (
     <Dialog open={open} onOpenChange={(next) => $jarvis.setKey('open', next)}>
       <DialogContent

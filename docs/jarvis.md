@@ -25,8 +25,7 @@ The terminal dialog stacks provider cards vertically, with provider names and
 status above quota readings. Dot meters accompany larger percentages;
 reset times sit beneath each reading and capture age appears in the card footer.
 A compact notice highlights low remaining quota. Settings separate controls
-from provider choices. The tray uses the same cards in a compact stacked layout.
-Stale readings remain explicitly labeled.
+from provider choices. Stale readings remain explicitly labeled.
 
 | Agent | Usage source | Reported limits |
 | --- | --- | --- |
@@ -84,82 +83,15 @@ as proof of installation. **Not found** means no executable was found in those
 locations; custom installations should be added to the desktop process's PATH.
 Usage access still requires enabling Jarvis and selecting providers.
 
-## Native indicators
-
-Enable **Show in menu bar / system tray** for a macOS menu bar meter or a Linux
-application indicator. The meter shows the remaining percentage of the most
-constrained current quota. On macOS, hover for a compact quota panel; click to
-keep it open for keyboard navigation. Move away to dismiss a hover panel, or
-press Escape, click the close button, or click outside a pinned panel to dismiss
-it. The panel shares the app's theme and quota cards and updates from the same
-in-memory snapshot. Viewing usage and refreshing never opens the main app.
-**Sign-in help**, **View details**, and **Settings** open Agent Terminal.
-
-The native menu shows quota meters, resets, capture age, Refresh, Settings and
-Quit directly, without provider submenus. **Jarvis · Usage overview** opens the
-same compact panel on Linux. Provider rows needing attention are clickable and
-open Agent Terminal for help. With a usable native indicator enabled,
-closing the window hides it and leaves terminal sessions running. Disabling the
-indicator restores a hidden window; **Quit Agent Terminal** exits the app.
-
-Linux AppIndicator does not expose hover events or tooltips to Tauri, so usage
-is available in the native tray menu and its **Usage overview** panel. Linux
-tray visibility depends on the desktop shell. GNOME may need an
-AppIndicator extension; the in-app Jarvis panel works without one. Jarvis checks
-for a registered desktop indicator host through D-Bus in the background. A
-missing host or failure to create the indicator is shown in the panel and
-preserves ordinary window closing behavior. If the host disappears while the
-window is hidden through Jarvis, Jarvis restores that window. Host availability
-is checked every five seconds, including in Manual usage-refresh mode, so bar
-restarts recover automatically. Menu text updates preserve the existing native
-menu where possible, and the icon is rewritten only when its appearance changes.
-
-On Linux, **Usage overview** opens a decorated, resizable window managed by the
-desktop compositor. Close it with its window controls, Escape, or the panel's
-close button. It stays open when another window receives focus. Wayland does not
-provide the global cursor coordinates needed for macOS-style anchored popovers;
-Linux quick views therefore do not depend on cursor placement or hover events.
-
-### Arch / Hyprland / illogical-impulse
-
-Jarvis uses the StatusNotifier tray provided by your bar (for example Quickshell
-or Waybar). The bar must have its tray enabled. The GTK backend requires an
-AppIndicator library, such as `libayatana-appindicator` or `libappindicator`, plus
-GTK 3 and WebKitGTK 4.1. Existing illogical-impulse settings need no Jarvis-specific
-window rules. To check the running host without changing desktop configuration:
-
-```sh
-busctl --user get-property org.kde.StatusNotifierWatcher /StatusNotifierWatcher org.kde.StatusNotifierWatcher IsStatusNotifierHostRegistered
-```
-
-`b true` means a host is registered. If no watcher exists, start or enable your
-bar's tray. Arch should use the AppImage or a native Arch build rather than the
-Debian package. See [Tauri's Linux tray limitations](https://v2.tauri.app/learn/system-tray/#listen-to-tray-events)
-and [Linux dependencies](https://v2.tauri.app/start/prerequisites/#linux).
-
-Linux x86_64 releases include Debian and AppImage bundles. Build on Linux with
-`bun run tauri:build`; Tauri automatically merges `tauri.linux.conf.json`. Build
-prerequisites include WebKitGTK 4.1, GTK 3 and Ayatana AppIndicator development
-packages, as listed in the CI workflow. Debian bundles depend on
-`libayatana-appindicator3-1`. The release workflow keeps macOS and Linux artifacts
-in a draft release and includes signed AppImage payloads in the updater manifest.
-
 ## Code structure
 
-The Rust `usage` module owns preferences, executable discovery, credentials, provider adapters,
-collection scheduling, native tray rendering and popover window lifecycle.
-The tray renderer runs through `#jarvis-tray`, subscribes only to usage, and
-shares quota cards with the main dialog. Its capability grants only event
-subscriptions; it does not bootstrap terminal, mod or WSS listeners. Hover
-creation is delayed, pointer tracking runs only while a hover panel is visible,
-and the panel is destroyed when the indicator becomes unavailable or disabled.
-It is independent of the PTY mod engine and mobile WSS protocol. React receives normalized usage DTOs through
-`jarvis_snapshot`, `jarvis_refresh`, `jarvis_rescan_agents`, `jarvis_set_preferences`, the explicit
-`jarvis_authorize_claude_keychain` action and
-`jarvis:updated`; `jarvis:open` opens the panel from native menu actions.
-The compact tray panel uses `jarvis_open_main` for help/settings and
-`jarvis_dismiss_tray` for dismissal. Window positioning, hover delays, focus and
-tray availability remain in Rust.
+The Rust `usage` module owns preferences, executable discovery, credentials,
+provider adapters and collection scheduling. It is independent of the PTY mod
+engine and mobile WSS protocol. React receives normalized usage DTOs through
+`jarvis_snapshot`, `jarvis_refresh`, `jarvis_rescan_agents`,
+`jarvis_set_preferences`, the explicit `jarvis_authorize_claude_keychain` action
+and `jarvis:updated`. The frontend separates IPC and state from presentation in
+`modules/jarvis` and `components/Jarvis`.
 
 Add providers to the usage registry and supply an adapter with fixture tests.
 Avoid deriving quotas from installed agent names or command-line model flags.

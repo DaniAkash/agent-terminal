@@ -7,15 +7,12 @@ function snapshot(revision: number, enabled = true): UsageSnapshot {
     revision,
     preferences: {
       enabled,
-      showTray: false,
       refreshSeconds: 300,
       providers: [],
     },
     providers: [],
     refreshing: false,
-    traySupported: true,
     claudeKeychainSupported: false,
-    trayError: null,
     settingsError: null,
   }
 }
@@ -40,7 +37,7 @@ test('a late snapshot response cannot overwrite a newer provider event', () => {
   expect($jarvis.get().loading).toBe(false)
 })
 
-test('first-use entry opens settings and native settings actions keep their destination', () => {
+test('first-use entry opens settings and explicit settings actions keep their destination', () => {
   acceptSnapshot(snapshot(1, false))
   openJarvis()
   expect($jarvis.get().view).toBe('settings')

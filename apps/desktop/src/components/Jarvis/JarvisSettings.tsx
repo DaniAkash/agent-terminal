@@ -52,13 +52,6 @@ export function JarvisSettings({ snapshot }: { snapshot: UsageSnapshot }) {
           disabled={saving}
           onChange={(enabled) => void saveJarvisPreferences({ enabled })}
         />
-        <Toggle
-          label="Show in menu bar / system tray"
-          description="View usage from the tray. Closing the window keeps sessions running; use Quit to exit."
-          checked={prefs.showTray}
-          disabled={saving || !prefs.enabled || !snapshot.traySupported}
-          onChange={(showTray) => void saveJarvisPreferences({ showTray })}
-        />
         <div className="flex flex-wrap items-center justify-between gap-2 border-border/60 border-t pt-3">
           <span className="flex shrink-0 items-center gap-2 whitespace-nowrap text-[12px]">
             <Timer
@@ -174,9 +167,7 @@ export function JarvisSettings({ snapshot }: { snapshot: UsageSnapshot }) {
         Usage is reported by your provider account and may include other
         devices. Credentials stay on this device and are sent only to their own
         provider. Jarvis does not save credentials, read browser cookies, or
-        collect token history. Linux tray visibility depends on your desktop’s
-        application indicator support. On macOS, hover for a quick view and
-        click to keep it open. On Linux, click the tray for inline usage.
+        collect token history.
       </p>
     </div>
   )

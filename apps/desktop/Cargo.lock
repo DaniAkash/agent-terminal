@@ -30,7 +30,6 @@ dependencies = [
  "chrono",
  "constant_time_eq",
  "dashmap",
- "dbus",
  "dirs 5.0.1",
  "encoding_rs",
  "futures-util",

@@ -1,5 +1,5 @@
 use super::types::{now, Preferences, ProviderUsage, UsageSnapshot, UsageStatus};
-use super::{http, preferences, providers, tray};
+use super::{http, preferences, providers};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -15,10 +15,8 @@ struct Inner {
     state: Mutex<State>,
     save_lock: tokio::sync::Mutex<()>,
     wake: Notify,
-    tray_wake: Notify,
     discovery_wake: Notify,
     stopped: AtomicBool,
-    window_hidden: AtomicBool,
     client: Result<reqwest::Client, String>,
 }
 
@@ -45,9 +43,7 @@ impl UsageService {
                 .collect(),
             preferences: prefs,
             refreshing: false,
-            tray_supported: cfg!(any(target_os = "macos", target_os = "linux")),
             claude_keychain_supported: cfg!(target_os = "macos"),
-            tray_error: None,
             settings_error: error,
         };
         Self(Arc::new(Inner {
@@ -59,21 +55,13 @@ impl UsageService {
             }),
             save_lock: tokio::sync::Mutex::new(()),
             wake: Notify::new(),
-            tray_wake: Notify::new(),
             discovery_wake: Notify::new(),
             stopped: AtomicBool::new(false),
-            window_hidden: AtomicBool::new(false),
             client: http::client(),
         }))
     }
 
     pub fn start(&self) {
-        {
-            use tauri::Manager;
-            self.0.app.manage(super::popover::PopoverState::default());
-            #[cfg(any(target_os = "macos", target_os = "linux"))]
-            self.0.app.manage(super::tray::NativeState::default());
-        }
         self.publish();
         let service = self.clone();
         tauri::async_runtime::spawn(async move {
@@ -82,10 +70,6 @@ impl UsageService {
         let service = self.clone();
         tauri::async_runtime::spawn(async move {
             service.run().await;
-        });
-        let service = self.clone();
-        tauri::async_runtime::spawn(async move {
-            service.run_tray().await;
         });
         let service = self.clone();
         tauri::async_runtime::spawn(async move {
@@ -105,16 +89,7 @@ impl UsageService {
     pub fn stop(&self) {
         self.0.stopped.store(true, Ordering::Relaxed);
         self.0.wake.notify_one();
-        self.0.tray_wake.notify_one();
         self.0.discovery_wake.notify_one();
-    }
-
-    pub fn set_window_hidden(&self, hidden: bool) {
-        self.0.window_hidden.store(hidden, Ordering::Relaxed);
-    }
-
-    pub(super) fn take_hidden_window(&self) -> bool {
-        self.0.window_hidden.swap(false, Ordering::Relaxed)
     }
 
     pub fn snapshot(&self) -> UsageSnapshot {
@@ -171,9 +146,6 @@ impl UsageService {
 
     pub async fn set_preferences(&self, prefs: Preferences) -> Result<UsageSnapshot, String> {
         let prefs = preferences::validate(prefs)?;
-        if prefs.show_tray && !cfg!(any(target_os = "macos", target_os = "linux")) {
-            return Err("Jarvis native indicators are supported on macOS and Linux.".into());
-        }
         let _guard = self.0.save_lock.lock().await;
         let path = preferences::config_path().ok_or("Jarvis settings location is unavailable.")?;
         let saved = prefs.clone();
@@ -214,61 +186,6 @@ impl UsageService {
             snapshot
         };
         let _ = self.0.app.emit("jarvis:updated", snapshot);
-        self.0.tray_wake.notify_one();
-    }
-
-    async fn run_tray(&self) {
-        loop {
-            let notified = tokio::select! {
-                _ = self.0.tray_wake.notified() => true,
-                _ = tokio::time::sleep(Duration::from_secs(5)) => false,
-            };
-            if self.0.stopped.load(Ordering::Relaxed) {
-                break;
-            }
-            // Coalesce bursts of provider events. Host probing never blocks the UI.
-            tokio::time::sleep(Duration::from_millis(50)).await;
-            let prefs = self.snapshot().preferences;
-            // A shell/bar restart must recover even with manual quota refresh.
-            if !notified && !(prefs.enabled && prefs.show_tray) {
-                continue;
-            }
-            let host = if prefs.enabled && prefs.show_tray {
-                tokio::task::spawn_blocking(tray::check_host)
-                    .await
-                    .unwrap_or_else(|_| Err("Could not check native tray availability.".into()))
-            } else {
-                Ok(())
-            };
-            let service = self.clone();
-            if self
-                .0
-                .app
-                .run_on_main_thread(move || {
-                    let error = tray::sync(&service.0.app, &service.snapshot(), host).err();
-                    service.set_tray_error(error);
-                })
-                .is_err()
-            {
-                self.set_tray_error(Some("Could not update the native Jarvis indicator.".into()));
-            }
-        }
-    }
-
-    fn set_tray_error(&self, error: Option<String>) {
-        let changed = {
-            let mut state = self.0.state.lock().unwrap();
-            if state.snapshot.tray_error == error {
-                false
-            } else {
-                state.snapshot.tray_error = error;
-                state.snapshot.revision += 1;
-                true
-            }
-        };
-        if changed {
-            let _ = self.0.app.emit("jarvis:updated", self.snapshot());
-        }
     }
 
     async fn run(&self) {

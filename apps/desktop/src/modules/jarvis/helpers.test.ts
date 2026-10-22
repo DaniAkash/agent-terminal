@@ -26,15 +26,12 @@ function snapshot(providers: ProviderUsage[]): UsageSnapshot {
     revision: 1,
     preferences: {
       enabled: true,
-      showTray: false,
       refreshSeconds: 300,
       providers: providers.map((p) => p.id),
     },
     providers,
     refreshing: false,
-    traySupported: true,
     claudeKeychainSupported: false,
-    trayError: null,
     settingsError: null,
   }
 }

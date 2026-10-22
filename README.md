@@ -49,9 +49,9 @@ Group tabs under projects (`my-app`, `notes`, `infra`). Switch projects without 
 ### Jarvis provider usage
 
 Open **Jarvis** in the status bar to enable provider quota tracking, see reset
-windows, and configure the optional macOS menu bar / Linux tray indicator.
+windows, and configure usage collection. Hover for compact provider gauges.
 Collection and settings are managed in Rust. See the [Jarvis guide](docs/jarvis.md)
-for supported sources, local session setup, and Linux packaging.
+for supported sources and local session setup.
 
 ### Live status bar
 

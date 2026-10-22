@@ -5,14 +5,12 @@ import { $jarvis } from '@/modules/jarvis/store'
 import type { UsageSnapshot } from '@/modules/jarvis/types'
 import { JarvisProvider } from './JarvisProvider'
 
-/** Same quota presentation in the main dialog and the lightweight tray window. */
+/** Provider quotas and account status in the usage dialog. */
 export function JarvisUsage({
   snapshot,
-  onManage,
   priorityProviderId,
 }: {
   snapshot: UsageSnapshot
-  onManage?: (settings: boolean) => void
   priorityProviderId?: string | null
 }) {
   const selected = snapshot.providers.filter((provider) =>
@@ -39,9 +37,7 @@ export function JarvisUsage({
           variant="secondary"
           size="sm"
           className="gap-1.5 text-[11px]"
-          onClick={() =>
-            onManage ? onManage(true) : $jarvis.setKey('view', 'settings')
-          }
+          onClick={() => $jarvis.setKey('view', 'settings')}
         >
           Open settings <ArrowUpRight size={12} aria-hidden="true" />
         </Button>
@@ -61,11 +57,7 @@ export function JarvisUsage({
       )}
       <div className="jarvis-providers">
         {prioritizeProvider(selected, priorityProviderId).map((provider) => (
-          <JarvisProvider
-            key={provider.id}
-            provider={provider}
-            onManage={onManage}
-          />
+          <JarvisProvider key={provider.id} provider={provider} />
         ))}
       </div>
     </div>

@@ -193,11 +193,7 @@ pub fn run() {
         // re-focuses the window.
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             if let Some(window) = app.get_webview_window("main") {
-                if window.show().is_ok() {
-                    if let Some(service) = app.try_state::<usage::UsageService>() {
-                        service.set_window_hidden(false);
-                    }
-                }
+                let _ = window.show();
                 let _ = window.unminimize();
                 let _ = window.set_focus();
             }
@@ -574,25 +570,9 @@ pub fn run() {
             // callback — see `notifications::backend` (release path).)
             if let Some(window) = app.get_webview_window("main") {
                 let svc = notification_service.clone();
-                let window_for_tray = window.clone();
                 window.on_window_event(move |event| {
                     if let tauri::WindowEvent::Focused(focused) = event {
                         svc.set_app_focus(*focused);
-                    }
-                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                        let snapshot = usage_service.snapshot();
-                        // Keep sessions running only while a usable tray provides
-                        // a visible way back into the app.
-                        if snapshot.preferences.enabled && snapshot.preferences.show_tray
-                            && snapshot.tray_error.is_none()
-                            && window_for_tray.app_handle().tray_by_id("jarvis").is_some()
-                            && window_for_tray.hide().is_ok()
-                        {
-                            usage_service.set_window_hidden(true);
-                            api.prevent_close();
-                        } else {
-                            usage::close_popover(window_for_tray.app_handle());
-                        }
                     }
                 });
             }
@@ -626,8 +606,6 @@ pub fn run() {
             usage::jarvis_rescan_agents,
             usage::jarvis_set_preferences,
             usage::jarvis_authorize_claude_keychain,
-            usage::jarvis_open_main,
-            usage::jarvis_dismiss_tray,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

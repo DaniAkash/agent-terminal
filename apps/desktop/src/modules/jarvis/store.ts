@@ -61,12 +61,6 @@ async function initialize(active: number) {
         if (lifecycle === active) acceptSnapshot(event.payload)
       }),
     )
-    installed.push(
-      await listen<boolean>('jarvis:open', (event) => {
-        if (lifecycle === active)
-          openJarvis(event.payload ? 'settings' : 'usage')
-      }),
-    )
     if (lifecycle !== active) return
     disposers = installed
     const snapshot = await JarvisIPC.snapshot()

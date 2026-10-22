@@ -220,9 +220,7 @@ fn snapshot(provider: ProviderUsage) -> UsageSnapshot {
         },
         providers: vec![provider],
         refreshing: false,
-        tray_supported: true,
         claude_keychain_supported: false,
-        tray_error: None,
         settings_error: None,
     }
 }
@@ -232,7 +230,6 @@ fn old_and_expired_samples_are_marked_stale() {
     let mut old = snapshot(row());
     service::age_snapshot(&mut old, 1601);
     assert_eq!(old.providers[0].status, UsageStatus::Stale);
-    assert!(old.most_constrained().is_none());
     let mut expired = snapshot(row());
     expired.providers[0].windows[0].resets_at = Some(1050);
     service::age_snapshot(&mut expired, 1100);
@@ -246,7 +243,6 @@ fn preferences_round_trip_and_disabled_collection_are_explicit() {
     assert!(!preferences::load(&path).unwrap().enabled);
     let prefs = preferences::validate(Preferences {
         enabled: true,
-        show_tray: true,
         refresh_seconds: 300,
         providers: vec!["kimi".into(), "codex".into(), "codex".into()],
     })
