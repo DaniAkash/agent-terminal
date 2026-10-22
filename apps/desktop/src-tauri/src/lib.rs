@@ -50,6 +50,7 @@ pub mod net;
 pub mod mdns;
 // pub so integration tests can drive the server directly (spin up on
 // 127.0.0.1:0 with an in-process client).
+mod usage;
 pub mod wss_server;
 
 use hook_config::ensure_hooks_installed;
@@ -555,6 +556,11 @@ pub fn run() {
               }
             } // 'wss_setup
 
+            // Jarvis owns collection independently of terminal tabs and renderers.
+            let usage_service = usage::UsageService::new(app.handle().clone());
+            app.manage(usage_service.clone());
+            usage_service.start();
+
             // Window focus → suppression signal only.
             // (The previous focus-event-based click heuristic is gone — it
             // only "sometimes worked" in dev mode and was actively wrong:
@@ -595,9 +601,19 @@ pub fn run() {
             notifications::notif_set_app_focus,
             notifications::notif_set_enabled,
             notifications::notif_cancel,
+            usage::jarvis_snapshot,
+            usage::jarvis_refresh,
+            usage::jarvis_rescan_agents,
+            usage::jarvis_set_preferences,
+            usage::jarvis_authorize_claude_keychain,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                app.state::<usage::UsageService>().stop();
+            }
+        });
 }
 
 /// Builds and installs a custom macOS menu that intentionally omits the

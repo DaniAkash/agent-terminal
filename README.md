@@ -46,7 +46,15 @@ Agent Terminal is a terminal that knows the difference between a shell and an ag
 ### Projects and tabs that survive
 Group tabs under projects (`my-app`, `notes`, `infra`). Switch projects without losing your place — every tab remembers its working directory and reopens there.
 
+### Jarvis provider usage
+
+Open **Jarvis** in the status bar to enable provider quota tracking, see reset
+windows, and configure usage collection. Hover for compact provider gauges.
+Collection and settings are managed in Rust. See the [Jarvis guide](docs/jarvis.md)
+for supported sources and local session setup.
+
 ### Live status bar
+
 Always-on context for the focused tab — refreshed every couple of seconds, never gets stale:
 
 - Process name, PID, elapsed time, memory

@@ -1,6 +1,7 @@
 import { useStore } from '@nanostores/react'
 import type React from 'react'
 import { CompanionButton } from '@/components/Companion/CompanionButton'
+import { JarvisButton } from '@/components/Jarvis/JarvisButton'
 import { RunningDot } from '@/components/RunningDot'
 import { ThemeToggle } from '@/components/ThemeToggle/ThemeToggle'
 import { $projects } from '@/modules/stores/$projects'
@@ -107,6 +108,7 @@ export function StatusBarLeft() {
     <div className="mr-auto flex min-h-6 min-w-0 items-center gap-1.5 overflow-hidden">
       <ThemeToggle />
       <CompanionButton />
+      <JarvisButton />
       {items.length > 0 && (
         <>
           <Dot />

@@ -57,11 +57,13 @@ export function AgentGlyph({
   state,
   size = 16,
   active = false,
+  monochrome = false,
 }: {
   agent: string
   state: AgentState
   size?: number
   active?: boolean
+  monochrome?: boolean
 }) {
   const brand = BRAND[agent]
 
@@ -114,7 +116,7 @@ export function AgentGlyph({
       {/* Brand mark */}
       <span
         style={{
-          color,
+          color: monochrome ? 'var(--foreground)' : color,
           opacity: markOpacity,
           filter: markFilter,
           transform: `scale(${markScale})`,
