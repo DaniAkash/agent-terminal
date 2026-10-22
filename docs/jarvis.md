@@ -13,7 +13,7 @@ Click the button to open details and settings.
 The terminal status bar follows the agent detected in the active tab and shows
 its hourly/session allowance remaining. Weekly limits stay in the hover panel
 and usage dialog. When no hourly/session limit is reported, the status bar shows
-that it is unavailable rather than substituting a weekly limit. Codex,
+the provider's account status rather than substituting a weekly limit. Codex,
 Claude Code and OpenCode each show their own remaining allowance or account
 status, and their provider appears first in the hover strip and usage dialog.
 Switching tabs or projects updates this immediately. Shell tabs keep the overall

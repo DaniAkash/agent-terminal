@@ -28,10 +28,8 @@ export function JarvisButton() {
     (provider) => provider.id === activeProviderId,
   )
   const providerStatus = activeProvider
-    ? activeProvider.status === 'available'
-      ? isCurrent(activeProvider)
-        ? 'Hourly unavailable'
-        : 'Last known'
+    ? activeProvider.status === 'available' && !isCurrent(activeProvider)
+      ? STATUS_LABEL.stale
       : STATUS_LABEL[activeProvider.status]
     : 'Unavailable'
   const label = metric
