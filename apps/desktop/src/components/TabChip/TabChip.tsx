@@ -1,5 +1,6 @@
+import { deriveTabVisual } from '@agent-terminal/core-ui'
 import { useStore } from '@nanostores/react'
-import { shouldShowDangerBadge } from '@/components/agent.helpers'
+import { tabVisualInput } from '@/components/agent.helpers'
 import { DangerBadge } from '@/components/DangerBadge'
 import { TabStatusIcon } from '@/components/TabStatusIcon'
 import { $tabMeta } from '@/modules/stores/$tabMeta'
@@ -21,7 +22,7 @@ type Props = {
   tabId: string
   density?: TabChipDensity
   /**
-   * Whether to render the 🤘 YOLO / full-permissions badge.
+   * Whether to render the 🤘 full-permissions badge.
    *
    * Default is false. The sidebar is the trust surface and opts in; the
    * tab bar and command palette intentionally omit the badge to reduce
@@ -33,19 +34,14 @@ type Props = {
 }
 
 /**
- * Composite tab indicator used by the sidebar, tab bar, and command
- * palette. Reads `$tabMeta[tabId]` and composes every per-tab badge
- * from that snapshot.
+ * Composite tab indicator used by the sidebar, tab bar and command
+ * palette.
  *
- * Note: `TabStatusIcon` (rendered internally) subscribes to `$tabMeta`
- * separately. Two subscriptions per instance in total. Nanostores
- * dedupes dispatch by identity so the runtime cost is negligible; the
- * duplication stays until TabStatusIcon accepts an optional `meta`
- * prop or is inlined here.
- *
- * Future badges (GitBadge, ModelBadge, PortsBadge) plug in here as
- * additional `show*` props. Callers opt in per surface; there is no
- * config registry, just booleans that are grep-able and type-checked.
+ * This is the single subscription point: it reads `$tabMeta[tabId]`,
+ * derives the whole visual once through the shared package, and hands
+ * the result down. Children take a decided `TabVisual` rather than an id
+ * to look up, so there is one subscription per chip instead of two and
+ * no way for the parts of one icon to disagree with each other.
  */
 export function TabChip({
   tabId,
@@ -54,18 +50,18 @@ export function TabChip({
   active = false,
 }: Props) {
   const allMeta = useStore($tabMeta)
-  const meta = allMeta[tabId]
-  const size = SIZE_BY_DENSITY[density]
-
-  const danger = shouldShowDangerBadge(meta, showDanger)
+  const visual = deriveTabVisual(
+    tabVisualInput(allMeta[tabId], active),
+    Date.now(),
+  )
 
   return (
     // gap-2 matches the sidebar's original button-level spacing between
     // DangerBadge and TabStatusIcon (8px). Invisible for surfaces that
     // opt out of DangerBadge (only one child renders, gap does not apply).
     <span className="inline-flex items-center gap-2">
-      {danger && <DangerBadge size={11} />}
-      <TabStatusIcon tabId={tabId} active={active} size={size} />
+      {showDanger && visual.showDanger && <DangerBadge size={11} />}
+      <TabStatusIcon visual={visual} size={SIZE_BY_DENSITY[density]} />
     </span>
   )
 }

@@ -1,3 +1,4 @@
+import { hasDangerFlag } from '@agent-terminal/core-ui'
 import {
   closestCenter,
   DndContext,
@@ -15,7 +16,6 @@ import { CSS } from '@dnd-kit/utilities'
 import { useStore } from '@nanostores/react'
 import { ChevronRight, Folder, Pin } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { hasDangerFlag } from '@/components/agent.helpers'
 import { DangerBadge } from '@/components/DangerBadge'
 import { RunningDot } from '@/components/RunningDot'
 import { SidebarTabItem } from '@/components/Sidebar/SidebarTabItem'

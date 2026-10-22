@@ -11,8 +11,8 @@ import {
 import { splitTabId } from './tab.helpers'
 import {
   type ActiveTabInfo,
-  activeStateStamp,
   activeTabInfo,
+  activeTabSummary,
 } from './tab-info.helpers'
 import { doneExpiresAt } from './tab-status.helpers'
 
@@ -32,8 +32,9 @@ export function useActiveTabInfo(
   const [now, setNow] = useState(() => Date.now())
 
   const info = activeTabInfo(session.projects, projectId, composedTabId, now)
-  const stamp = activeStateStamp(session.projects, projectId, composedTabId)
-  const expiresAt = doneExpiresAt(stamp.state, stamp.at)
+  const expiresAt = doneExpiresAt(
+    activeTabSummary(session.projects, projectId, composedTabId),
+  )
 
   // useEffect exception: a timer tied to a value, one of the cases
   // CLAUDE.md keeps the hook for. One timeout, armed only while a dot is

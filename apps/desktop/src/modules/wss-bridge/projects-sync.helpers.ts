@@ -1,40 +1,37 @@
-import type {
-  AgentTurnState,
-  TabMeta,
-  TabStatus,
-} from '@/modules/stores/$tabMeta'
+import type { WireTabState } from '@agent-terminal/core-ui'
+import { tabAgentIdentity, tabWireState } from '@/components/agent.helpers'
+import type { TabMeta } from '@/modules/stores/$tabMeta'
 import { makeTabKey } from '@/screens/workspace/workspace.helpers'
 import type { Project, Tab } from '@/screens/workspace/workspace.types'
 
-/** Wire-facing status string shared with `TabSummary.agent_state` in Rust. */
-export type SyncAgentState = TabStatus | 'awaiting'
+/**
+ * Wire-facing status string, shared with `TabSummary.agent_state` in
+ * Rust and with the glyph derivation in `@agent-terminal/core-ui`.
+ */
+export type SyncAgentState = WireTabState
 
 export type SyncTab = Tab & {
   agentState?: SyncAgentState
   agentStateAt?: number
   lastActiveAt?: number
+  agentId?: string
+  fullPermissions?: boolean
 }
 
 export type SyncProject = Omit<Project, 'tabs'> & { tabs: SyncTab[] }
 
 /**
- * Collapse the renderer's two state concepts into the one the wire carries.
+ * What the desktop sends for a tab's state.
  *
- * `agentState` wins when the tab is running an agent, because only it can
- * express "awaiting", the state mobile most needs. `status` is the shell
- * fallback. Mapping lives here rather than at the call site so desktop and
- * mobile cannot drift: this is the single place the translation happens.
+ * A re-export of the adapter the desktop also DRAWS from, not a parallel
+ * implementation. Sending one derivation while rendering another is how
+ * two apps end up disagreeing about the same session while each stays
+ * internally consistent, so there is deliberately only one.
  */
-export function resolveSyncAgentState(
-  meta: TabMeta | undefined,
-): SyncAgentState | undefined {
-  if (!meta) return undefined
-  const turn: AgentTurnState | undefined = meta.agentState
-  if (turn === 'awaiting') return 'awaiting'
-  if (turn === 'in-progress') return 'running'
-  if (turn === 'completed') return 'done'
-  return meta.status
-}
+export const resolveSyncAgentState = tabWireState
+
+/** Likewise for the agent id and the permissions verdict. */
+export const resolveSyncAgentIdentity = tabAgentIdentity
 
 export interface AgentStateStamp {
   state: SyncAgentState
@@ -92,6 +89,7 @@ export function buildSyncPayload(
         agentState: resolveSyncAgentState(tabMeta),
         agentStateAt: agentStateStamps[key]?.at,
         lastActiveAt: recencyTimes[key],
+        ...resolveSyncAgentIdentity(tabMeta),
       }
     }),
   }))

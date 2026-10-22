@@ -4,6 +4,7 @@ import type { Project } from '@/screens/workspace/workspace.types'
 import {
   type AgentStateStamp,
   buildSyncPayload,
+  resolveSyncAgentIdentity,
   resolveSyncAgentState,
   stampAgentStates,
 } from './projects-sync.helpers'
@@ -119,20 +120,41 @@ describe('stampAgentStates', () => {
   test('re-stamps when the state changes', () => {
     const first = stampAgentStates(projects, running, {}, 1000)
     const awaiting = {
-      'p1:t1': meta({ status: 'running', agentState: 'awaiting' as const }),
+      // type: 'agent' matters. The agent mods that write `agentState`
+      // set the type in the same breath, and the collapse now reads the
+      // turn only for agent tabs, so a shell carrying a turn state is a
+      // shape nothing emits.
+      'p1:t1': meta({
+        status: 'running',
+        type: 'agent' as const,
+        agentState: 'awaiting' as const,
+      }),
     }
     const second = stampAgentStates(projects, awaiting, first, 5000)
     expect(second['p1:t1']).toEqual({ state: 'awaiting', at: 5000 })
   })
 
-  test('survives the done linger clearing doneAt, which it does not read', () => {
+  test('a cleared doneAt re-stamps as idle, because the dot went out', () => {
+    // doneAt is cleared two ways, and both mean the same thing: the ten
+    // second timer fired, or the user navigated to the tab and saw it.
+    // Either way the desktop has stopped showing the green dot, and the
+    // phone showing one for the same tab would be reporting a desktop
+    // state that is no longer true.
+    //
+    // This used to hold the stale `done` deliberately, so that mobile
+    // could run the linger off `agent_state_at` by itself. It still can:
+    // a `done` that reaches the phone before the desktop acknowledges it
+    // arrives stamped and expires on mobile's own clock. What changed is
+    // that desktop acknowledgement now propagates too.
     const withDone = {
       'p1:t1': meta({ status: 'done', doneAt: 1000 }),
     }
     const first = stampAgentStates(projects, withDone, {}, 1000)
+    expect(first['p1:t1']).toEqual({ state: 'done', at: 1000 })
+
     const cleared = { 'p1:t1': meta({ status: 'done' }) }
     const second = stampAgentStates(projects, cleared, first, 20000)
-    expect(second['p1:t1']).toEqual({ state: 'done', at: 1000 })
+    expect(second['p1:t1']).toEqual({ state: 'idle', at: 20000 })
   })
 
   test('skips a tab with no meta, so the field stays absent on the wire', () => {
@@ -145,5 +167,64 @@ describe('stampAgentStates', () => {
     }
     const out = stampAgentStates(projects, running, stale, 2000)
     expect(out['p1:gone']).toBeUndefined()
+  })
+})
+
+describe('resolveSyncAgentIdentity', () => {
+  test('a shell tab claims no agent, so a tab that stops being one stops claiming', () => {
+    expect(resolveSyncAgentIdentity(undefined)).toEqual({})
+    expect(resolveSyncAgentIdentity(meta({ status: 'running' }))).toEqual({})
+  })
+
+  test('carries the registry id so mobile can pick the same brand mark', () => {
+    const m = meta({ type: 'agent', agentId: 'claude-code' })
+    expect(resolveSyncAgentIdentity(m).agentId).toBe('claude-code')
+  })
+
+  test('sends the permissions verdict, never the command that produced it', () => {
+    const m = meta({
+      type: 'agent',
+      agentId: 'claude-code',
+      agentCmd: 'claude --dangerously-skip-permissions --model opus',
+    })
+    const identity = resolveSyncAgentIdentity(m)
+
+    expect(identity.fullPermissions).toBe(true)
+    expect(JSON.stringify(identity)).not.toContain('--dangerously')
+    expect(JSON.stringify(identity)).not.toContain('--model')
+  })
+
+  test('codex --yolo counts as full permissions too', () => {
+    const m = meta({
+      type: 'agent',
+      agentId: 'codex',
+      agentCmd: 'codex --yolo',
+    })
+    expect(resolveSyncAgentIdentity(m).fullPermissions).toBe(true)
+  })
+
+  test('an agent without the flag reports false rather than nothing', () => {
+    const m = meta({ type: 'agent', agentId: 'codex', agentCmd: 'codex' })
+    expect(resolveSyncAgentIdentity(m).fullPermissions).toBe(false)
+  })
+})
+
+describe('buildSyncPayload agent identity', () => {
+  test('the tree carries the id and the verdict, and no agent command', () => {
+    const tabMeta: Record<string, TabMeta> = {
+      'p1:t1': meta({
+        type: 'agent',
+        agentId: 'claude-code',
+        agentCmd: 'claude --dangerously-skip-permissions',
+      }),
+    }
+    const payload = buildSyncPayload(projects, tabMeta, {}, {})
+    const [agentTab, shellTab] = payload[0]?.tabs ?? []
+
+    expect(agentTab?.agentId).toBe('claude-code')
+    expect(agentTab?.fullPermissions).toBe(true)
+    expect(shellTab?.agentId).toBeUndefined()
+    expect(shellTab?.fullPermissions).toBeUndefined()
+    expect(JSON.stringify(payload)).not.toContain('--dangerously')
   })
 })

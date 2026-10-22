@@ -1,7 +1,7 @@
+import { orderByRecency, toRecentRows } from '@agent-terminal/core-ui'
 import { useStore } from '@nanostores/react'
 import { useMemo } from 'react'
 import { TabChip } from '@/components/TabChip/TabChip'
-import { buildSwitcherRows } from '@/components/TabSwitcher/tab-switcher.helpers'
 import {
   Tooltip,
   TooltipContent,
@@ -16,9 +16,9 @@ import {
 } from '@/modules/stores/$navigation'
 import { $projects } from '@/modules/stores/$projects'
 import { $tabMeta } from '@/modules/stores/$tabMeta'
-import { $tabRecency, $tabRecencyTimes } from '@/modules/stores/$tabRecency'
+import { $tabRecencyTimes } from '@/modules/stores/$tabRecency'
 import { MONO_FONT } from '@/screens/workspace/workspace.helpers'
-import { toRecentSidebarRows } from './sidebar.helpers'
+import { toSessionNodes } from './sidebar.helpers'
 
 /* ---------------------------------------------------------------------------
  * SidebarRecent — flat recency list across every project.
@@ -36,7 +36,6 @@ import { toRecentSidebarRows } from './sidebar.helpers'
 
 export function SidebarRecent() {
   const projects = useStore($projects)
-  const recency = useStore($tabRecency)
   const recencyTimes = useStore($tabRecencyTimes)
   const tabMeta = useStore($tabMeta)
   const activeProjectId = useStore($activeProjectId)
@@ -44,17 +43,19 @@ export function SidebarRecent() {
 
   const rows = useMemo(
     () =>
-      toRecentSidebarRows(
-        buildSwitcherRows({
-          projects,
-          recency,
-          recencyTimes,
-          tabMeta,
-          activeProjectId,
-          activeTabIds,
-        }),
+      toRecentRows(
+        orderByRecency(
+          toSessionNodes({
+            projects,
+            tabMeta,
+            recencyTimes,
+            activeProjectId,
+            activeTabIds,
+            now: Date.now(),
+          }),
+        ),
       ),
-    [projects, recency, recencyTimes, tabMeta, activeProjectId, activeTabIds],
+    [projects, recencyTimes, tabMeta, activeProjectId, activeTabIds],
   )
 
   if (rows.length === 0) {
@@ -73,7 +74,7 @@ export function SidebarRecent() {
   return (
     <TooltipProvider delay={400}>
       {rows.map((row) => (
-        <Tooltip key={row.tabKey}>
+        <Tooltip key={row.key}>
           <TooltipTrigger
             render={
               <button
@@ -98,7 +99,7 @@ export function SidebarRecent() {
                   {row.label}
                 </span>
                 <TabChip
-                  tabId={row.tabKey}
+                  tabId={row.key}
                   density="compact"
                   showDanger
                   active={row.isCurrent}

@@ -1,79 +1,73 @@
 import { describe, expect, test } from 'bun:test'
+import { deriveTabVisual, type SessionRow } from '@agent-terminal/core-ui'
 import {
   filterSwitcherRows,
   formatRelativeTime,
-  type SwitcherRow,
 } from '@/components/TabSwitcher/tab-switcher.helpers'
 
 /* ---------------------------------------------------------------------------
  * filterSwitcherRows
  * -------------------------------------------------------------------------*/
 
-const sampleRows: SwitcherRow[] = [
-  {
-    tabKey: 'agent:dev',
+const NOW = 1_000_000_000_000
+
+function row(over: Partial<SessionRow> & { key: string }): SessionRow {
+  return {
     projectId: 'agent',
     projectName: 'agent-terminal',
-    tabId: 'dev',
+    projectPinned: false,
+    projectExpanded: true,
+    tabId: over.key.split(':')[1] ?? 't',
     label: 'dev',
-    cwd: '/tmp/agent',
+    pinned: false,
+    isCurrent: false,
     rank: 1,
-    lastActiveAt: 0,
-    isCurrent: false,
-  },
-  {
-    tabKey: 'cc:mem',
-    projectId: 'cc',
-    projectName: 'control-center',
-    tabId: 'mem',
-    label: 'memory note',
-    rank: 2,
-    lastActiveAt: 0,
-    isCurrent: false,
-  },
-  {
-    tabKey: 'agent:srv',
-    projectId: 'agent',
-    projectName: 'agent-terminal',
-    tabId: 'srv',
-    label: 'server',
-    cwd: '/srv',
-    rank: 3,
-    lastActiveAt: 0,
-    isCurrent: false,
-  },
+    visual: deriveTabVisual({ state: 'idle' }, NOW),
+    ...over,
+  }
+}
+
+const sampleRows: SessionRow[] = [
+  row({ key: 'agent:dev', label: 'dev', rank: 1 }),
+  row({ key: 'cc:mem', projectName: 'claude-memory', label: 'notes', rank: 2 }),
+  row({ key: 'agent:srv', label: 'srv', rank: 3 }),
 ]
 
+const CWD: Record<string, string> = {
+  'agent:dev': '/tmp/agent',
+  'cc:mem': '/tmp/cc',
+  'agent:srv': '/srv/agent',
+}
+
+const cwdFor = (r: SessionRow) => CWD[r.key]
+
 describe('filterSwitcherRows', () => {
-  test('empty query returns the input array reference', () => {
-    expect(filterSwitcherRows(sampleRows, '')).toBe(sampleRows)
-    expect(filterSwitcherRows(sampleRows, '   ')).toBe(sampleRows)
+  test('an empty query returns the same array, for memoisation', () => {
+    expect(filterSwitcherRows(sampleRows, '   ', cwdFor)).toBe(sampleRows)
   })
 
   test('substring match on label', () => {
-    const out = filterSwitcherRows(sampleRows, 'mem')
-    expect(out.map((r) => r.tabKey)).toEqual(['cc:mem'])
+    const out = filterSwitcherRows(sampleRows, 'dev', cwdFor)
+    expect(out.map((r) => r.key)).toEqual(['agent:dev'])
   })
 
   test('substring match on project name', () => {
-    const out = filterSwitcherRows(sampleRows, 'agent')
-    expect(out.map((r) => r.tabKey)).toEqual(['agent:dev', 'agent:srv'])
+    const out = filterSwitcherRows(sampleRows, 'agent-term', cwdFor)
+    expect(out.map((r) => r.key)).toEqual(['agent:dev', 'agent:srv'])
   })
 
   test('substring match on cwd', () => {
-    const out = filterSwitcherRows(sampleRows, '/srv')
-    expect(out.map((r) => r.tabKey)).toEqual(['agent:srv'])
+    const out = filterSwitcherRows(sampleRows, '/srv', cwdFor)
+    expect(out.map((r) => r.key)).toEqual(['agent:srv'])
   })
 
   test('case-insensitive', () => {
-    const out = filterSwitcherRows(sampleRows, 'MeMoRy')
-    expect(out.map((r) => r.tabKey)).toEqual(['cc:mem'])
+    const out = filterSwitcherRows(sampleRows, 'MeMoRy', cwdFor)
+    expect(out.map((r) => r.key)).toEqual(['cc:mem'])
   })
 
-  test('preserves the input order among matches (= recency)', () => {
-    const out = filterSwitcherRows(sampleRows, 'agent')
-    // Order in `sampleRows`: dev then srv. Filter preserves that, so
-    // rank 1 still leads rank 3 even after filter.
+  test('preserves the input order among matches, so recency survives', () => {
+    const out = filterSwitcherRows(sampleRows, 'agent-term', cwdFor)
     expect(out.map((r) => r.rank)).toEqual([1, 3])
   })
 })

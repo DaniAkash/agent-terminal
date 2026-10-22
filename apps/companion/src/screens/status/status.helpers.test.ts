@@ -32,12 +32,16 @@ describe('sessionStatus', () => {
 
   test('reports the state and how long it has held', () => {
     const s = sessionStatus(
-      project({ agent_state: 'awaiting', agent_state_at: NOW - 120_000 }),
+      project({
+        agent_id: 'claude-code',
+        agent_state: 'awaiting',
+        agent_state_at: NOW - 120_000,
+      }),
       TAB_ID,
       undefined,
       NOW,
     )
-    expect(s?.glyph).toBe('awaiting')
+    expect(s?.visual).toMatchObject({ kind: 'agent', state: 'awaiting' })
     expect(s?.state).toBe('needs you · 2m')
   })
 
@@ -74,13 +78,13 @@ describe('sessionStatus', () => {
 
   test('falls back to the tree when nothing has been pushed yet', () => {
     const s = sessionStatus(
-      project({ last_cwd: '/from-tree', agent: 'claude' }),
+      project({ last_cwd: '/from-tree', agent_id: 'claude-code' }),
       TAB_ID,
       undefined,
       NOW,
     )
     expect(fieldValue(s, 'Directory')).toBe('/from-tree')
-    expect(fieldValue(s, 'Agent')).toBe('claude')
+    expect(fieldValue(s, 'Agent')).toBe('claude-code')
   })
 
   test('marks a field the wire does not carry rather than leaving it blank', () => {

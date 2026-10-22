@@ -2,7 +2,7 @@ import { useStore } from '@nanostores/react'
 import { Text, View } from 'react-native'
 import { $session } from '@/modules/stores/$session'
 import { $tabState } from '@/modules/stores/$tabState'
-import { glyphDotClass } from '@/screens/tab/tab-status.helpers'
+import { dotClass } from '@/screens/tab/tab-status.helpers'
 import { type StatusField, sessionStatus } from './status.helpers'
 
 interface StatusSheetProps {
@@ -33,7 +33,7 @@ export function StatusSheet({ projectId, tabId }: StatusSheetProps) {
     <View collapsable={false} className="flex-1 gap-4 bg-background px-4 pt-4">
       <View className="flex-row items-center gap-2">
         <View
-          className={`h-2.5 w-2.5 rounded-full ${glyphDotClass(status.glyph)}`}
+          className={`h-2.5 w-2.5 rounded-full ${dotClass(status.visual)}`}
         />
         <Text
           numberOfLines={1}

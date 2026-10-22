@@ -203,6 +203,16 @@ pub(crate) struct StoredTab {
     agent_state_at: Option<u64>,
     #[serde(default, rename = "lastActiveAt", skip_serializing_if = "Option::is_none")]
     last_active_at: Option<u64>,
+    /// Renderer-only, like `agent_state` above: which agent is running in
+    /// this tab, so mobile can draw the same brand mark the desktop
+    /// sidebar draws. Absent for a plain shell.
+    #[serde(default, rename = "agentId", skip_serializing_if = "Option::is_none")]
+    agent_id: Option<String>,
+    /// Renderer-only: whether the agent was launched with a
+    /// full-permissions flag. The renderer evaluates the flag against the
+    /// agent command; the command itself never travels.
+    #[serde(default, rename = "fullPermissions", skip_serializing_if = "Option::is_none")]
+    full_permissions: Option<bool>,
 }
 
 fn default_true() -> bool {
@@ -259,7 +269,8 @@ fn tab_summary_from_stored(project_id: &str, t: StoredTab) -> TabSummary {
         tab_id: compose_tab_id(project_id, &t.id),
         label: t.label,
         cwd: t.last_cwd.clone(),
-        agent: None,
+        agent_id: t.agent_id,
+        full_permissions: t.full_permissions,
         cmd: t.cmd,
         last_cwd: t.last_cwd,
         pinned: t.pinned,
@@ -421,7 +432,6 @@ mod tests {
                     tab_id: "t1".into(),
                     label: "a".into(),
                     cwd: None,
-                    agent: None,
                     cmd: None,
                     last_cwd: Some("/tmp".into()),
                     pinned: false,
@@ -440,7 +450,6 @@ mod tests {
                     tab_id: "t2".into(),
                     label: "b".into(),
                     cwd: None,
-                    agent: None,
                     cmd: Some("bash".into()),
                     last_cwd: None,
                     pinned: false,
@@ -471,7 +480,6 @@ mod tests {
                     tab_id: "t1".into(),
                     label: "a".into(),
                     cwd: None,
-                    agent: None,
                     cmd: None,
                     last_cwd: None,
                     pinned: false,
@@ -483,7 +491,6 @@ mod tests {
                     tab_id: "t2".into(),
                     label: "b".into(),
                     cwd: None,
-                    agent: None,
                     cmd: None,
                     last_cwd: None,
                     pinned: false,
@@ -530,7 +537,9 @@ mod tests {
                 "userRenamed": false,
                 "agentState": "awaiting",
                 "agentStateAt": 1_700_000_000_123_u64,
-                "lastActiveAt": 1_700_000_000_456_u64
+                "lastActiveAt": 1_700_000_000_456_u64,
+                "agentId": "claude-code",
+                "fullPermissions": true
             }]
         });
 
@@ -542,7 +551,31 @@ mod tests {
         assert_eq!(tab.agent_state.as_deref(), Some("awaiting"));
         assert_eq!(tab.agent_state_at, Some(1_700_000_000_123));
         assert_eq!(tab.last_active_at, Some(1_700_000_000_456));
+        assert_eq!(tab.agent_id.as_deref(), Some("claude-code"));
+        assert_eq!(tab.full_permissions, Some(true));
         assert_eq!(tab.tab_id, "p1:t1", "tab_id stays the composed key");
+    }
+
+    /// The agent id vocabulary is shared with the Rust agent registry:
+    /// mobile looks the id up in a brand table keyed by exactly these
+    /// strings, so a tab carrying an id no profile knows would render as
+    /// an unbranded fallback on the phone while the desktop draws a mark.
+    #[test]
+    fn renderer_agent_ids_resolve_in_the_agent_registry() {
+        for id in [
+            "claude-code",
+            "codex",
+            "opencode",
+            "amp",
+            "kilo",
+            "kimi",
+            "mastracode",
+        ] {
+            assert!(
+                crate::agents::by_id(id).is_some(),
+                "mobile brand table key {id} has no AgentProfile"
+            );
+        }
     }
 
     /// A projects.json written before this change has none of the three
@@ -563,5 +596,7 @@ mod tests {
         assert!(tab.agent_state.is_none());
         assert!(tab.agent_state_at.is_none());
         assert!(tab.last_active_at.is_none());
+        assert!(tab.agent_id.is_none());
+        assert!(tab.full_permissions.is_none());
     }
 }
