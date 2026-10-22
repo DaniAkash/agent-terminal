@@ -3,6 +3,7 @@
   "private": true,
   "workspaces": [
     "apps/*",
+    "packages/*",
     "apps/desktop/src-tauri/sidecar"
   ],
   "scripts": {

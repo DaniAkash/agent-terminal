@@ -137,6 +137,10 @@
         "typescript": "^6.0.3",
       },
     },
+    "packages/core-ui": {
+      "name": "@agent-terminal/core-ui",
+      "version": "0.0.0",
+    },
   },
   "trustedDependencies": [
     "sharp",
@@ -144,6 +148,8 @@
   ],
   "packages": {
     "@adobe/css-tools": ["@adobe/css-tools@4.5.0", "", {}, "sha512-6OzddxPio9UiWTCemp4N8cYLV2ZN1ncRnV1cVGtve7dhPOtRkleRyx32GQCYSwDYgaHU3USMm84tNsvKzRCa1Q=="],
+
+    "@agent-terminal/core-ui": ["@agent-terminal/core-ui@workspace:packages/core-ui"],
 
     "@agent-terminal/desktop": ["@agent-terminal/desktop@workspace:apps/desktop"],
 
