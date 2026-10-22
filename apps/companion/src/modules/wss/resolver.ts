@@ -1,8 +1,8 @@
-import type { DeviceRecord } from '@/modules/stores/$device'
+import type { DeviceRecord } from '@/modules/stores/$devices'
 
 /**
  * Self-healing WSS resolver ladder. Given a DeviceRecord (from
- * `$device`), returns the sequence of `wss://` URLs the client
+ * `$activeDevice`), returns the sequence of `wss://` URLs the client
  * should try, in order, when opening a connection. First success
  * wins; `client.ts` iterates through them until one auth-completes
  * or all fail.

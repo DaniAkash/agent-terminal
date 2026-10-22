@@ -21,8 +21,9 @@ interface TerminalDomProps {
   onResize: (cols: number, rows: number) => Promise<void>
   onReady: () => Promise<void>
   ref: Ref<TerminalHandle>
-  // Accepted for shape parity with iOS. Only scrollEnabled is honoured
-  // here; hideKeyboardAccessoryView is iOS-only and ignored on Android.
+  // Accepted for shape parity with iOS, and ignored. Both of these are
+  // iOS-only props: react-native-webview implements neither on Android, so
+  // passing them here would read as configuration that does nothing.
   dom?: { scrollEnabled?: boolean; hideKeyboardAccessoryView?: boolean }
 }
 
@@ -39,7 +40,6 @@ export default function TerminalDom({
   onResize,
   onReady,
   ref,
-  dom,
 }: TerminalDomProps) {
   const webviewRef = useRef<WebView | null>(null)
   const readyRef = useRef(false)
@@ -135,9 +135,14 @@ export default function TerminalDom({
         console.error('[TerminalDom.android] webview error', e.nativeEvent)
       }
       onLoadEnd={() => console.log('[TerminalDom.android] webview loaded')}
-      scrollEnabled={dom?.scrollEnabled ?? false}
       keyboardDisplayRequiresUserAction={false}
       androidLayerType="hardware"
+      // Without this the WebView never calls
+      // requestDisallowInterceptTouchEvent, so GestureHandlerRootView above
+      // it can claim a vertical drag and the page's touch handler never runs.
+      // That is why the terminal scrolled on iOS but not here: `scrollEnabled`
+      // is an iOS-only prop and does nothing on Android.
+      nestedScrollEnabled
     />
   )
 }

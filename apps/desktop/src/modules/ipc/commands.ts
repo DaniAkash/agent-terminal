@@ -1,4 +1,5 @@
 import { Channel, invoke } from '@tauri-apps/api/core'
+import type { SyncProject } from '@/modules/wss-bridge/projects-sync.helpers'
 import type { Project } from '@/screens/workspace/workspace.types'
 
 export type PtyDataCallback = (data: string) => void
@@ -52,7 +53,7 @@ export const IPC = {
    * gates all CRUD dispatch on this flag so mobile ops arriving during
    * the cold-start window get a clean OpError instead of a lost event.
    */
-  syncProjectsToWss: (projects: Project[], hydrated: boolean) =>
+  syncProjectsToWss: (projects: SyncProject[], hydrated: boolean) =>
     invoke<void>('sync_projects_to_wss', { projects, hydrated }),
 
   /**

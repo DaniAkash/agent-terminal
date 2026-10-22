@@ -1,3 +1,3 @@
-import { HomeScreen } from '@/screens/home/HomeScreen'
+import { IndexResolver } from '@/screens/resolver/IndexResolver'
 
-export default HomeScreen
+export default IndexResolver

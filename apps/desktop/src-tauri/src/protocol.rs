@@ -140,6 +140,27 @@ pub enum ClientFrame {
         body: ReorderTabsBody,
     },
 
+    SetTabPinned {
+        #[typeshare(serialized_as = "u32")]
+        op_id: u64,
+        body: SetTabPinnedBody,
+    },
+    SetProjectPinned {
+        #[typeshare(serialized_as = "u32")]
+        op_id: u64,
+        body: SetProjectPinnedBody,
+    },
+
+    /// Mobile activated a tab. Bumps the desktop's `$tabRecency` MRU so
+    /// both clients share one notion of "recently used". Deliberately not
+    /// folded into `Subscribe`: the client also subscribes on reconnect
+    /// and resume, which must not reorder history.
+    BumpRecency {
+        #[typeshare(serialized_as = "u32")]
+        op_id: u64,
+        body: BumpRecencyBody,
+    },
+
     /// Two-stage QR pairing handshake. The mobile client authed with
     /// `Auth { token: "PAIRING:<pairing_token>" }` and the server has
     /// already validated the pairing token; the mobile now sends its
@@ -306,6 +327,28 @@ pub struct ReorderTabsBody {
     pub new_index: u32,
 }
 
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SetTabPinnedBody {
+    pub project_id: String,
+    pub tab_id: String,
+    pub pinned: bool,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SetProjectPinnedBody {
+    pub project_id: String,
+    pub pinned: bool,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BumpRecencyBody {
+    pub project_id: String,
+    pub tab_id: String,
+}
+
 /// Mobile-side metadata for the pairing handshake. Everything
 /// user-visible about the paired device (name, platform, model)
 /// originates on the mobile side and lands here.
@@ -367,7 +410,7 @@ fn default_true() -> bool {
 // (Option deserialization tolerates both), so mobile bugs on the emitter
 // side don't break us.
 #[typeshare]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TabSummary {
     pub tab_id: String,
     pub label: String,
@@ -397,6 +440,20 @@ pub struct TabSummary {
     /// but have not been visited yet this session.
     #[serde(default)]
     pub is_spawned: bool,
+    /// Agent / shell status mirrored from the renderer's `$tabMeta`:
+    /// "running", "done", "error", "awaiting", or "idle". Drives the
+    /// mobile tab bar's status glyph.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_state: Option<String>,
+    /// Epoch ms when `agent_state` last changed.
+    #[typeshare(serialized_as = "Option<u32>")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_state_at: Option<u64>,
+    /// Epoch ms when this tab was last activated on any client. Mirrors
+    /// the renderer's `$tabRecencyTimes`; absent means never activated.
+    #[typeshare(serialized_as = "Option<u32>")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_active_at: Option<u64>,
 }
 
 #[typeshare]
@@ -544,6 +601,7 @@ mod tests {
                         pinned: false,
                         user_renamed: false,
                         is_spawned: true,
+                        ..Default::default()
                     }],
                 }],
             },

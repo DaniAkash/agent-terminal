@@ -1,16 +1,20 @@
 import {
-  $device,
+  $activeDevice,
   clearDevice,
-  loadDeviceFromSecureStore,
-} from '@/modules/stores/$device'
+  loadDevicesFromSecureStore,
+} from '@/modules/stores/$devices'
+import { migrateDevicesV1ToV2 } from '@/modules/stores/$devices.migrate'
+import { loadLastSessions } from '@/modules/stores/$lastSession'
 import { $session } from '@/modules/stores/$session'
+import { decideDeviceAction } from './bootstrap.helpers'
 import { autoConnect, disconnect } from './client'
 import { initLifecycleWiring, resetLifecycleWiring } from './lifecycle'
+import type { SessionStatusHint } from './lifecycle.helpers'
 
 /**
  * WSS boot-time wiring. Idempotent; safe to call multiple times but
  * only wires once. The layout mounts this at app start; every future
- * `$device` transition (fresh pair, load-from-secure-store, revoke)
+ * `$activeDevice` transition (fresh pair, load-from-secure-store, revoke)
  * routes through the same reactive subscription below, so the paired
  * state is a single atom-of-truth and the UI transitions seamlessly
  * without any restart-to-see-effect gymnastics.
@@ -18,7 +22,7 @@ import { initLifecycleWiring, resetLifecycleWiring } from './lifecycle'
  * Flow:
  *
  *   PairScreen → completePairing → saveDeviceToSecureStore
- *     ↓ ($device.set)
+ *     ↓ ($activeDevice.set)
  *   this subscriber
  *     ↓ (autoConnect)
  *   client.ts openSocket → auth → $session.status = 'connected'
@@ -27,12 +31,14 @@ import { initLifecycleWiring, resetLifecycleWiring } from './lifecycle'
  *
  * Same subscription handles the cold-start path (secure-store already
  * has a record from a previous session) via the initial
- * `loadDeviceFromSecureStore` call below.
+ * `loadDevicesFromSecureStore` call below.
  */
 
 let initialized = false
 let unsubscribeDevice: (() => void) | null = null
 let unsubscribeSession: (() => void) | null = null
+/** The desktop the current socket belongs to, so a switch can be spotted. */
+let drivenDeviceId: string | null = null
 
 /**
  * Reasons the desktop returns in `ServerFrame::AuthFail` that mean
@@ -58,25 +64,35 @@ export async function initWssBootstrap(): Promise<void> {
   // fires immediately with the current value (`{ loaded: false,
   // record: null }`), which is a no-op here — the real work happens
   // when `loaded` flips true.
-  unsubscribeDevice = $device.subscribe((state) => {
+  unsubscribeDevice = $activeDevice.subscribe((state) => {
     if (!state.loaded) return
-    if (!state.record) return
-    // Don't stack redundant autoConnect calls: skip if the client is
-    // already up or negotiating.
-    const status = $session.get().status
-    if (status === 'connected' || status === 'connecting') return
-    void autoConnect(state.record)
+    const record = state.record
+    const action = decideDeviceAction(
+      drivenDeviceId,
+      record?.deviceId ?? null,
+      $session.get().status as SessionStatusHint,
+    )
+    if (action === 'skip') {
+      // Revoked or unpaired: there is no desktop to be driving any more.
+      if (!record) drivenDeviceId = null
+      return
+    }
+    if (!record) return
+    // A switch tears the old socket down first; see decideDeviceAction.
+    if (action === 'switch') disconnect()
+    drivenDeviceId = record.deviceId
+    void autoConnect(record)
   })
 
   // Server-side revoke recovery. When the desktop closes our
   // connection with AuthFail("revoked") or refuses reconnect with
   // AuthFail("bad token"), the token in secure-store is dead. Clear
-  // the local $device record so the UI falls back to the unpaired
+  // the local $activeDevice record so the UI falls back to the unpaired
   // CTA instead of retry-looping through the ladder with the same
   // dead token. `disconnect()` first stops any timers + resets
   // $session to a clean 'disconnected' state, then `clearDevice()`
   // wipes the record (secure-store + in-memory) which also prevents
-  // the $device subscriber above from re-firing autoConnect.
+  // the $activeDevice subscriber above from re-firing autoConnect.
   unsubscribeSession = $session.subscribe((state) => {
     if (state.status !== 'auth_failed') return
     if (!isRevokedAuthFail(state.lastError)) return
@@ -92,10 +108,19 @@ export async function initWssBootstrap(): Promise<void> {
   // a backgrounded-app-with-dead-socket case never bricks the client.
   initLifecycleWiring()
 
+  // One-shot move of a pre-existing single record into the sharded
+  // multi-desktop layout. Must run before the load below, which only
+  // knows about v2 keys.
+  await migrateDevicesV1ToV2()
+
+  // Landing shortcut for the resolver. Independent of the connection, so
+  // a failure here only costs the shortcut.
+  await loadLastSessions()
+
   // Cold-start read. Fires the device subscriber above as a side
-  // effect of `$device.set(...)` inside; if the phone was previously
-  // paired, that immediately kicks the resolver ladder.
-  await loadDeviceFromSecureStore()
+  // effect of the `$devices.set(...)` inside; if the phone was
+  // previously paired, that immediately kicks the resolver ladder.
+  await loadDevicesFromSecureStore()
 }
 
 /** Test / hot-reload seam: tears down every subscription + listener. */
@@ -105,6 +130,7 @@ export function resetWssBootstrap(): void {
   unsubscribeSession?.()
   unsubscribeDevice = null
   unsubscribeSession = null
+  drivenDeviceId = null
   resetLifecycleWiring()
   initialized = false
 }

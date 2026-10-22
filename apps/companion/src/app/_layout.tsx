@@ -30,7 +30,7 @@ Uniwind.setTheme('system')
 // native-module setup runs after expo-router has bootstrapped rather
 // than during the first import of _layout.tsx.
 export default function RootLayout() {
-  // Wire the reactive `$device` → `autoConnect` subscription once at
+  // Wire the reactive `$activeDevice` → `autoConnect` subscription once at
   // app boot. From then on, any device transition — cold-start load
   // from secure-store, a fresh pair completing, a Revoke clearing
   // the record — routes through the subscription in bootstrap.ts,
@@ -58,7 +58,8 @@ export default function RootLayout() {
         <>
           <StatusBar style="auto" />
           <Stack>
-            <Stack.Screen name="index" options={{ title: 'Agent Terminal' }} />
+            {/* Renders no UI; redirects to the last session or to home. */}
+            <Stack.Screen name="index" options={{ headerShown: false }} />
             <Stack.Screen
               name="pair"
               options={{ title: 'Pair with desktop' }}
@@ -67,17 +68,59 @@ export default function RootLayout() {
               name="connect"
               options={{ title: 'Manual connect' }}
             />
+            <Stack.Screen name="home" options={{ title: 'Agent Terminal' }} />
+            {/* No header. Every point the navigation bar takes is a point
+                of scrollback the terminal does not get, and ActiveTabBar
+                already names the session the header would have titled.
+                Going back still works: the iOS edge swipe stays enabled
+                without a header, and Android keeps its system back. */}
             <Stack.Screen
-              name="projects"
+              name="tab/[projectId]/[tabId]"
+              options={{ headerShown: false }}
+            />
+            {/* Sheets. `headerShown: false` is not cosmetic: Android does
+                not render headers inside a form sheet at all, so a title
+                set here would simply vanish there. The switcher is the
+                only one opened to glance at, so it alone gets the
+                half-height first detent; the rest open at full height
+                because you arrive at them with an intent. Android caps
+                detents at three. */}
+            <Stack.Screen
+              name="switcher"
               options={{
-                title: 'Projects',
-                presentation: 'modal',
+                presentation: 'formSheet',
+                sheetAllowedDetents: [0.5, 1],
+                sheetInitialDetentIndex: 0,
+                sheetGrabberVisible: true,
+                sheetCornerRadius: 16,
+                headerShown: false,
               }}
             />
             <Stack.Screen
-              name="tab/[tabid]"
+              name="desktops"
               options={{
-                headerBackTitle: 'Back',
+                presentation: 'formSheet',
+                sheetGrabberVisible: true,
+                sheetCornerRadius: 16,
+                headerShown: false,
+              }}
+            />
+            <Stack.Screen
+              name="project/[projectId]/edit"
+              options={{
+                presentation: 'formSheet',
+                sheetGrabberVisible: true,
+                sheetCornerRadius: 16,
+                headerShown: false,
+              }}
+            />
+            <Stack.Screen
+              name="status/[projectId]/[tabId]"
+              options={{
+                presentation: 'formSheet',
+                sheetGrabberVisible: true,
+                sheetCornerRadius: 16,
+                headerShown: false,
               }}
             />
           </Stack>

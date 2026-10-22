@@ -11,11 +11,12 @@
     // model the platform split, so it flags the iOS file as unreachable.
     // Both are legitimate consumers.
     "src/screens/tab/TerminalDom.tsx",
-    // Config plugins loaded by string reference from app.json's plugins
-    // array (Expo's config-plugins mechanism). Fallow doesn't parse
-    // app.json, so it flags the files as unreachable.
+    // Config plugins loaded by string reference from the plugins array in
+    // app.config.ts (Expo's config-plugins mechanism). Fallow does not
+    // follow that indirection, so it flags the files as unreachable.
     "plugins/withGradleWrapperVersion.js",
-    "plugins/withIosDeploymentTarget.js"
+    "plugins/withIosDeploymentTarget.js",
+    "plugins/withAndroidRelease.js"
   ],
   // react-native-web is required by expo/dom's `.web.tsx` files that
   // Metro pulls in when bundling `'use dom'` components. No source
@@ -52,6 +53,14 @@
     // is pre-existing; it grew slightly with the autoConnect / probe
     // helpers but stayed under the pre-Phase-2B risk envelope.
     "ignore": [
+      // Four small pure predicates (shape guards, index reconciliation,
+      // active-device selection) with direct unit tests in
+      // $devices.helpers.test.ts. Fallow ESTIMATES CRAP from export
+      // reference counts rather than measuring coverage, so a file with
+      // several tested exports and several importers reads as untested
+      // complexity. The flag is a coupling heuristic here, not a real
+      // one: `fallow health --coverage` gives the true score.
+      "src/modules/stores/$devices.helpers.ts",
       // Thin React glue around an async store read. The pure logic this
       // screen depends on (URL canonicalisation, fingerprint parsing,
       // device-record construction) is tested directly in
@@ -61,7 +70,15 @@
       "src/modules/wss/client.ts",
       "src/modules/wss/bootstrap.ts",
       "src/screens/pair/**",
-      "src/screens/home/**"
+      "src/screens/home/**",
+      // A build-time config plugin: it runs during prebuild, never at
+      // runtime, and nothing imports it, so the CRAP estimate reads it as
+      // wholly untested complexity. Its complexity is four anchor checks
+      // against Expo's Gradle template, each of which throws rather than
+      // falling through, so template drift fails the build loudly instead
+      // of silently producing an unsigned release. A unit test over the
+      // patch function would still be worth having.
+      "plugins/withAndroidRelease.js"
     ]
   }
 }

@@ -52,6 +52,18 @@ describe('buildTerminalHtml', () => {
     expect(evil).toContain('"red\\"; window.pwned = true; //"')
   })
 
+  test('the inlined touch handler re-seeds instead of bailing without a reference', () => {
+    // The shared module covers this path under test; the inlined copy here
+    // cannot import it, so the guard is that it still carries the re-seed.
+    // Bailing on a null lastY is what left the terminal inert after a pinch.
+    expect(html).toContain(
+      'if (lastY === null) { lastY = y; carry = 0; return; }',
+    )
+    expect(html).not.toContain(
+      'if (lastY === null || e.touches.length !== 1) return',
+    )
+  })
+
   test('boot loader has a max-retry cap and posts an error on timeout', () => {
     expect(html).toContain('BOOT_MAX_ATTEMPTS')
     expect(html).toContain("type: 'error'")

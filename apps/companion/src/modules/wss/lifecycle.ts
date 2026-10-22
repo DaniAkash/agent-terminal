@@ -2,8 +2,8 @@ import type { NetInfoState } from '@react-native-community/netinfo'
 import NetInfo from '@react-native-community/netinfo'
 import type { AppStateStatus } from 'react-native'
 import { AppState } from 'react-native'
-import type { DeviceRecord } from '@/modules/stores/$device'
-import { $device } from '@/modules/stores/$device'
+import type { DeviceRecord } from '@/modules/stores/$devices'
+import { $activeDevice } from '@/modules/stores/$devices'
 import { $session } from '@/modules/stores/$session'
 import { autoConnect, forceCloseFromLifecycle, probeConnection } from './client'
 import {
@@ -88,7 +88,7 @@ function handleAppStateChange(next: AppStateStatus): void {
 }
 
 async function handleForegroundResume(elapsedMs: number): Promise<void> {
-  const record = $device.get().record
+  const record = $activeDevice.get().record
   const status = $session.get().status as SessionStatusHint
   const action = decideForegroundAction(elapsedMs, status, record !== null)
   console.log('[wss.lifecycle] resume action:', action, { elapsedMs, status })
@@ -96,7 +96,7 @@ async function handleForegroundResume(elapsedMs: number): Promise<void> {
 }
 
 function handleNetInfoChange(net: NetInfoState): void {
-  const record = $device.get().record
+  const record = $activeDevice.get().record
   const status = $session.get().status as SessionStatusHint
   const action = classifyNetInfoChange(net, status, record !== null)
   if (action !== 'skip') console.log('[wss.lifecycle] net action:', action)

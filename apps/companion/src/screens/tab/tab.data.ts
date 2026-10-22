@@ -10,11 +10,23 @@ import {
 } from '@/modules/wss/client'
 import { applyAlt, applyCtrl } from './extra-keys.helpers'
 import type { TerminalHandle } from './TerminalDom'
+import {
+  useActiveTabInfo,
+  useConnectionNotices,
+  useNoteRecency,
+} from './tab.hooks'
 
 const SCROLLBACK = 2000
 
-export function useTabData(tabId: string) {
-  const session = useStore($session)
+/**
+ * Everything the terminal screen needs, composed from the smaller hooks.
+ *
+ * `tabId` changing is a session switch, not a remount: the stream effect
+ * below resubscribes and the webview keeps running, which is the whole
+ * reason swiping between sessions costs a frame rather than a reload.
+ */
+// fallow-ignore-next-line complexity
+export function useTabData(projectId: string, tabId: string) {
   const terminalRef = useRef<TerminalHandle | null>(null)
   const [ready, setReady] = useState(false)
   const [ctrlArmed, setCtrlArmed] = useState(false)
@@ -65,6 +77,10 @@ export function useTabData(tabId: string) {
   }, [tabId, ready])
 
   const onReady = useCallback(async () => {
+    // Fires once per webview mount. Switching sessions must NOT produce a
+    // second one: that would mean the terminal was torn down and rebuilt
+    // rather than just re-pointed at another stream.
+    console.log('[terminal] webview ready')
     setReady(true)
   }, [])
 
@@ -86,6 +102,15 @@ export function useTabData(tabId: string) {
   const toggleCtrl = useCallback(() => setCtrlArmed((v) => !v), [])
   const toggleAlt = useCallback(() => setAltArmed((v) => !v), [])
 
+  const connected = useStore($session).status === 'connected'
+  const writeToTerminal = useCallback((payload: string) => {
+    terminalRef.current?.write(payload)
+  }, [])
+  useConnectionNotices(tabId, writeToTerminal)
+
+  const active = useActiveTabInfo(projectId, tabId)
+  useNoteRecency(tabId)
+
   return {
     terminalRef,
     onData,
@@ -96,7 +121,7 @@ export function useTabData(tabId: string) {
     altArmed,
     toggleCtrl,
     toggleAlt,
-    status: session.status,
-    deviceName: session.deviceName,
+    active,
+    connected,
   }
 }
