@@ -2,6 +2,7 @@ import type { AgentArt, TabVisual } from '@agent-terminal/core-ui'
 import { useEffect, useRef } from 'react'
 import { Animated, View } from 'react-native'
 import Svg, { Circle, Path } from 'react-native-svg'
+import { Icon } from '@/components/ui/Icon'
 import { dotClass } from './tab-status.helpers'
 
 const AWAITING_AMBER = '#e0af68'
@@ -36,10 +37,14 @@ export function SessionGlyph({
   if (!connected) {
     return <View className="h-2 w-2 rounded-full bg-destructive" />
   }
-  // A shell, or an agent this build has no artwork for, is a dot.
-  if (visual.kind === 'shell' || !visual.art) {
+  if (visual.kind === 'shell') {
     return <Dot visual={visual} pulses={visual.pulses} />
   }
+  // An agent this build has no artwork for: a newer desktop naming an
+  // agent this one has never heard of. The desktop draws the same mark
+  // for the same case, so the two still agree about what they do not
+  // know.
+  if (!visual.art) return <UnknownAgentMark size={size} />
   return <AgentMark visual={visual} art={visual.art} size={size} />
 }
 
@@ -103,7 +108,19 @@ function StateBadge({
   return null
 }
 
-/** Plain dot for a shell tab, or an agent this build has no mark for. */
+/** Stand-in for an agent whose brand this build does not carry. */
+function UnknownAgentMark({ size }: { size: number }) {
+  return (
+    <View
+      style={{ width: size, height: size }}
+      className="items-center justify-center"
+    >
+      <Icon name="sparkles" size={Math.max(8, Math.round(size * 0.8))} />
+    </View>
+  )
+}
+
+/** Plain dot for a shell tab. */
 function Dot({ visual, pulses }: { visual: TabVisual; pulses: boolean }) {
   const opacity = usePulse(pulses)
   return (

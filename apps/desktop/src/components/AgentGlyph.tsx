@@ -1,4 +1,5 @@
 import type { TabVisual } from '@agent-terminal/core-ui'
+import { Sparkles } from 'lucide-react'
 import { AgentMarkSvg } from '@/components/AgentMarkSvg'
 
 type AgentVisual = Extract<TabVisual, { kind: 'agent' }>
@@ -24,13 +25,11 @@ function SparkleFallback({
         height: size,
         flexShrink: 0,
         color: '#c4b5fd',
-        fontSize: Math.max(8, size * 0.7),
-        lineHeight: 1,
         opacity: visual.dimmed ? 0.5 : 0.9,
       }}
       aria-hidden="true"
     >
-      ✦
+      <Sparkles size={Math.max(8, Math.round(size * 0.8))} />
     </span>
   )
 }
