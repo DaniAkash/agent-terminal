@@ -31,9 +31,19 @@ describe('hasDangerFlag', () => {
     }
   })
 
+  test('recognises a flag given a value', () => {
+    expect(hasDangerFlag('codex --yolo=true')).toBe(true)
+  })
+
   test('a plain agent command is not dangerous', () => {
     expect(hasDangerFlag('claude --model opus')).toBe(false)
     expect(hasDangerFlag('codex')).toBe(false)
+  })
+
+  test('a flag name inside another value is not the flag', () => {
+    expect(hasDangerFlag('codex --model my--yolo-model')).toBe(false)
+    expect(hasDangerFlag('codex --yolo-extra')).toBe(false)
+    expect(hasDangerFlag('claude --api-key sk-x--yolo-y')).toBe(false)
   })
 })
 

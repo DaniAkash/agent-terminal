@@ -15,10 +15,23 @@ import {
  * Only the desktop can call this: `agentCmd` is renderer state and never
  * crosses the wire, by design, because it can hold an API key or an
  * absolute home path. The desktop evaluates it and sends the boolean.
+ *
+ * Matched token by token rather than as a substring, because the answer
+ * ends up on the phone as a trust badge and a substring search calls
+ * `--model my--yolo-model` dangerous. Splitting each token on `=` keeps
+ * `--yolo=true` recognised, and a flag never contains whitespace, so a
+ * quoted value lands in a token of its own and cannot be mistaken for
+ * one.
  */
 export function hasDangerFlag(agentCmd: string | undefined): boolean {
   if (!agentCmd) return false
-  return FULL_PERMISSION_FLAGS.some((flag) => agentCmd.includes(flag))
+  return agentCmd.split(/\s+/).some(isFullPermissionFlag)
+}
+
+function isFullPermissionFlag(token: string): boolean {
+  const value = token.indexOf('=')
+  const flag = value === -1 ? token : token.slice(0, value)
+  return FULL_PERMISSION_FLAGS.includes(flag)
 }
 
 /**
