@@ -102,10 +102,20 @@ export function agentName(visual: SessionNode['visual']): string | null {
  * Pure, and here rather than in the component, because what a screen
  * reader hears is as much a part of the row's content as its text and
  * deserves the same test coverage.
+ *
+ * `pinned` is passed rather than read off the node, because the pin only
+ * means something in the Workspaces view: Recent orders by recency, so a
+ * pin announced there would describe a rule that view does not use. The
+ * row that shows no pin must not speak one either.
  */
-export function rowSpokenLabel(node: SessionNode, age: string): string {
+export function rowSpokenLabel(
+  node: SessionNode,
+  age: string,
+  pinned = false,
+): string {
   const who = agentName(node.visual)
   const prefix = who ? `${who}, ` : ''
   const danger = node.visual.showDanger ? ', all permissions enabled' : ''
-  return `${node.label}, ${prefix}${node.visual.label}${danger}, in ${node.projectName}${spokenAge(age)}`
+  const pin = pinned ? ', pinned' : ''
+  return `${node.label}, ${prefix}${node.visual.label}${danger}${pin}, in ${node.projectName}${spokenAge(age)}`
 }

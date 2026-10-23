@@ -5,6 +5,7 @@ import { Text, View } from 'react-native'
 // activates over a key and the swipes are dead on exactly the surface
 // they are meant to work on.
 import { Pressable } from 'react-native-gesture-handler'
+import { Icon, type IconName } from '@/components/ui/Icon'
 import { SEQ } from './extra-keys.helpers'
 
 interface ExtraKeysBarProps {
@@ -31,7 +32,11 @@ export function ExtraKeysBar({
         <KeyButton label="/" onPress={() => onKey(SEQ.slash)} />
         <KeyButton label="-" onPress={() => onKey(SEQ.dash)} />
         <KeyButton label="HOME" onPress={() => onKey(SEQ.home)} />
-        <KeyButton label="↑" onPress={() => onKey(SEQ.arrowUp)} />
+        <KeyButton
+          label="Up"
+          icon="arrow-up"
+          onPress={() => onKey(SEQ.arrowUp)}
+        />
         <KeyButton label="END" onPress={() => onKey(SEQ.end)} />
         <KeyButton label="PGUP" onPress={() => onKey(SEQ.pageUp)} />
       </View>
@@ -39,9 +44,21 @@ export function ExtraKeysBar({
         <KeyButton label="TAB" onPress={() => onKey(SEQ.tab)} />
         <KeyButton label="CTRL" armed={ctrlArmed} onPress={onToggleCtrl} />
         <KeyButton label="ALT" armed={altArmed} onPress={onToggleAlt} />
-        <KeyButton label="←" onPress={() => onKey(SEQ.arrowLeft)} />
-        <KeyButton label="↓" onPress={() => onKey(SEQ.arrowDown)} />
-        <KeyButton label="→" onPress={() => onKey(SEQ.arrowRight)} />
+        <KeyButton
+          label="Left"
+          icon="arrow-left"
+          onPress={() => onKey(SEQ.arrowLeft)}
+        />
+        <KeyButton
+          label="Down"
+          icon="arrow-down"
+          onPress={() => onKey(SEQ.arrowDown)}
+        />
+        <KeyButton
+          label="Right"
+          icon="arrow-right"
+          onPress={() => onKey(SEQ.arrowRight)}
+        />
         {/* The last column is split rather than widening the bar: every
             other key keeps its size and the two rows stay on one grid.
             The halves are uneven because a four-letter label does not fit
@@ -52,7 +69,8 @@ export function ExtraKeysBar({
           onPress={() => onKey(SEQ.pageDown)}
         />
         <KeyButton
-          label="⋮"
+          label="More"
+          icon="ellipsis-vertical"
           flex={0.38}
           accessibilityLabel="More actions"
           onPress={onMore}
@@ -63,7 +81,10 @@ export function ExtraKeysBar({
 }
 
 interface KeyButtonProps {
+  /** Spoken name of the key, and the printed one unless `icon` is set. */
   label: string
+  /** Drawn instead of the label, for the keys whose face is a symbol. */
+  icon?: IconName
   armed?: boolean
   /** Column width relative to a standard key. Defaults to a full column. */
   flex?: number
@@ -74,6 +95,7 @@ interface KeyButtonProps {
 // fallow-ignore-next-line complexity
 function KeyButton({
   label,
+  icon,
   armed,
   flex = 1,
   accessibilityLabel,
@@ -106,13 +128,50 @@ function KeyButton({
       style={{ flex }}
     >
       <View className={`items-center justify-center py-3 ${bgClass}`}>
-        <Text
-          numberOfLines={1}
-          className={`font-mono ${sizeClass} ${textClass}`}
-        >
-          {label}
-        </Text>
+        <KeyFace
+          label={label}
+          icon={icon}
+          armed={armed === true}
+          sizeClass={sizeClass}
+          textClass={textClass}
+        />
       </View>
     </Pressable>
+  )
+}
+
+/**
+ * What the key shows: a symbol for the keys that have one, the label for
+ * the rest. Split out so `KeyButton` keeps the single shape it had, and
+ * so the icon's tint can follow the armed state the same way the text
+ * colour does.
+ */
+function KeyFace({
+  label,
+  icon,
+  armed,
+  sizeClass,
+  textClass,
+}: {
+  label: string
+  icon: IconName | undefined
+  armed: boolean
+  sizeClass: string
+  textClass: string
+}) {
+  if (icon) {
+    return (
+      <Icon
+        name={icon}
+        size={15}
+        tone={armed ? 'inverted' : 'foreground'}
+        label={label}
+      />
+    )
+  }
+  return (
+    <Text numberOfLines={1} className={`font-mono ${sizeClass} ${textClass}`}>
+      {label}
+    </Text>
   )
 }

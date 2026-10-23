@@ -2,6 +2,7 @@ import type { SessionNode } from '@agent-terminal/core-ui'
 import { useActionSheet } from '@expo/react-native-action-sheet'
 import { useState } from 'react'
 import { FlatList, Pressable, Text, View } from 'react-native'
+import { Icon } from '@/components/ui/Icon'
 import { NewProjectSheet } from '@/screens/projects/NewProjectSheet'
 import { SwitcherRowItem } from './SwitcherRow'
 import { SwitcherViewToggle } from './SwitcherViewToggle'
@@ -91,7 +92,7 @@ export function SwitcherSheet({ currentKey }: SwitcherSheetProps) {
                 <Text numberOfLines={1} className="text-foreground text-xs">
                   {deviceName ?? 'desktop'}
                 </Text>
-                <Text className="text-muted-foreground text-xs">⌄</Text>
+                <Icon name="chevron-down" size={13} />
               </Pressable>
             </View>
             <SwitcherViewToggle view={view} onChange={setView} />

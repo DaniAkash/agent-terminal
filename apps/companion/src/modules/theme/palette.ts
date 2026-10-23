@@ -31,6 +31,7 @@ export interface Palette {
   input: string
   destructive: string
   success: string
+  warning: string
 }
 
 export const lightPalette: Palette = {
@@ -47,6 +48,7 @@ export const lightPalette: Palette = {
   input: 'rgba(0, 0, 0, 0.08)',
   destructive: '#c23648',
   success: '#2e8b3d',
+  warning: '#b26a00',
 }
 
 export const darkPalette: Palette = {
@@ -63,4 +65,5 @@ export const darkPalette: Palette = {
   input: 'rgba(255, 255, 255, 0.08)',
   destructive: '#f7768e',
   success: '#9ece6a',
+  warning: '#e0af68',
 }

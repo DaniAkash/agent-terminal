@@ -1,5 +1,6 @@
 import type { TabVisual } from '@agent-terminal/core-ui'
 import { Pressable, Text, View } from 'react-native'
+import { Icon } from '@/components/ui/Icon'
 import { agentName } from '@/screens/switcher/switcher.helpers'
 import { DangerBadge } from './DangerBadge'
 import { SessionGlyph } from './SessionGlyph'
@@ -56,7 +57,7 @@ export function ActiveTabBar({
         {projectName}
       </Text>
       {visual.showDanger && <DangerBadge />}
-      <Text className="text-muted-foreground text-xs">⌃</Text>
+      <Icon name="chevron-up" size={13} />
     </Pressable>
   )
 }

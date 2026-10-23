@@ -6,6 +6,7 @@ import DraggableFlatList, {
   type RenderItemParams,
 } from 'react-native-draggable-flatlist'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
+import { Icon } from '@/components/ui/Icon'
 import { $session } from '@/modules/stores/$session'
 import {
   sendRemoveProject,
@@ -166,14 +167,17 @@ export function WorkspaceEditSheet({ projectId }: { projectId: string }) {
           accessibilityLabel={pinned ? 'Unpin workspace' : 'Pin workspace'}
           className="rounded-md border border-border px-2 py-1 active:bg-accent-soft"
         >
-          <Text className="text-foreground text-xs">{pinned ? '★' : '☆'}</Text>
+          <Icon name={pinned ? 'pin-off' : 'pin'} size={13} tone="foreground" />
         </Pressable>
         <Pressable
           onPress={() => setShowNewTab(true)}
           accessibilityRole="button"
           className="rounded-md border border-border px-2 py-1 active:bg-accent-soft"
         >
-          <Text className="text-foreground text-xs">+ Session</Text>
+          <View className="flex-row items-center gap-1">
+            <Icon name="plus" size={12} tone="foreground" />
+            <Text className="text-foreground text-xs">Session</Text>
+          </View>
         </Pressable>
         <Pressable
           onPress={openWorkspaceMenu}
@@ -181,7 +185,7 @@ export function WorkspaceEditSheet({ projectId }: { projectId: string }) {
           accessibilityLabel="Workspace options"
           className="rounded-md border border-border px-2 py-1 active:bg-accent-soft"
         >
-          <Text className="text-foreground text-xs">⋮</Text>
+          <Icon name="ellipsis-vertical" size={14} tone="foreground" />
         </Pressable>
       </View>
 
@@ -252,7 +256,7 @@ function EditableTabRow({ item, drag, isActive, onMore }: EditableTabRowProps) {
         >
           {sessionLabel(item)}
         </Text>
-        {item.pinned && <Text className="text-foreground text-xs">★</Text>}
+        {item.pinned && <Icon name="pin" size={11} tone="foreground" />}
         {sleeping && (
           <Text className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground uppercase">
             sleeping

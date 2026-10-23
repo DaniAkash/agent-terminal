@@ -3,6 +3,7 @@ import type { ProjectSummary } from '@/modules/wss/protocol.gen'
 import {
   recentSessions,
   relativeAge,
+  rowSpokenLabel,
   spokenAge,
   toSessionNodes,
   workspaceGroups,
@@ -199,5 +200,29 @@ describe('the spoken age in a row label', () => {
   test('every other age keeps its "ago"', () => {
     expect(spokenAge('5m')).toBe(', 5m ago')
     expect(spokenAge('')).toBe('')
+  })
+})
+
+describe('rowSpokenLabel', () => {
+  const pinnedShell = () => {
+    const node = nodes().find((n) => n.key === 'p1:shell')
+    if (!node) throw new Error('fixture missing the pinned shell')
+    return node
+  }
+
+  // The pin is drawn only in the Workspaces view, because Recent orders
+  // by recency and a pin there would describe a rule it does not use. A
+  // row that shows no pin must not speak one either.
+  test('speaks the pin only where the row draws one', () => {
+    expect(rowSpokenLabel(pinnedShell(), '', true)).toContain(', pinned')
+    expect(rowSpokenLabel(pinnedShell(), '10m', false)).not.toContain('pinned')
+  })
+
+  test('names the agent and its permissions before the workspace', () => {
+    const claude = nodes().find((n) => n.key === 'p1:claude')
+    if (!claude) throw new Error('fixture missing the claude session')
+    expect(rowSpokenLabel(claude, '1m')).toBe(
+      'claude, Claude Code, needs you, in browseros, 1m ago',
+    )
   })
 })

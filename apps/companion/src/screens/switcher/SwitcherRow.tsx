@@ -1,5 +1,6 @@
 import type { SessionNode } from '@agent-terminal/core-ui'
 import { Pressable, Text, View } from 'react-native'
+import { Icon } from '@/components/ui/Icon'
 import { DangerBadge } from '@/screens/tab/DangerBadge'
 import { SessionGlyph } from '@/screens/tab/SessionGlyph'
 import { relativeAge, rowSpokenLabel } from './switcher.helpers'
@@ -29,8 +30,7 @@ export function SwitcherRowItem({
   onLongPress,
   onMenu,
 }: SwitcherRowProps) {
-  const standalone = variant === 'recent'
-  const age = standalone ? relativeAge(node.lastActiveAt, now) : ''
+  const { standalone, age, pinned } = rowShape(node, variant, now)
 
   return (
     <View
@@ -43,12 +43,17 @@ export function SwitcherRowItem({
         onLongPress={onLongPress}
         delayLongPress={350}
         accessibilityRole="button"
-        accessibilityLabel={rowSpokenLabel(node, age)}
+        accessibilityLabel={rowSpokenLabel(node, age, pinned)}
         className={`flex-1 flex-row items-center gap-3 rounded-lg pr-2 ${
           standalone ? 'py-3 pl-3' : 'py-2.5 pl-6'
         }`}
       >
-        <RowBody node={node} standalone={standalone} age={age} />
+        <RowBody
+          node={node}
+          standalone={standalone}
+          age={age}
+          pinned={pinned}
+        />
       </Pressable>
       {/* A visible way into the workspace and the session details. The long
           press reaches the same menu, but a gesture with no affordance is
@@ -60,7 +65,7 @@ export function SwitcherRowItem({
         hitSlop={{ top: 10, bottom: 10, left: 6, right: 10 }}
         className="rounded-lg py-3 pr-3 pl-1 active:opacity-60"
       >
-        <Text className="text-muted-foreground text-sm">⋮</Text>
+        <Icon name="ellipsis-vertical" size={16} />
       </Pressable>
     </View>
   )
@@ -71,10 +76,12 @@ function RowBody({
   node,
   standalone,
   age,
+  pinned,
 }: {
   node: SessionNode
   standalone: boolean
   age: string
+  pinned: boolean
 }) {
   return (
     <>
@@ -91,11 +98,7 @@ function RowBody({
           </Text>
         )}
       </View>
-      <RowTrailing
-        pinned={node.pinned && !standalone}
-        danger={node.visual.showDanger}
-        age={age}
-      />
+      <RowTrailing pinned={pinned} danger={node.visual.showDanger} age={age} />
     </>
   )
 }
@@ -117,14 +120,7 @@ function RowTrailing({
 }) {
   return (
     <>
-      {pinned && (
-        <Text
-          accessibilityLabel="pinned"
-          className="text-[10px] text-muted-foreground"
-        >
-          ⚲
-        </Text>
-      )}
+      {pinned && <Icon name="pin" size={11} />}
       {danger && <DangerBadge />}
       {age !== '' && (
         <Text className="text-muted-foreground text-xs tabular-nums">
@@ -133,4 +129,25 @@ function RowTrailing({
       )}
     </>
   )
+}
+
+/**
+ * The three things about a row that depend on which view it is in.
+ *
+ * Together rather than one at a time, because they are one decision: a
+ * row in the Workspaces view sits under a header that already names the
+ * workspace and orders by pin, so it shows the pin and no age, and a row
+ * in Recent is the reverse.
+ */
+function rowShape(
+  node: SessionNode,
+  variant: RowVariant,
+  now: number,
+): { standalone: boolean; age: string; pinned: boolean } {
+  const standalone = variant === 'recent'
+  return {
+    standalone,
+    age: standalone ? relativeAge(node.lastActiveAt, now) : '',
+    pinned: node.pinned && !standalone,
+  }
 }

@@ -26,7 +26,11 @@
   // directly. @expo/config-plugins is a transitive Expo dep required
   // from the local config plugins (build-time modules fallow does
   // not scan).
+  // expo-font is the runtime the @react-native-vector-icons packages load
+  // their font through, and a config plugin in app.config.ts. Expo's own
+  // migration guide requires it to be installed; nothing imports it.
   "ignoreDependencies": [
+    "expo-font",
     "react-native-web",
     "expo-build-properties",
     "expo-dev-client",
