@@ -1,13 +1,6 @@
 import type { KeyboardEventName } from 'react-native'
 
 /**
- * How long to animate when the keyboard event carries no usable
- * duration. iOS normally reports around 250ms, so an event that omits it
- * still lands in the same neighbourhood.
- */
-export const FALLBACK_KEYBOARD_DURATION = 250
-
-/**
  * Which pair of keyboard events to drive the bar from.
  *
  * iOS fires the `Will` pair as the keyboard starts moving and carries the
@@ -26,17 +19,19 @@ export function keyboardEventNames(os: string): {
 }
 
 /**
- * The duration to animate for, taken from the keyboard itself.
+ * How long the bar has to move, taken from the keyboard itself.
  *
- * iOS sends 0 when the keyboard changes without animating, which a
- * hardware keyboard toggle produces. Timing to 0 makes the bar snap, so
- * anything non-positive falls back rather than being passed through.
+ * Zero is a real answer, not a missing one. Android reports it because
+ * `keyboardDidShow` fires once the keyboard is already in place, and iOS
+ * reports it when the keyboard changes without animating, as a hardware
+ * keyboard toggle does. Either way there is no travel left to match, and
+ * the caller should place the bar rather than animate it there: timing
+ * towards a keyboard that has already arrived is what left the bar
+ * sitting behind it, a frame or several short of its mark.
  */
 export function keyboardDuration(event: { duration?: number }): number {
   const reported = event.duration
-  return reported !== undefined && reported > 0
-    ? reported
-    : FALLBACK_KEYBOARD_DURATION
+  return reported !== undefined && reported > 0 ? reported : 0
 }
 
 /**

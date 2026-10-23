@@ -165,8 +165,15 @@ export function TabScreen({ projectId, tabId }: TabScreenProps) {
 /**
  * Move the spacer and the key bar together, on the keyboard's own clock.
  *
- * One `parallel` rather than two `start()` calls so the bar cannot drift
- * a frame away from the keyboard it is sitting on.
+ * A zero duration means the keyboard has already finished moving, which
+ * is every Android event and an iOS hardware keyboard toggle. Placing
+ * the values is then both correct and the only reliable option: Android
+ * emits several events per appearance, and a timing started on each one
+ * competes with the one still running, which left the bar stopping
+ * somewhere short of its mark and at a different place each time.
+ *
+ * Otherwise one `parallel` rather than two `start()` calls, so the bar
+ * cannot drift a frame away from the keyboard it is sitting on.
  */
 function animateBottom(
   spacer: Animated.Value,
@@ -175,6 +182,11 @@ function animateBottom(
   revealTo: number,
   duration: number,
 ): void {
+  if (duration <= 0) {
+    spacer.setValue(spacerTo)
+    reveal.setValue(revealTo)
+    return
+  }
   Animated.parallel([
     Animated.timing(spacer, {
       toValue: spacerTo,

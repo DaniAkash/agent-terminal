@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test'
 import {
-  FALLBACK_KEYBOARD_DURATION,
   keyboardDuration,
   keyboardEventNames,
   spacerForKeyboard,
@@ -29,11 +28,12 @@ describe('keyboardDuration', () => {
     expect(keyboardDuration({ duration: 310 })).toBe(310)
   })
 
-  // A hardware keyboard toggle reports zero, and timing to zero makes the
-  // bar snap into place instead of arriving with the keyboard.
-  test('falls back when the keyboard reports no animation', () => {
-    expect(keyboardDuration({ duration: 0 })).toBe(FALLBACK_KEYBOARD_DURATION)
-    expect(keyboardDuration({})).toBe(FALLBACK_KEYBOARD_DURATION)
+  // Android always reports zero, because its event fires once the
+  // keyboard has already moved. Reporting that honestly is what lets the
+  // caller place the bar instead of animating towards a finished move.
+  test('reports zero when there is no travel left to match', () => {
+    expect(keyboardDuration({ duration: 0 })).toBe(0)
+    expect(keyboardDuration({})).toBe(0)
   })
 })
 
