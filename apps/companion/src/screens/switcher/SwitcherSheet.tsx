@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { FlatList, Pressable, Text, View } from 'react-native'
 import { Icon } from '@/components/ui/Icon'
 import { NewProjectSheet } from '@/screens/projects/NewProjectSheet'
+import { NewTabSheet } from '@/screens/projects/NewTabSheet'
 import { SwitcherRowItem } from './SwitcherRow'
 import { SwitcherViewToggle } from './SwitcherViewToggle'
 import { useSwitcherData } from './switcher.data'
@@ -41,6 +42,12 @@ export function SwitcherSheet({ currentKey }: SwitcherSheetProps) {
   } = useSwitcherData(currentKey)
   const { showActionSheetWithOptions } = useActionSheet()
   const [showNewProject, setShowNewProject] = useState(false)
+  // Presented here rather than by routing to the workspace editor, which
+  // holds a new-session button of its own: the header's plus says "New
+  // session in <workspace>", and the editor is a different screen needing
+  // a second tap. A Modal, so it nests inside this form sheet, which a
+  // second sheet route could not do on Android.
+  const [newSessionIn, setNewSessionIn] = useState<string | null>(null)
 
   function openRowMenu(node: SessionNode) {
     showActionSheetWithOptions(
@@ -106,7 +113,7 @@ export function SwitcherSheet({ currentKey }: SwitcherSheetProps) {
             onMenu={openRowMenu}
             onToggle={toggle}
             isCollapsed={isCollapsed}
-            onNewSession={openWorkspace}
+            onNewSession={setNewSessionIn}
           />
         )}
         ListFooterComponent={
@@ -122,6 +129,10 @@ export function SwitcherSheet({ currentKey }: SwitcherSheetProps) {
       <NewProjectSheet
         visible={showNewProject}
         onDismiss={() => setShowNewProject(false)}
+      />
+      <NewTabSheet
+        projectId={newSessionIn}
+        onDismiss={() => setNewSessionIn(null)}
       />
     </View>
   )
