@@ -1,10 +1,15 @@
 import { useRouter } from 'expo-router'
 import { useEffect, useRef } from 'react'
-import { Animated, Keyboard, Platform, View } from 'react-native'
+import { Animated, Easing, Keyboard, Platform, View } from 'react-native'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { ActiveTabBar } from './ActiveTabBar'
 import { ExtraKeysBar } from './ExtraKeysBar'
+import {
+  keyboardDuration,
+  keyboardEventNames,
+  spacerForKeyboard,
+} from './keyboard-bar.helpers'
 import TerminalDom from './TerminalDom'
 import { useTabData } from './tab.data'
 
@@ -13,6 +18,11 @@ import { useTabData } from './tab.data'
 // surface hosting it is scrollable: with this off, 2000 lines of history
 // exist and none of them can be reached on a touch device.
 const DOM_PROPS = { scrollEnabled: true, hideKeyboardAccessoryView: true }
+
+// Approximates the curve UIKit moves the keyboard along. The exact one is
+// private, and the default ease makes the bar visibly lag the keyboard it
+// is supposed to be riding on.
+const KEYBOARD_EASING = Easing.bezier(0.17, 0.59, 0.25, 1)
 
 interface TabScreenProps {
   projectId: string
@@ -41,39 +51,58 @@ export function TabScreen({ projectId, tabId }: TabScreenProps) {
   // before it reaches the key: the wider keys still have tappable area
   // above it, but a half-width one is simply dead.
   const spacerHeight = useRef(new Animated.Value(insets.bottom)).current
+  // How much of the key bar is showing. The bar only earns its space
+  // while there is a keyboard to sit on: with the keyboard down there is
+  // nothing to type into, and the two rows were taking scrollback from
+  // the terminal to say so.
+  const barReveal = useRef(new Animated.Value(0)).current
+  // Measured rather than declared, so a change to the bar's padding or
+  // type size cannot leave it clipped. Zero until the first layout, which
+  // happens long before a keyboard can be raised.
+  const barHeight = useRef(0)
 
   useEffect(() => {
     // Animated.Value updates the native view's height directly, no React
     // re-render. Prevents the WebView from being torn down / losing focus
     // when the keyboard shows.
-    //
-    // Android: `endCoordinates.height` from RN's Keyboard event often
-    // reports the keyboard portion WITHOUT the OS navigation bar area at
-    // the bottom of the display. Add insets.bottom on Android to cover
-    // the gesture / three-button strip, so the ExtraKeysBar rides above
-    // the keyboard AND clears the nav bar. iOS's keyboard height already
-    // accounts for the home indicator, so this correction is a no-op
-    // there (insets.bottom is folded into endCoordinates.height on iOS).
-    const androidBottomPad = Platform.OS === 'android' ? insets.bottom : 0
-    const show = Keyboard.addListener('keyboardDidShow', (e) => {
-      Animated.timing(spacerHeight, {
-        toValue: e.endCoordinates.height + androidBottomPad,
-        duration: 250,
-        useNativeDriver: false,
-      }).start()
+    const { show, hide } = keyboardEventNames(Platform.OS)
+    const onShow = Keyboard.addListener(show, (e) => {
+      animateBottom(
+        spacerHeight,
+        spacerForKeyboard(e.endCoordinates.height, insets.bottom, Platform.OS),
+        barReveal,
+        barHeight.current,
+        keyboardDuration(e),
+      )
     })
-    const hide = Keyboard.addListener('keyboardDidHide', () => {
-      Animated.timing(spacerHeight, {
-        toValue: insets.bottom,
-        duration: 250,
-        useNativeDriver: false,
-      }).start()
+    const onHide = Keyboard.addListener(hide, (e) => {
+      // Hand the terminal's focus back when the keyboard goes, so the next
+      // tap on it is a focus change and raises the keyboard again. Held
+      // focus is why the keyboard used to be unreachable after its own
+      // dismiss button, and with the key bar now leaving alongside it,
+      // that would strand the session with no way to type into it.
+      terminalRef.current?.blurInput()
+      animateBottom(
+        spacerHeight,
+        insets.bottom,
+        barReveal,
+        0,
+        keyboardDuration(e),
+      )
     })
     return () => {
-      show.remove()
-      hide.remove()
+      onShow.remove()
+      onHide.remove()
     }
-  }, [spacerHeight, insets.bottom])
+  }, [spacerHeight, barReveal, insets.bottom, terminalRef])
+
+  function measureBar(height: number): void {
+    barHeight.current = height
+    // The bar can first lay out with the keyboard already up, which the
+    // show listener has by then already missed. Without this the bar
+    // would stay collapsed until the keyboard was dismissed and raised.
+    if (Keyboard.isVisible()) barReveal.setValue(height)
+  }
 
   // The sheet marks the session you are already in, so a glance does not
   // make you work out where you are before deciding where to go.
@@ -107,16 +136,57 @@ export function TabScreen({ projectId, tabId }: TabScreenProps) {
             dom={DOM_PROPS}
           />
         </View>
-        <ExtraKeysBar
-          ctrlArmed={ctrlArmed}
-          altArmed={altArmed}
-          onKey={onKey}
-          onToggleCtrl={toggleCtrl}
-          onToggleAlt={toggleAlt}
-          onMore={openSwitcher}
-        />
+        {/* The bar is absolutely positioned inside a clipping box whose
+            height is animated, so it keeps its natural size and is
+            revealed from the bottom up: it reads as sliding out from
+            behind the keyboard rather than unfolding in place. In flow
+            it would be squashed instead of clipped. */}
+        <Animated.View style={{ height: barReveal, overflow: 'hidden' }}>
+          <View
+            onLayout={(e) => measureBar(e.nativeEvent.layout.height)}
+            style={{ position: 'absolute', left: 0, right: 0, bottom: 0 }}
+          >
+            <ExtraKeysBar
+              ctrlArmed={ctrlArmed}
+              altArmed={altArmed}
+              onKey={onKey}
+              onToggleCtrl={toggleCtrl}
+              onToggleAlt={toggleAlt}
+              onMore={openSwitcher}
+            />
+          </View>
+        </Animated.View>
         <Animated.View style={{ height: spacerHeight }} />
       </View>
     </GestureHandlerRootView>
   )
+}
+
+/**
+ * Move the spacer and the key bar together, on the keyboard's own clock.
+ *
+ * One `parallel` rather than two `start()` calls so the bar cannot drift
+ * a frame away from the keyboard it is sitting on.
+ */
+function animateBottom(
+  spacer: Animated.Value,
+  spacerTo: number,
+  reveal: Animated.Value,
+  revealTo: number,
+  duration: number,
+): void {
+  Animated.parallel([
+    Animated.timing(spacer, {
+      toValue: spacerTo,
+      duration,
+      easing: KEYBOARD_EASING,
+      useNativeDriver: false,
+    }),
+    Animated.timing(reveal, {
+      toValue: revealTo,
+      duration,
+      easing: KEYBOARD_EASING,
+      useNativeDriver: false,
+    }),
+  ]).start()
 }

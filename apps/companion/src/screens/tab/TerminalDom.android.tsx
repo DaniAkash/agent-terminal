@@ -14,6 +14,8 @@ export interface TerminalHandle {
   write: (data: string) => void
   clear: () => void
   fit: () => void
+  /** Drop focus so the next tap on the terminal can take it again. */
+  blurInput: () => void
 }
 
 interface TerminalDomProps {
@@ -82,6 +84,11 @@ export default function TerminalDom({
     fit: () => {
       webviewRef.current?.injectJavaScript(
         `window.__terminal_bridge.fit(); true;`,
+      )
+    },
+    blurInput: () => {
+      webviewRef.current?.injectJavaScript(
+        `window.__terminal_bridge.blurInput(); true;`,
       )
     },
   }))
