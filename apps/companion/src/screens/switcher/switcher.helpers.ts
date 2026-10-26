@@ -1,117 +1,121 @@
-import { recencyOrder } from '@/modules/stores/$recency.helpers'
+import {
+  ageBuckets,
+  groupByWorkspace,
+  orderByRecency,
+  rawTabId,
+  type SessionNode,
+  type SessionRow,
+  toRecentRows,
+  type WorkspaceGroup,
+} from '@agent-terminal/core-ui'
 import type { ProjectSummary } from '@/modules/wss/protocol.gen'
-import { rawTabId } from '@/screens/tab/tab.helpers'
 import { sessionLabel } from '@/screens/tab/tab-label.helpers'
-import { type TabGlyph, tabGlyph } from '@/screens/tab/tab-status.helpers'
+import { tabVisualFor } from '@/screens/tab/tab-status.helpers'
 
 /**
- * Why a session is where it is in the list. The order is the whole point
- * of the sheet, so the reason is part of the data rather than something
- * the view infers.
- */
-export type SwitcherSection = 'attention' | 'recent' | 'idle'
-
-export interface SwitcherRow {
-  /** Composed wire id: unique across projects, and what routes address. */
-  key: string
-  projectId: string
-  /** Raw id, for building the route. */
-  tabId: string
-  label: string
-  projectName: string
-  glyph: TabGlyph
-  section: SwitcherSection
-  lastActiveAt: number | undefined
-}
-
-/**
- * Order the sessions the way the phone should read them.
+ * The phone's adapter onto the shared session model.
  *
- * Attention first, then most-recently-used, then everything never opened.
- * The first group is the reason the sheet exists: a turn waiting on an
- * answer is the one thing worth interrupting someone for, so it outranks
- * recency no matter how long ago it was touched.
- *
- * Ordering spans projects on purpose. The desktop keys recency by project
- * and tab together, so history crosses workspace boundaries rather than
- * being trapped inside the one you happen to be in.
+ * One `ProjectSummary[]` holds everything, where the desktop spreads the
+ * same facts across three stores. Flattening it here is all this app has
+ * to do: the ordering and grouping above this line are the functions the
+ * sidebar runs.
  */
-export function switcherOrder(
-  projects: ProjectSummary[],
+export function toSessionNodes(
+  projects: readonly ProjectSummary[],
+  currentKey: string | undefined,
   now: number,
-): SwitcherRow[] {
-  const names = new Map(projects.map((p) => [p.project_id, p.name]))
-  const tabs = new Map(
-    projects.flatMap((p) => p.tabs.map((t) => [t.tab_id, t] as const)),
-  )
-
-  const rows = recencyOrder(projects).map((entry): SwitcherRow => {
-    const tab = tabs.get(entry.key)
-    const glyph = tabGlyph(tab?.agent_state, tab?.agent_state_at, now)
-    return {
-      key: entry.key,
-      projectId: entry.projectId,
-      tabId: rawTabId(entry.projectId, entry.key),
-      label: tab ? sessionLabel(tab) : entry.tabId,
-      projectName: names.get(entry.projectId) ?? '',
-      glyph,
-      section: sectionFor(glyph, entry.lastActiveAt),
-      lastActiveAt: entry.lastActiveAt,
+): SessionNode[] {
+  const nodes: SessionNode[] = []
+  for (const project of projects) {
+    for (const tab of project.tabs) {
+      const isCurrent = tab.tab_id === currentKey
+      nodes.push({
+        // Already composed by Rust; passing it through makeTabKey again
+        // would yield `p1:p1:claude`, matching no route and no desktop key.
+        key: tab.tab_id,
+        projectId: project.project_id,
+        projectName: project.name,
+        projectPinned: project.pinned ?? false,
+        projectExpanded: project.is_expanded,
+        tabId: rawTabId(project.project_id, tab.tab_id),
+        label: sessionLabel(tab),
+        pinned: tab.pinned ?? false,
+        lastActiveAt: tab.last_active_at,
+        isCurrent,
+        visual: tabVisualFor(tab, now, isCurrent),
+      })
     }
-  })
-
-  // recencyOrder already sorted by last-active; a stable partition keeps
-  // that order inside each group rather than re-sorting it away.
-  return [
-    ...rows.filter((r) => r.section === 'attention'),
-    ...rows.filter((r) => r.section === 'recent'),
-    ...rows.filter((r) => r.section === 'idle'),
-  ]
+  }
+  return nodes
 }
 
-function sectionFor(
-  glyph: TabGlyph,
-  lastActiveAt: number | undefined,
-): SwitcherSection {
-  if (glyph === 'awaiting') return 'attention'
-  return lastActiveAt === undefined ? 'idle' : 'recent'
+/** The flat recency list, with sessions never opened dropped. */
+export function recentSessions(nodes: SessionNode[]): SessionRow[] {
+  return toRecentRows(orderByRecency(nodes))
 }
 
-/** Heading above each group, or null where the group speaks for itself. */
-export function sectionHeading(section: SwitcherSection): string {
-  if (section === 'attention') return 'Needs you'
-  if (section === 'recent') return 'Recent'
-  return 'Not opened yet'
+/** The workspace tree, pinned first, exactly as the sidebar orders it. */
+export function workspaceGroups(nodes: SessionNode[]): WorkspaceGroup[] {
+  return groupByWorkspace(nodes)
 }
 
 /**
  * Compact age for a row. Deliberately coarse: the useful question is
  * "minutes or days", never the exact second.
+ *
+ * Shorter wording than the desktop palette's, because this sits in a
+ * narrow right-aligned column. The arithmetic behind both is shared.
  */
 export function relativeAge(
   lastActiveAt: number | undefined,
   now: number,
 ): string {
-  if (lastActiveAt === undefined) return ''
-  const seconds = Math.floor((now - lastActiveAt) / 1000)
-  if (seconds < 45) return 'now'
-  const minutes = Math.floor(seconds / 60)
-  if (minutes < 60) return `${Math.max(minutes, 1)}m`
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours}h`
-  return `${Math.floor(hours / 24)}d`
+  const age = ageBuckets(now, lastActiveAt)
+  if (age === null) return ''
+  if (age.seconds < 45) return 'now'
+  if (age.minutes < 60) return `${Math.max(age.minutes, 1)}m`
+  if (age.hours < 24) return `${age.hours}h`
+  return `${age.days}d`
 }
 
 /**
- * The section heading to draw above a row, or null where the row sits
- * inside a group that has already been labelled.
+ * The age as a screen reader should hear it.
+ *
+ * The column reads as a duration, so it needs "ago" after it, except for
+ * "now", where appending produced "now ago".
  */
-export function headingAt(
-  rows: readonly SwitcherRow[],
-  index: number,
-): SwitcherSection | null {
-  const section = rows[index]?.section
-  if (section === undefined) return null
-  if (index === 0) return section
-  return rows[index - 1]?.section === section ? null : section
+export function spokenAge(age: string): string {
+  if (age === '') return ''
+  if (age === 'now') return ', just now'
+  return `, ${age} ago`
+}
+
+/** The agent's display name, or null for a shell. */
+export function agentName(visual: SessionNode['visual']): string | null {
+  if (visual.kind !== 'agent') return null
+  return visual.art?.brand.displayName ?? visual.agentId
+}
+
+/**
+ * Everything a session row shows, spoken.
+ *
+ * Pure, and here rather than in the component, because what a screen
+ * reader hears is as much a part of the row's content as its text and
+ * deserves the same test coverage.
+ *
+ * `pinned` is passed rather than read off the node, because the pin only
+ * means something in the Workspaces view: Recent orders by recency, so a
+ * pin announced there would describe a rule that view does not use. The
+ * row that shows no pin must not speak one either.
+ */
+export function rowSpokenLabel(
+  node: SessionNode,
+  age: string,
+  pinned = false,
+): string {
+  const who = agentName(node.visual)
+  const prefix = who ? `${who}, ` : ''
+  const danger = node.visual.showDanger ? ', all permissions enabled' : ''
+  const pin = pinned ? ', pinned' : ''
+  return `${node.label}, ${prefix}${node.visual.label}${danger}${pin}, in ${node.projectName}${spokenAge(age)}`
 }

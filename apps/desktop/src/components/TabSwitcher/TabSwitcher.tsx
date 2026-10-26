@@ -1,12 +1,12 @@
+import { orderByRecency, type SessionRow } from '@agent-terminal/core-ui'
 import { useStore } from '@nanostores/react'
 import { useEffect, useMemo, useState } from 'react'
 import { useHotkeys } from 'react-hotkeys-hook'
+import { toSessionNodes } from '@/components/Sidebar/sidebar.helpers'
 import { TabChip } from '@/components/TabChip/TabChip'
 import {
-  buildSwitcherRows,
   filterSwitcherRows,
   formatRelativeTime,
-  type SwitcherRow,
 } from '@/components/TabSwitcher/tab-switcher.helpers'
 import {
   Command,
@@ -25,7 +25,7 @@ import {
 } from '@/modules/stores/$navigation'
 import { $projects } from '@/modules/stores/$projects'
 import { $tabMeta } from '@/modules/stores/$tabMeta'
-import { $tabRecency, $tabRecencyTimes } from '@/modules/stores/$tabRecency'
+import { $tabRecencyTimes } from '@/modules/stores/$tabRecency'
 import { MONO_FONT } from '@/screens/workspace/workspace.helpers'
 
 /* ---------------------------------------------------------------------------
@@ -54,7 +54,6 @@ export function TabSwitcher() {
   useHotkeys(`${Mod.Meta}+${Keys.P}`, () => setOpen((v) => !v), hotkeyOpts)
 
   const projects = useStore($projects)
-  const recency = useStore($tabRecency)
   const recencyTimes = useStore($tabRecencyTimes)
   const tabMeta = useStore($tabMeta)
   const activeProjectId = useStore($activeProjectId)
@@ -79,20 +78,27 @@ export function TabSwitcher() {
 
   const rows = useMemo(
     () =>
-      buildSwitcherRows({
-        projects,
-        recency,
-        recencyTimes,
-        tabMeta,
-        activeProjectId,
-        activeTabIds,
-      }),
-    [projects, recency, recencyTimes, tabMeta, activeProjectId, activeTabIds],
+      orderByRecency(
+        toSessionNodes({
+          projects,
+          tabMeta,
+          recencyTimes,
+          activeProjectId,
+          activeTabIds,
+          now: Date.now(),
+        }),
+      ),
+    [projects, recencyTimes, tabMeta, activeProjectId, activeTabIds],
   )
 
-  const filtered = useMemo(() => filterSwitcherRows(rows, query), [rows, query])
+  const filtered = useMemo(
+    // The palette is the one surface that keeps never-opened sessions:
+    // search needs full coverage, so no rank filter here.
+    () => filterSwitcherRows(rows, query, (r) => tabMeta[r.key]?.cwd),
+    [rows, query, tabMeta],
+  )
 
-  function handleSelect(row: SwitcherRow): void {
+  function handleSelect(row: SessionRow): void {
     setOpen(false)
     if (!row.isCurrent) navigateToTab(row.projectId, row.tabId)
   }
@@ -130,7 +136,7 @@ export function TabSwitcher() {
           </CommandEmpty>
           {filtered.map((row, idx) => (
             <CommandItem
-              key={row.tabKey}
+              key={row.key}
               // cmdk derives data-selected from a strict value-string match
               // (state.value === item.value), so any two items sharing the
               // same value collapse into one selection slot — Enter always
@@ -139,7 +145,7 @@ export function TabSwitcher() {
               // index so the value is guaranteed unique even if a future
               // change ever lets tabKey collide. onSelect uses a closure
               // over `row` so the value itself is never dispatched.
-              value={`${idx}|${row.tabKey}`}
+              value={`${idx}|${row.key}`}
               onSelect={() => handleSelect(row)}
               className={cn(
                 // Layout: comfortably padded row, fixed-rhythm gap.
@@ -173,7 +179,7 @@ export function TabSwitcher() {
                   already carries that signal. */}
               <div className="flex size-4 shrink-0 items-center justify-center">
                 <TabChip
-                  tabId={row.tabKey}
+                  tabId={row.key}
                   density="comfortable"
                   active={row.isCurrent}
                 />
@@ -194,7 +200,7 @@ export function TabSwitcher() {
                   style={{ fontFamily: MONO_FONT }}
                 >
                   <span className="opacity-90">{row.projectName}</span>
-                  {row.cwd && (
+                  {tabMeta[row.key]?.cwd && (
                     <>
                       <span className="opacity-50"> · </span>
                       {/* Full cwd path here (not the basename) — the
@@ -202,7 +208,7 @@ export function TabSwitcher() {
                           tabs, so basename in meta would just repeat it.
                           Full path adds context (which subfolder of which
                           project). truncate handles overflow. */}
-                      {row.cwd}
+                      {tabMeta[row.key]?.cwd}
                     </>
                   )}
                   <span className="opacity-50"> · </span>

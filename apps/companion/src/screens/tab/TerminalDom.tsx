@@ -15,6 +15,8 @@ export interface TerminalHandle extends DOMImperativeFactory {
   write: (...args: Args) => void
   clear: (...args: Args) => void
   fit: (...args: Args) => void
+  /** Drop focus so the next tap on the terminal can take it again. */
+  blurInput: (...args: Args) => void
 }
 
 interface TerminalDomProps {
@@ -79,6 +81,14 @@ export default function TerminalDom({
     },
     fit: () => {
       fitRef.current?.fit()
+    },
+    // The keyboard is raised by focus CHANGING, and xterm keeps its hidden
+    // textarea focused after the keyboard goes away, so a later tap is not
+    // a change and the keyboard never returns. Giving the focus up when
+    // the keyboard does leaves the next tap able to take it, which is the
+    // same path that raises the keyboard on a freshly opened session.
+    blurInput: () => {
+      termRef.current?.textarea?.blur()
     },
   }))
 

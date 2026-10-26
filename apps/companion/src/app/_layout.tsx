@@ -6,6 +6,7 @@ import { StatusBar } from 'expo-status-bar'
 import { useEffect } from 'react'
 import { useColorScheme } from 'react-native'
 import { Uniwind } from 'uniwind'
+import { loadSessionView } from '@/modules/stores/$sessionView'
 import {
   navigationDarkTheme,
   navigationLightTheme,
@@ -19,6 +20,12 @@ import { initWssBootstrap } from '@/modules/wss/bootstrap'
 // is needed. Called at module load so the first render already sees
 // the right theme instead of flashing light then swapping.
 Uniwind.setTheme('system')
+
+// Restore the Workspaces / Recent choice at module load, like the theme
+// above, so the sheet opens on the view the user left it on rather than
+// flashing the default and swapping. Fire and forget: a preference that
+// cannot be read is not worth a failure path.
+void loadSessionView()
 
 // ActionSheetProvider wraps any component that uses useActionSheet()
 // from @expo/react-native-action-sheet (Phase B long-press menus on

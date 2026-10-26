@@ -2,6 +2,7 @@ import { useStore } from '@nanostores/react'
 import { ChevronDown, Timer } from 'lucide-react'
 import { useState } from 'react'
 import { AgentGlyph } from '@/components/AgentGlyph'
+import { agentBrandVisual } from '@/components/agent.helpers'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -136,9 +137,7 @@ export function JarvisSettings({ snapshot }: { snapshot: UsageSnapshot }) {
               className="jarvis-card flex items-center gap-3"
             >
               <AgentGlyph
-                agent={provider.id}
-                state="idle"
-                active
+                visual={agentBrandVisual(provider.id)}
                 monochrome
                 size={18}
               />

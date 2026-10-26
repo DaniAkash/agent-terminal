@@ -65,6 +65,12 @@ const config: ExpoConfig = {
   plugins: [
     'expo-router',
     'expo-secure-store',
+    'expo-font',
+    // Bundles the Lucide font into the binary instead of leaving it to
+    // expo-font's runtime loader. Expo's guidance is to list the icon
+    // package itself here and never to point the expo-font plugin at a
+    // path inside node_modules, which fails the build.
+    '@react-native-vector-icons/lucide',
     [
       'expo-camera',
       {

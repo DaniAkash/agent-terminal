@@ -1,70 +1,100 @@
-/**
- * The wire's `agent_state` rendered as the same five-state glyph the
- * desktop's TabStatusIcon shows, so a session looks the same on both.
- */
-export type TabGlyph = 'running' | 'awaiting' | 'done' | 'error' | 'idle'
+import {
+  deriveTabVisual,
+  doneExpiresAt as sharedDoneExpiresAt,
+  type TabVisual,
+  type TabVisualInput,
+  type WireTabState,
+} from '@agent-terminal/core-ui'
+import type { TabSummary } from '@/modules/wss/protocol.gen'
 
 /**
- * How long a finished turn keeps its green dot. Matches the desktop's
- * per-tab timer, which clears `doneAt` on the same schedule.
- */
-export const DONE_LINGER_MS = 10_000
-
-/**
- * Pick the glyph for a tab.
+ * The phone's adapter onto the shared vocabulary.
  *
- * `done` is the only state that expires: the desktop lights a green dot
- * for ten seconds after a turn finishes and then drops it. Mobile cannot
- * share that timer, so it reads the transition stamp and decides for
- * itself. A `done` with no stamp stays lit rather than guessing, which is
- * what a tree loaded from disk before the first sync looks like.
+ * Everything the glyph needs is already on the wire, derived once on the
+ * desktop and sent rather than re-decided here. What is left is reading
+ * the fields off a `TabSummary` and handing them to the same function
+ * the desktop draws from, so a session cannot look like one thing on the
+ * laptop and another on the phone.
  */
-export function tabGlyph(
-  agentState: string | undefined,
-  agentStateAt: number | undefined,
+export function tabVisualFor(
+  tab:
+    | Pick<
+        TabSummary,
+        'agent_state' | 'agent_state_at' | 'agent_id' | 'full_permissions'
+      >
+    | undefined,
   now: number,
-): TabGlyph {
-  if (agentState === 'awaiting') return 'awaiting'
-  if (agentState === 'running') return 'running'
-  if (agentState === 'error') return 'error'
-  if (agentState !== 'done') return 'idle'
-  if (agentStateAt === undefined) return 'done'
-  return now - agentStateAt < DONE_LINGER_MS ? 'done' : 'idle'
+  active = false,
+): TabVisual {
+  return deriveTabVisual(visualInput(tab, active), now)
 }
 
-/** Dot colour per glyph. `idle` is deliberately low contrast. */
-export function glyphDotClass(glyph: TabGlyph): string {
-  if (glyph === 'awaiting') return 'bg-warning'
-  if (glyph === 'running' || glyph === 'done') return 'bg-success'
-  if (glyph === 'error') return 'bg-destructive'
-  return 'bg-muted-foreground/40'
+function visualInput(
+  tab:
+    | Pick<
+        TabSummary,
+        'agent_state' | 'agent_state_at' | 'agent_id' | 'full_permissions'
+      >
+    | undefined,
+  active: boolean,
+): TabVisualInput {
+  return {
+    // The desktop only ever sends the five words `WireTabState` lists,
+    // but it is a plain string on the wire and an older desktop could
+    // send something else. An unrecognised value reads as idle rather
+    // than crashing a list the user is trying to scroll.
+    state: asWireState(tab?.agent_state),
+    stateAt: tab?.agent_state_at,
+    agentId: tab?.agent_id,
+    fullPermissions: tab?.full_permissions,
+    active,
+  }
+}
+
+const WIRE_STATES: readonly string[] = [
+  'idle',
+  'running',
+  'done',
+  'error',
+  'awaiting',
+]
+
+function asWireState(value: string | undefined): WireTabState {
+  return value !== undefined && WIRE_STATES.includes(value)
+    ? (value as WireTabState)
+    : 'idle'
 }
 
 /**
- * Whether the dot should pulse. Only a turn still in flight does, so the
- * animation means "something is happening" rather than decoration.
- */
-export function glyphPulses(glyph: TabGlyph): boolean {
-  return glyph === 'running'
-}
-
-/** One-word state for the accessibility label and the switcher rows. */
-export function glyphLabel(glyph: TabGlyph): string {
-  if (glyph === 'awaiting') return 'needs you'
-  if (glyph === 'running') return 'running'
-  if (glyph === 'done') return 'done'
-  if (glyph === 'error') return 'failed'
-  return 'idle'
-}
-
-/**
- * When a lit `done` dot should go out, or null when nothing is waiting to
- * expire. The caller arms one timer off this rather than polling a clock.
+ * When a lit dot should go out, so the caller can arm one timer rather
+ * than poll a clock.
+ *
+ * The phone needs this and the desktop does not: the desktop stops
+ * sending frames once a turn ends, so without a timer nothing would ever
+ * prompt the re-render that dims the dot.
  */
 export function doneExpiresAt(
-  agentState: string | undefined,
-  agentStateAt: number | undefined,
+  tab:
+    | Pick<TabSummary, 'agent_state' | 'agent_state_at' | 'agent_id'>
+    | undefined,
 ): number | null {
-  if (agentState !== 'done' || agentStateAt === undefined) return null
-  return agentStateAt + DONE_LINGER_MS
+  return sharedDoneExpiresAt({
+    state: asWireState(tab?.agent_state),
+    stateAt: tab?.agent_state_at,
+    agentId: tab?.agent_id,
+  })
+}
+
+/** Uniwind class for a dot, by the state the shared derivation picked. */
+export function dotClass(visual: TabVisual): string {
+  if (visual.kind === 'agent') {
+    if (visual.state === 'awaiting') return 'bg-warning'
+    if (visual.state === 'in-progress' || visual.state === 'completed') {
+      return 'bg-success'
+    }
+    return 'bg-muted-foreground/40'
+  }
+  if (visual.dot === 'running' || visual.dot === 'done') return 'bg-success'
+  if (visual.dot === 'error') return 'bg-destructive'
+  return 'bg-muted-foreground/40'
 }

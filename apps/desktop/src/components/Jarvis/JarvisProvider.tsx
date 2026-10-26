@@ -1,6 +1,7 @@
 import { useStore } from '@nanostores/react'
 import { Clock3 } from 'lucide-react'
 import { AgentGlyph } from '@/components/AgentGlyph'
+import { agentBrandVisual } from '@/components/agent.helpers'
 import { Button } from '@/components/ui/button'
 import {
   capturedLabel,
@@ -26,9 +27,7 @@ export function JarvisProvider({ provider }: { provider: ProviderUsage }) {
       <div className="jarvis-provider-header">
         <div className="flex items-center gap-2">
           <AgentGlyph
-            agent={provider.id}
-            state="idle"
-            active
+            visual={agentBrandVisual(provider.id)}
             monochrome
             size={18}
           />

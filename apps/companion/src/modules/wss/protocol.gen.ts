@@ -63,8 +63,23 @@ export interface TabSummary {
   tab_id: string
   label: string
   cwd?: string
-  /** "claude", "codex", or absent when no agent is running in this tab. */
-  agent?: string
+  /**
+   * Stable agent registry id ("claude-code", "codex", "opencode",
+   * "amp", "kilo", "kimi", "mastracode"), or absent when the tab is a
+   * plain shell. Same vocabulary as `agents::AgentProfile.id`, so
+   * desktop, Rust and mobile name agents identically and mobile can
+   * pick the brand mark the desktop sidebar draws.
+   */
+  agent_id?: string
+  /**
+   * True when the agent was launched with a full-permissions flag
+   * (claude-code `--dangerously-skip-permissions`, codex `--yolo`).
+   *
+   * The desktop evaluates the flag and sends the verdict rather than
+   * the command, because the command can carry API keys and absolute
+   * home paths that have no business crossing the wire.
+   */
+  full_permissions?: boolean
   /**
    * User-configured cmd override (from desktop $projects). Not the
    * running shell path.

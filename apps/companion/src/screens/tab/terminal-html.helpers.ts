@@ -166,6 +166,10 @@ export function buildTerminalHtml(config: TerminalHtmlConfig): string {
       write: function (data) { term.write(data); },
       clear: function () { term.clear(); },
       fit: function () { fit.fit(); },
+      // See TerminalDom.tsx: the keyboard is raised by focus changing, and
+      // xterm holds its hidden textarea's focus after the keyboard goes,
+      // so without this a later tap is not a change and nothing comes up.
+      blurInput: function () { if (term.textarea) term.textarea.blur(); },
     };
 
     post({ type: 'ready' });

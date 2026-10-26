@@ -416,9 +416,21 @@ pub struct TabSummary {
     pub label: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cwd: Option<String>,
-    /// "claude", "codex", or absent when no agent is running in this tab.
+    /// Stable agent registry id ("claude-code", "codex", "opencode",
+    /// "amp", "kilo", "kimi", "mastracode"), or absent when the tab is a
+    /// plain shell. Same vocabulary as `agents::AgentProfile.id`, so
+    /// desktop, Rust and mobile name agents identically and mobile can
+    /// pick the brand mark the desktop sidebar draws.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub agent: Option<String>,
+    pub agent_id: Option<String>,
+    /// True when the agent was launched with a full-permissions flag
+    /// (claude-code `--dangerously-skip-permissions`, codex `--yolo`).
+    ///
+    /// The desktop evaluates the flag and sends the verdict rather than
+    /// the command, because the command can carry API keys and absolute
+    /// home paths that have no business crossing the wire.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub full_permissions: Option<bool>,
     /// User-configured cmd override (from desktop $projects). Not the
     /// running shell path.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -595,7 +607,8 @@ mod tests {
                         tab_id: "t1".into(),
                         label: "dev".into(),
                         cwd: Some("/tmp".into()),
-                        agent: Some("claude".into()),
+                        agent_id: Some("claude-code".into()),
+                        full_permissions: Some(true),
                         cmd: Some("zsh".into()),
                         last_cwd: Some("/tmp".into()),
                         pinned: false,
