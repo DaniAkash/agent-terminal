@@ -1,4 +1,5 @@
 export {
+  agentArt,
   deriveTabVisual,
   doneExpiresAt,
   hasDangerFlag,
@@ -14,6 +15,7 @@ export {
   type AgentBrand,
   type AgentGlyphState,
   type AgentMark,
+  type AgentVisual,
   DONE_LINGER_MS,
   type ShellDot,
   type TabVisual,

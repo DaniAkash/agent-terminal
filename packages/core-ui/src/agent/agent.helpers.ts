@@ -1,6 +1,7 @@
 import { AGENT_MARKS } from './agent.marks'
 import { AGENT_BRANDS, FULL_PERMISSION_FLAGS } from './agent.registry'
 import {
+  type AgentArt,
   type AgentGlyphState,
   DONE_LINGER_MS,
   type ShellDot,
@@ -73,6 +74,18 @@ function shellDotFor(
   return now - stateAt < DONE_LINGER_MS ? 'done' : 'idle'
 }
 
+/**
+ * An agent's artwork, or null when this build has no entry for the id.
+ *
+ * Both halves are looked up together because a brand without geometry
+ * cannot be drawn, so there is no partial answer worth returning.
+ */
+export function agentArt(agentId: string): AgentArt | null {
+  const brand = AGENT_BRANDS[agentId]
+  const mark = AGENT_MARKS[agentId]
+  return brand && mark ? { brand, mark } : null
+}
+
 const LABELS: Record<WireTabState, string> = {
   awaiting: 'needs you',
   running: 'running',
@@ -107,12 +120,10 @@ export function deriveTabVisual(input: TabVisualInput, now: number): TabVisual {
   }
 
   const state = agentStateFor(input.state)
-  const brand = AGENT_BRANDS[input.agentId]
-  const mark = AGENT_MARKS[input.agentId]
   return {
     kind: 'agent',
     agentId: input.agentId,
-    art: brand && mark ? { brand, mark } : null,
+    art: agentArt(input.agentId),
     state,
     pulses: state === 'in-progress',
     dimmed: state === 'idle' && input.active !== true,

@@ -95,6 +95,7 @@
 
 /* ─── Light theme ───────────────────────────────────────────── */
 :root {
+  color-scheme: light;
   /* Window */
   --background: #ffffff;
   --foreground: rgba(20, 22, 25, 0.9);
@@ -200,6 +201,7 @@
    data-theme="light". The :root block above provides light defaults; this
    block overrides for dark mode. */
 :root[data-theme="dark"] {
+  color-scheme: dark;
   /* Window */
   --background: #0e0f10;
   --foreground: rgba(230, 232, 235, 0.92);
@@ -302,6 +304,7 @@
    :root[data-theme="dark"] selector above has higher specificity. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) {
+    color-scheme: dark;
     --background: #0e0f10;
     --foreground: rgba(230, 232, 235, 0.92);
     --sidebar-background: #141517;

@@ -131,6 +131,15 @@ mdns-sd = "0.20.1"
 # it verbatim on macOS. On Linux/Windows it returns whatever the
 # system's `gethostname()` returns.
 hostname = "0.4.2"
+# Jarvis collectors share a bounded HTTPS client; all parsing stays in Rust.
+# reqwest 0.13 gates RequestBuilder::query behind the query feature.
+reqwest = { version = "0.13", default-features = false, features = ["json", "query", "rustls-no-provider"] }
+chrono = { version = "0.4", default-features = false, features = ["std"] }
+regex = "1"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# Read Claude sessions silently; explicit user actions may authorize access.
+security-framework = "3.7"
 
 [dev-dependencies]
 # Isolated temp directories for auth_stub round-trip tests.

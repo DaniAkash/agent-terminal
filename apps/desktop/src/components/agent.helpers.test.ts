@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { deriveTabVisual } from '@agent-terminal/core-ui'
 import type { TabMeta } from '@/modules/stores/$tabMeta'
 import {
+  agentBrandVisual,
   hasDangerFlag,
   parseModelFlag,
   tabAgentIdentity,
@@ -193,5 +194,20 @@ describe('what the desktop draws is what the desktop sends', () => {
     )
 
     expect(desktop).toEqual(mobile)
+  })
+})
+
+describe('agentBrandVisual', () => {
+  test('is a plain mark with nothing running behind it', () => {
+    const visual = agentBrandVisual('claude-code')
+    expect(visual.art?.brand.displayName).toBe('Claude Code')
+    expect(visual.state).toBe('idle')
+    expect(visual.pulses).toBe(false)
+    expect(visual.dimmed).toBe(false)
+    expect(visual.showDanger).toBe(false)
+  })
+
+  test('falls back the same way a session does for an unknown agent', () => {
+    expect(agentBrandVisual('not-an-agent').art).toBeNull()
   })
 })

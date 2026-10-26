@@ -68,6 +68,20 @@ export interface AgentArt {
   mark: AgentMark
 }
 
+/** The agent arm of `TabVisual`, named so a caller can hold one alone. */
+export interface AgentVisual {
+  kind: 'agent'
+  agentId: string
+  /** Null for an agent this build has no artwork for. */
+  art: AgentArt | null
+  state: AgentGlyphState
+  pulses: boolean
+  /** True when the mark should render dim, which idle marks do unless selected. */
+  dimmed: boolean
+  showDanger: boolean
+  label: string
+}
+
 /**
  * Everything both apps need to draw one session's icon, and nothing
  * either of them has to work out for itself.
@@ -81,18 +95,7 @@ export type TabVisual =
       /** One word for the accessibility label and the detail sheet. */
       label: string
     }
-  | {
-      kind: 'agent'
-      agentId: string
-      /** Null for an agent this build has no artwork for. */
-      art: AgentArt | null
-      state: AgentGlyphState
-      pulses: boolean
-      /** True when the mark should render dim, which idle marks do unless selected. */
-      dimmed: boolean
-      showDanger: boolean
-      label: string
-    }
+  | AgentVisual
 
 /** What `deriveTabVisual` needs. Both apps can produce all of it. */
 export interface TabVisualInput {

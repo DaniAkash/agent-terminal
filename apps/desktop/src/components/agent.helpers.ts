@@ -1,4 +1,6 @@
 import {
+  type AgentVisual,
+  agentArt,
   hasDangerFlag,
   type TabVisualInput,
   type WireTabState,
@@ -99,6 +101,29 @@ export function tabVisualInput(
     stateAt: meta?.doneAt,
     active,
     ...identity,
+  }
+}
+
+/**
+ * The visual for an agent shown as itself rather than as a running
+ * session, for a surface that lists the agents you use rather than
+ * identifying one tab.
+ *
+ * Nothing is running behind it, so it reports no state and wears no
+ * badge. It goes through `AgentVisual` anyway so the artwork, and the
+ * fallback for an agent this build has no entry for, stay the shared
+ * package's decision rather than becoming a second opinion here.
+ */
+export function agentBrandVisual(agentId: string): AgentVisual {
+  return {
+    kind: 'agent',
+    agentId,
+    art: agentArt(agentId),
+    state: 'idle',
+    pulses: false,
+    dimmed: false,
+    showDanger: false,
+    label: 'idle',
   }
 }
 

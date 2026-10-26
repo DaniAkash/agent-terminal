@@ -1,8 +1,6 @@
-import type { TabVisual } from '@agent-terminal/core-ui'
+import type { AgentVisual } from '@agent-terminal/core-ui'
 import { Sparkles } from 'lucide-react'
 import { AgentMarkSvg } from '@/components/AgentMarkSvg'
-
-type AgentVisual = Extract<TabVisual, { kind: 'agent' }>
 
 /* ---------------------------------------------------------------------------
  * Fallback for an agent this build has no brand entry for.
@@ -11,9 +9,11 @@ type AgentVisual = Extract<TabVisual, { kind: 'agent' }>
 function SparkleFallback({
   visual,
   size,
+  monochrome,
 }: {
   visual: AgentVisual
   size: number
+  monochrome: boolean
 }) {
   return (
     <span
@@ -24,7 +24,7 @@ function SparkleFallback({
         width: size,
         height: size,
         flexShrink: 0,
-        color: '#c4b5fd',
+        color: monochrome ? 'var(--foreground)' : '#c4b5fd',
         opacity: visual.dimmed ? 0.5 : 0.9,
       }}
       aria-hidden="true"
@@ -50,11 +50,21 @@ function SparkleFallback({
 export function AgentGlyph({
   visual,
   size = 16,
+  monochrome = false,
 }: {
   visual: AgentVisual
   size?: number
+  /**
+   * Draw the mark in the foreground colour instead of the agent's brand
+   * colour, for a surface that lists providers as a set rather than
+   * identifying one session.
+   */
+  monochrome?: boolean
 }) {
-  if (!visual.art) return <SparkleFallback visual={visual} size={size} />
+  if (!visual.art)
+    return (
+      <SparkleFallback visual={visual} size={size} monochrome={monochrome} />
+    )
 
   const { color, glow } = visual.art.brand
   const state = visual.state
@@ -97,7 +107,7 @@ export function AgentGlyph({
 
       <span
         style={{
-          color,
+          color: monochrome ? 'var(--foreground)' : color,
           opacity: visual.dimmed ? 0.45 : 1,
           filter: markFilter,
           transform: `scale(${hasBadge ? 0.82 : 1})`,

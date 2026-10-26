@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import { deriveTabVisual, doneExpiresAt, hasDangerFlag } from './agent.helpers'
+import {
+  agentArt,
+  deriveTabVisual,
+  doneExpiresAt,
+  hasDangerFlag,
+} from './agent.helpers'
 import { AGENT_MARKS } from './agent.marks'
 import { AGENT_BRANDS, FULL_PERMISSION_FLAGS } from './agent.registry'
 import { DONE_LINGER_MS, type WireTabState } from './agent.types'
@@ -44,6 +49,18 @@ describe('hasDangerFlag', () => {
     expect(hasDangerFlag('codex --model my--yolo-model')).toBe(false)
     expect(hasDangerFlag('codex --yolo-extra')).toBe(false)
     expect(hasDangerFlag('claude --api-key sk-x--yolo-y')).toBe(false)
+  })
+})
+
+describe('agentArt', () => {
+  test('pairs a registered agent with its geometry', () => {
+    const art = agentArt('claude-code')
+    expect(art?.brand).toBe(AGENT_BRANDS['claude-code'])
+    expect(art?.mark).toBe(AGENT_MARKS['claude-code'])
+  })
+
+  test('an agent this build does not know has no artwork', () => {
+    expect(agentArt('not-an-agent')).toBeNull()
   })
 })
 
