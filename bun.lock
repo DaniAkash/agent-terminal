@@ -12,7 +12,7 @@
     },
     "apps/companion": {
       "name": "companion",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "dependencies": {
         "@agent-terminal/core-ui": "workspace:*",
         "@expo/metro-runtime": "~56.0.18",
