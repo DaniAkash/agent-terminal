@@ -1,7 +1,9 @@
 //! Usage adapters have their own capabilities, independently of PTY hook support.
+mod agentstat_adapter;
 mod amp;
 mod kilo;
 mod kimi;
+#[cfg(test)]
 mod oauth;
 mod opencode;
 
@@ -88,7 +90,11 @@ pub async fn collect(provider: &'static Provider, client: &Client) -> Outcome {
         }
     };
     let owner = credential.fingerprint();
-    let result = fetch(id, client, &credential).await;
+    let result = if matches!(id, "codex" | "claude-code") {
+        agentstat_adapter::fetch(id, &credential).await
+    } else {
+        fetch(id, client, &credential).await
+    };
     // A login/account change while HTTP was in flight invalidates that reading.
     let current =
         tokio::task::spawn_blocking(move || credentials::resolve(id).map(|c| c.fingerprint()))
@@ -113,8 +119,6 @@ async fn fetch(
     credential: &credentials::Credential,
 ) -> Result<CollectedUsage, CollectionError> {
     let url = match id {
-        "codex" => "https://chatgpt.com/backend-api/wham/usage",
-        "claude-code" => "https://api.anthropic.com/api/oauth/usage",
         "opencode" => "https://opencode.ai/zen/go/v1/usage",
         "kilo" => "https://app.kilo.ai/api/trpc/kiloPass.getState",
         "kimi" => "https://api.kimi.com/coding/v1/usages",
@@ -124,14 +128,6 @@ async fn fetch(
         .get(url)
         .bearer_auth(&credential.token)
         .header("Accept", "application/json");
-    if id == "codex" {
-        if let Some(account) = &credential.account {
-            request = request.header("ChatGPT-Account-Id", account);
-        }
-    }
-    if id == "claude-code" {
-        request = request.header("anthropic-beta", "oauth-2025-04-20");
-    }
     if id == "kilo" {
         request = request.query(&[("input", r#"{"json":null}"#)]);
     }
@@ -140,8 +136,6 @@ async fn fetch(
     }
     let json = http::json(request).await?;
     let windows = match id {
-        "codex" => oauth::codex(&json),
-        "claude-code" => oauth::claude(&json),
         "opencode" => opencode::parse(&json),
         "kilo" => kilo::parse(&json),
         "kimi" => kimi::parse(&json),
