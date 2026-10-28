@@ -92,6 +92,17 @@ fn normalize(id: &str, input: &[QuotaWindow]) -> Vec<UsageWindow> {
                 push(&mut result, window, key, label);
             }
         }
+        for window in input
+            .iter()
+            .filter(|window| window.id.starts_with("weekly-model-"))
+        {
+            if let Some(model) = window.model.as_deref().filter(|model| !model.is_empty()) {
+                let name: String = model.chars().filter(|c| !c.is_control()).take(64).collect();
+                if !name.trim().is_empty() {
+                    push(&mut result, window, &window.id, &format!("{name} · Weekly"));
+                }
+            }
+        }
         return result;
     }
     let mut models: Vec<String> = Vec::new();
@@ -357,5 +368,30 @@ mod integration_tests {
             assert_eq!(error.status, UsageStatus::Error);
             assert_eq!(error.transient, expected_transient);
         }
+    }
+    #[tokio::test]
+    async fn claude_fetch_preserves_model_scoped_weekly_limits() {
+        let fixture = Arc::new(Fixture {
+            body: r#"{"limits":[{"group":"weekly","kind":"weekly_scoped","scope":{"model":{"id":"claude-sonnet-4"}},"percent":34.5,"resets_at":"2027-01-01T00:00:00Z"},{"group":"weekly","kind":"weekly_scoped","scope":{"model":{"id":"claude-opus-4"}},"percent":0}]}"#,
+            status: 200,
+            requests: Mutex::new(vec![]),
+        });
+        let client = agentstat::Client::builder()
+            .http_executor(fixture)
+            .build()
+            .unwrap();
+        let mut auth = credential();
+        auth.account = None;
+        let result = fetch_with_client(&client, "claude-code", &auth)
+            .await
+            .unwrap();
+        assert_eq!(result.windows.len(), 2);
+        assert_eq!(result.windows[0].id, "weekly-model-claude-sonnet-4");
+        assert_eq!(result.windows[0].label, "claude-sonnet-4 · Weekly");
+        assert_eq!(result.windows[0].used_percent, 34.5);
+        assert_eq!(result.windows[0].resets_at, Some(1798761600));
+        assert_eq!(result.windows[1].id, "weekly-model-claude-opus-4");
+        assert_eq!(result.windows[1].used_percent, 0.0);
+        assert_eq!(result.windows[1].resets_at, None);
     }
 }
