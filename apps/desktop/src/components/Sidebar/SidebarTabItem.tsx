@@ -18,8 +18,9 @@ import {
   navigateToTab,
   onTabRemoved,
 } from '@/modules/stores/$navigation'
-import { removeTab, renameTab, toggleTabPin } from '@/modules/stores/$projects'
+import { renameTab, toggleTabPin } from '@/modules/stores/$projects'
 import { $tabMeta } from '@/modules/stores/$tabMeta'
+import { requestCloseTab } from '@/modules/work/close-tab'
 import {
   MONO_FONT,
   makeTabKey,
@@ -62,7 +63,7 @@ export function SidebarTabItem({
 
   function handleClose() {
     onTabRemoved(projectId, tab.id)
-    removeTab(projectId, tab.id)
+    requestCloseTab(projectId, tab.id)
   }
 
   return (
