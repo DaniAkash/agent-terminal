@@ -17,7 +17,7 @@ mock.module('@/modules/ipc/commands', () => ({
 }))
 
 import { beforeEach, describe, expect, test } from 'bun:test'
-import type { WTermHandle } from '@/components/WTermTerminal/WTermTerminal'
+import type { WTermHandle } from '@/components/WTermTerminal/wterm-terminal.handle'
 import {
   $activeTabKey,
   $terminalHandles,

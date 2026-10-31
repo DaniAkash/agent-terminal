@@ -1,9 +1,7 @@
 import { useStore } from '@nanostores/react'
 import React, { useCallback, useEffect, useRef } from 'react'
-import {
-  type WTermHandle,
-  WTermTerminal,
-} from '@/components/WTermTerminal/WTermTerminal'
+import { WTermTerminal } from '@/components/WTermTerminal/WTermTerminal'
+import type { WTermHandle } from '@/components/WTermTerminal/wterm-terminal.handle'
 import { IPC } from '@/modules/ipc/commands'
 import { onPtyExit, onPtyRespawned } from '@/modules/ipc/events'
 import {

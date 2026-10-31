@@ -1,5 +1,5 @@
 import { atom, computed } from 'nanostores'
-import type { WTermHandle } from '@/components/WTermTerminal/WTermTerminal'
+import type { WTermHandle } from '@/components/WTermTerminal/wterm-terminal.handle'
 import { $activeProjectId, $activeTabId } from '@/modules/stores/$navigation'
 import { makeTabKey } from '@/screens/workspace/workspace.helpers'
 

@@ -3,50 +3,18 @@ import { openUrl } from '@tauri-apps/plugin-opener'
 import { WTerm } from '@wterm/dom'
 import { GhosttyCore } from '@wterm/ghostty'
 import React, { useEffect, useRef } from 'react'
+import {
+  createWTermHandle,
+  type WTermHandle,
+} from '@/components/WTermTerminal/wterm-terminal.handle'
 import { classifyKeyEvent } from '@/components/WTermTerminal/wterm-terminal.keys'
+import { linkifyRows } from '@/components/WTermTerminal/wterm-terminal.links'
 import {
   coreThemeHex,
   terminalTheme,
 } from '@/components/WTermTerminal/wterm-terminal.themes'
 import { $activeSearch } from '@/modules/stores/$activeSearch'
 import { $fontSize } from '@/modules/stores/$fontSize'
-
-export type WTermHandle = {
-  write: (data: string) => void
-  focus: () => void
-  /** Clears the visible buffer and the scrollback. */
-  clear: () => void
-  /** Selects all text in the buffer. */
-  selectAll: () => void
-  /**
-   * Jumps to the next match for the current `$activeSearch` query.
-   *
-   * `incremental` exists so a typing-driven call can leave the highlight
-   * on the match it is already sitting on while that match still
-   * satisfies the growing query, instead of advancing past it.
-   */
-  searchNext: (opts?: { incremental?: boolean }) => void
-  /** Jumps to the previous match for the current `$activeSearch` query. */
-  searchPrevious: () => void
-  /**
-   * Writes data into the PTY as if the user typed it. Goes through the
-   * same `onData` channel wterm uses for keypresses, so it ends up at
-   * `IPC.writePty(tabKey, data)` via TerminalPane's `handleData`. Raw,
-   * no transformation. Use for flows that genuinely simulate typing.
-   */
-  sendToPty: (data: string) => void
-  /**
-   * Writes data as a paste. If the running app has enabled bracketed
-   * paste mode (DECSET 2004, which Claude Code, Codex and modern shells
-   * all do), wraps the payload so the app can tell paste from typing.
-   * Without that, agents render a dropped file path as plain text
-   * instead of attaching it.
-   *
-   * If bracketed paste is off, sends unwrapped, because the markers
-   * would otherwise show up as visible escape garbage.
-   */
-  pasteToPty: (data: string) => void
-}
 
 type Props = {
   onReady: (handle: WTermHandle) => void
@@ -67,9 +35,6 @@ type Props = {
   isActive: boolean
   className?: string
 }
-
-/** Erase the screen, erase the scrollback, home the cursor. */
-const CLEAR_SEQUENCE = '\x1b[2J\x1b[3J\x1b[H'
 
 /** Marks the copy of an app shortcut this component re-emits on document. */
 const FORWARDED = '__wtermForwarded'
@@ -114,6 +79,13 @@ export const WTermTerminal = React.memo(function WTermTerminal({
     const host = document.createElement('div')
     host.style.width = '100%'
     host.style.height = '100%'
+    // wterm styles its root as a standalone card: 12px padding, an 8px
+    // radius and a large drop shadow. Inside a pane that reads as a
+    // floating panel, and on the light theme the shadow draws a grey
+    // halo along the edges.
+    host.style.padding = '2px'
+    host.style.borderRadius = '0'
+    host.style.boxShadow = 'none'
     container.appendChild(host)
 
     const darkMq = window.matchMedia('(prefers-color-scheme: dark)')
@@ -169,6 +141,20 @@ export const WTermTerminal = React.memo(function WTermTerminal({
     host.addEventListener('keyup', onKeyDownCapture, { capture: true })
     host.addEventListener('click', onClickCapture, { capture: true })
 
+    // wterm rebuilds a row's markup whenever it repaints, which discards
+    // the anchors from the previous pass, so they are reapplied per frame
+    // rather than once. Coalescing into an animation frame keeps a burst
+    // of output to one sweep.
+    let linkFrame = 0
+    const linkObserver = new MutationObserver(() => {
+      if (disposed || linkFrame !== 0) return
+      linkFrame = requestAnimationFrame(() => {
+        linkFrame = 0
+        if (!disposed) linkifyRows(host)
+      })
+    })
+    linkObserver.observe(host, { childList: true, subtree: true })
+
     const mo = new MutationObserver(() => {
       if (disposed || !term) return
       term.setThemeColors(
@@ -221,41 +207,12 @@ export const WTermTerminal = React.memo(function WTermTerminal({
       term.setThemeColors(theme)
       termRef.current = term
 
-      onReadyRef.current({
-        write: (data) => termRef.current?.write(data),
-        focus: () => termRef.current?.focus(),
-        clear: () => termRef.current?.write(CLEAR_SEQUENCE),
-        selectAll: () => {
-          void termRef.current?.selectAll()
-        },
-        searchNext: (opts) => {
-          const active = termRef.current
-          const s = $activeSearch.get()
-          if (!active || !s?.query) return
-          // search() restarts from the top, so re-running it for an
-          // incremental keystroke would drop the caller back to the
-          // first match. Only re-run when the query itself changed.
-          if (active.getSearchState().query !== s.query) {
-            active.search(s.query, { caseSensitive: s.matchCase })
-            if (opts?.incremental) return
-          }
-          active.findNext()
-        },
-        searchPrevious: () => {
-          const active = termRef.current
-          const s = $activeSearch.get()
-          if (!active || !s?.query) return
-          if (active.getSearchState().query !== s.query) {
-            active.search(s.query, { caseSensitive: s.matchCase })
-          }
-          active.findPrevious()
-        },
-        sendToPty: (data) => onDataRef.current(data),
-        pasteToPty: (data) => {
-          const bracketed = termRef.current?.bridge?.bracketedPaste() ?? false
-          onDataRef.current(bracketed ? `\x1b[200~${data}\x1b[201~` : data)
-        },
-      })
+      onReadyRef.current(
+        createWTermHandle({
+          getTerm: () => termRef.current,
+          sendData: (data) => onDataRef.current(data),
+        }),
+      )
     }
 
     boot().catch((err: unknown) => {
@@ -266,6 +223,8 @@ export const WTermTerminal = React.memo(function WTermTerminal({
     return () => {
       disposed = true
       mo.disconnect()
+      linkObserver.disconnect()
+      if (linkFrame !== 0) cancelAnimationFrame(linkFrame)
       host.removeEventListener('keydown', onKeyDownCapture, { capture: true })
       host.removeEventListener('keyup', onKeyDownCapture, { capture: true })
       host.removeEventListener('click', onClickCapture, { capture: true })
@@ -281,6 +240,19 @@ export const WTermTerminal = React.memo(function WTermTerminal({
   useEffect(() => {
     termRef.current?.setRenderingPaused(!isActive)
   }, [isActive])
+
+  // Emptying the find field, and closing the bar, both leave the store
+  // without a query but neither calls back into the terminal, so the
+  // highlights from the last query stayed on screen until something else
+  // searched. Watching the store covers both, and clearing a terminal
+  // that is not searching costs nothing.
+  useEffect(
+    () =>
+      $activeSearch.subscribe((search) => {
+        if (!search?.query) termRef.current?.clearSearch()
+      }),
+    [],
+  )
 
   // wterm reads the cell size from CSS and re-measures when the value
   // changes, so the font size is set as a custom property rather than
