@@ -198,6 +198,21 @@ pub fn run() {
                 let _ = window.set_focus();
             }
         }))
+        // Restores size, position, and the maximized/fullscreen flag on
+        // launch. Without it every start reopens at the 1280x820 from
+        // tauri.conf.json, so a window the user had filled the screen with
+        // comes back small. Registered before the window is built so the
+        // restore lands on the first paint rather than as a visible resize.
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(
+                    tauri_plugin_window_state::StateFlags::SIZE
+                        | tauri_plugin_window_state::StateFlags::POSITION
+                        | tauri_plugin_window_state::StateFlags::MAXIMIZED
+                        | tauri_plugin_window_state::StateFlags::FULLSCREEN,
+                )
+                .build(),
+        )
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init());
