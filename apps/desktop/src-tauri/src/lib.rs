@@ -609,9 +609,51 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|app, event| {
-            if let tauri::RunEvent::Exit = event {
-                app.state::<usage::UsageService>().stop();
+        .run({
+            // Cmd+Q, the menubar Quit and the dock all terminate the
+            // application rather than closing the window, so none of them
+            // reach the window's close-requested handler. They are handed
+            // to the frontend instead, which owns the question of whether
+            // anything is running and calls exit() back once the user has
+            // answered.
+            //
+            // Two quits in quick succession go through unguarded. If the
+            // webview is wedged or never attached the listener, the first
+            // press would otherwise leave an app that cannot be quit at
+            // all, which is worse than skipping a confirmation. The window
+            // is short so that cancelling the dialog and quitting again
+            // later still asks.
+            const FORCE_QUIT_WINDOW: std::time::Duration =
+                std::time::Duration::from_secs(2);
+            let last_quit_request: std::sync::Mutex<Option<std::time::Instant>> =
+                std::sync::Mutex::new(None);
+
+            move |app, event| match event {
+                // A code means the frontend asked for this exit, so it has
+                // already been confirmed. Only an unprompted quit is held
+                // back, which is also what keeps this from looping against
+                // our own exit() call.
+                tauri::RunEvent::ExitRequested { code, api, .. } if code.is_none() => {
+                    let now = std::time::Instant::now();
+                    let mut last = match last_quit_request.lock() {
+                        Ok(guard) => guard,
+                        // A poisoned lock must not make the app unquittable.
+                        Err(_) => return,
+                    };
+                    let insistent = last
+                        .map(|at| now.duration_since(at) < FORCE_QUIT_WINDOW)
+                        .unwrap_or(false);
+                    *last = Some(now);
+                    if insistent {
+                        return;
+                    }
+                    api.prevent_exit();
+                    let _ = app.emit("app://quit-requested", ());
+                }
+                tauri::RunEvent::Exit => {
+                    app.state::<usage::UsageService>().stop();
+                }
+                _ => {}
             }
         });
 }
