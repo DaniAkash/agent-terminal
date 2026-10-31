@@ -1,9 +1,11 @@
 import { type RefObject, useEffect, useRef } from 'react'
 
-interface TerminalCallbacks {
+export interface TerminalCallbacks {
   onData: (data: string) => Promise<void>
   onResize: (cols: number, rows: number) => Promise<void>
   onReady: () => Promise<void>
+  /** Hand a validated link to the OS, since the WebView cannot open one. */
+  onOpenUrl: (url: string) => Promise<void>
 }
 
 type CallbackRefs = {
@@ -30,10 +32,12 @@ export function useTerminalCallbackRefs(
   const onData = useRef(callbacks.onData)
   const onResize = useRef(callbacks.onResize)
   const onReady = useRef(callbacks.onReady)
+  const onOpenUrl = useRef(callbacks.onOpenUrl)
   useEffect(() => {
     onData.current = callbacks.onData
     onResize.current = callbacks.onResize
     onReady.current = callbacks.onReady
+    onOpenUrl.current = callbacks.onOpenUrl
   })
-  return { onData, onResize, onReady }
+  return { onData, onResize, onReady, onOpenUrl }
 }

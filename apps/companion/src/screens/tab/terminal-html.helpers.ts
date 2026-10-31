@@ -1,10 +1,16 @@
+import {
+  TERMINAL_TRAILING_PUNCTUATION,
+  TERMINAL_URL_PATTERN,
+} from '@agent-terminal/core-ui'
+
 export interface TerminalHtmlConfig {
   wtermVersion: string
   initialCols: number
   initialRows: number
   fontFamily: string
   fontSize: number
-  scrollback: number
+  /** ghostty's scrollback budget, in bytes rather than lines. */
+  scrollbackBytes: number
   themeBackground: string
   themeForeground: string
   themeCursor: string
@@ -17,7 +23,10 @@ export const DEFAULT_TERMINAL_HTML_CONFIG: TerminalHtmlConfig = {
   fontFamily:
     'ui-monospace, "SF Mono", Menlo, "Roboto Mono", "Droid Sans Mono", monospace',
   fontSize: 12,
-  scrollback: 2000,
+  // Measured against this core: 2 MB holds about 2,085 rows at the 57
+  // columns a phone shows, covering the 2,000 lines xterm was
+  // configured for. The default is 10,000 bytes, about 1,260 rows.
+  scrollbackBytes: 2_000_000,
   themeBackground: '#0e0f10',
   themeForeground: '#e6e8eb',
   themeCursor: '#e6e8eb',
@@ -61,6 +70,12 @@ export function safeCssFontFamily(input: string): string {
 export function buildTerminalHtml(config: TerminalHtmlConfig): string {
   const cssBackground = safeCssColor(config.themeBackground)
   const cssFontFamily = safeCssFontFamily(config.fontFamily)
+  // The page runs library code fetched at runtime, so it cannot import
+  // the linkifier. The patterns are interpolated from the shared module
+  // instead, which keeps the scheme matching from drifting between the
+  // platforms even though the loop below is written out again here.
+  const urlPattern = TERMINAL_URL_PATTERN.source
+  const trailingPattern = TERMINAL_TRAILING_PUNCTUATION.source
   const v = config.wtermVersion
   return `<!doctype html>
 <html>
@@ -114,6 +129,7 @@ try {
     // esm.sh rewrites module paths, so the binary is addressed on unpkg
     // rather than left to the loader's import.meta.url default.
     wasmPath: "https://unpkg.com/@wterm/ghostty@${v}/wasm/ghostty-vt.wasm",
+    scrollbackLimit: ${config.scrollbackBytes},
     foregroundColor: ${JSON.stringify(config.themeForeground)},
     backgroundColor: ${JSON.stringify(config.themeBackground)},
   });
@@ -177,6 +193,79 @@ try {
     window.visualViewport.addEventListener("resize", repinToBottom);
   }
   window.addEventListener("resize", repinToBottom);
+
+  // wterm anchors OSC 8 hyperlinks only, so a printed URL stays plain
+  // text until it is wrapped, and the old web-links addon is what used
+  // to do this. Only a span that is entirely a URL is wrapped: each one
+  // carries an explicit width in cells, so splitting one would break
+  // the column alignment of the rest of the row.
+  const URL_RE = new RegExp(${JSON.stringify(urlPattern)});
+  const TRAILING_RE = new RegExp(${JSON.stringify(trailingPattern)});
+
+  function hrefForSpanText(text) {
+    const trimmed = text.trim();
+    if (!trimmed || !URL_RE.test(trimmed)) return null;
+    const stripped = trimmed.replace(TRAILING_RE, "");
+    if (!stripped) return null;
+    return openableHref(stripped);
+  }
+
+  function openableHref(href) {
+    try {
+      const url = new URL(href);
+      return url.protocol === "http:" || url.protocol === "https:"
+        ? url.href
+        : null;
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function linkifyRows(root) {
+    for (const span of root.querySelectorAll(".term-row span")) {
+      if (span.closest("a")) continue;
+      const href = hrefForSpanText(span.textContent || "");
+      if (!href) continue;
+      const anchor = document.createElement("a");
+      anchor.className = "term-link";
+      anchor.href = href;
+      anchor.target = "_blank";
+      anchor.rel = "noopener noreferrer";
+      span.replaceWith(anchor);
+      anchor.appendChild(span);
+    }
+  }
+
+  // wterm rebuilds a row's markup on every repaint, which discards the
+  // previous pass's anchors, so this runs per frame rather than once.
+  let linkFrame = 0;
+  linkifyRows(scroller);
+  new MutationObserver(function () {
+    if (linkFrame !== 0) return;
+    linkFrame = requestAnimationFrame(function () {
+      linkFrame = 0;
+      linkifyRows(scroller);
+    });
+  }).observe(scroller, { childList: true, subtree: true });
+
+  // The WebView cannot open a link, and following one in place would
+  // replace the terminal with the page. Anchors go out to the native
+  // side instead, and only once the scheme checks out: an OSC 8 href is
+  // written by whatever produced the output.
+  scroller.addEventListener(
+    "click",
+    function (e) {
+      const anchor = e.target && e.target.closest && e.target.closest("a[href]");
+      if (!anchor) return;
+      const raw = anchor.getAttribute("href");
+      if (!raw) return;
+      e.preventDefault();
+      const href = openableHref(raw);
+      if (!href) return;
+      post({ type: "openUrl", url: href });
+    },
+    true,
+  );
 
   window.__terminal_bridge = {
     write: function (data) { term.write(data); },

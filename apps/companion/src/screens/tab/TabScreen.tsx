@@ -38,6 +38,7 @@ export function TabScreen({ projectId, tabId }: TabScreenProps) {
     onData,
     onResize,
     onReady,
+    onOpenUrl,
     onKey,
     ctrlArmed,
     altArmed,
@@ -134,6 +135,7 @@ export function TabScreen({ projectId, tabId }: TabScreenProps) {
             onData={onData}
             onResize={onResize}
             onReady={onReady}
+            onOpenUrl={onOpenUrl}
             dom={DOM_PROPS}
           />
         </View>

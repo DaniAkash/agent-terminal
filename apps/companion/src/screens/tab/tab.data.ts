@@ -1,6 +1,8 @@
+import { openableHref } from '@agent-terminal/core-ui'
 import { useStore } from '@nanostores/react'
 import { decode } from 'js-base64'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { Linking } from 'react-native'
 import { $session } from '@/modules/stores/$session'
 import {
   resizeTab as resizeTabWss,
@@ -84,6 +86,14 @@ export function useTabData(projectId: string, tabId: string) {
     setReady(true)
   }, [])
 
+  // The href arrives from a WebView, so the scheme is checked again on
+  // this side rather than trusted from the page that sent it.
+  const onOpenUrl = useCallback(async (url: string) => {
+    const href = openableHref(url)
+    if (!href) return
+    await Linking.openURL(href).catch(() => {})
+  }, [])
+
   const onData = useCallback(async (data: string) => {
     sendInputRef.current(data)
   }, [])
@@ -116,6 +126,7 @@ export function useTabData(projectId: string, tabId: string) {
     onData,
     onResize,
     onReady,
+    onOpenUrl,
     onKey,
     ctrlArmed,
     altArmed,

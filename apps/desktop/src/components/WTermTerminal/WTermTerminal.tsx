@@ -1,3 +1,4 @@
+import { linkifyRows, openableHref } from '@agent-terminal/core-ui'
 import { useStore } from '@nanostores/react'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { WTerm } from '@wterm/dom'
@@ -8,7 +9,6 @@ import {
   type WTermHandle,
 } from '@/components/WTermTerminal/wterm-terminal.handle'
 import { classifyKeyEvent } from '@/components/WTermTerminal/wterm-terminal.keys'
-import { linkifyRows } from '@/components/WTermTerminal/wterm-terminal.links'
 import {
   coreThemeHex,
   terminalTheme,
@@ -37,6 +37,13 @@ type Props = {
 }
 
 /** Marks the copy of an app shortcut this component re-emits on document. */
+// ghostty budgets scrollback in bytes, not lines, and allocates it in
+// pages, so the retained row count falls as the terminal gets wider.
+// Measured against this core: 8 MB holds about 4,900 rows at 120
+// columns and about 7,200 at 80, covering the 5,000 lines xterm was
+// configured for here. The default is 10,000 bytes, about 535 rows.
+const SCROLLBACK_BYTES = 8_000_000
+
 const FORWARDED = '__wtermForwarded'
 
 export const WTermTerminal = React.memo(function WTermTerminal({
@@ -129,12 +136,15 @@ export const WTermTerminal = React.memo(function WTermTerminal({
     // no-op on them or navigate the app window away. Route them to the
     // OS browser instead, the same thing the xterm web-links addon did.
     function onClickCapture(e: MouseEvent) {
-      const anchor = (e.target as HTMLElement | null)?.closest?.('a[href]')
+      const anchor = (e.target as Element | null)?.closest('a[href]')
       if (!anchor) return
-      const href = anchor.getAttribute('href')
-      if (!href) return
+      // Always swallow the navigation: letting the webview follow a
+      // terminal-authored href would take the app window off its own
+      // page. An OSC 8 href is written by whatever produced the output,
+      // so it reaches the OS opener only once its scheme checks out.
       e.preventDefault()
-      openUrl(href).catch(() => {})
+      const href = openableHref(anchor.getAttribute('href'))
+      if (href) openUrl(href).catch(() => {})
     }
 
     host.addEventListener('keydown', onKeyDownCapture, { capture: true })
@@ -183,7 +193,10 @@ export const WTermTerminal = React.memo(function WTermTerminal({
       // Each terminal owns its own core: the core holds that session's
       // grid and scrollback. The WASM module itself is compiled once per
       // URL and shared, so the later ones are cheap.
-      core = await GhosttyCore.load({ ...coreThemeHex(theme) })
+      core = await GhosttyCore.load({
+        scrollbackLimit: SCROLLBACK_BYTES,
+        ...coreThemeHex(theme),
+      })
       if (disposed) {
         core.dispose()
         return

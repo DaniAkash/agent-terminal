@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { TERMINAL_URL_PATTERN } from '@agent-terminal/core-ui'
 import {
   buildTerminalHtml,
   DEFAULT_TERMINAL_HTML_CONFIG,
@@ -171,5 +172,30 @@ describe('keyboard re-pin', () => {
 
   test('ignores the scroll events a shrinking viewport fires itself', () => {
     expect(html).toContain('if (Date.now() < settlingUntil) return;')
+  })
+})
+
+describe('scrollback and links', () => {
+  const html = buildTerminalHtml(DEFAULT_TERMINAL_HTML_CONFIG)
+
+  test('passes an explicit byte budget to the core', () => {
+    // The default is 10,000 bytes, roughly 1,260 rows at phone width,
+    // well short of the 2,000 lines this terminal used to keep.
+    expect(html).toContain('scrollbackLimit: 2000000')
+  })
+
+  test('linkifies bare URLs and routes clicks to the native side', () => {
+    expect(html).toContain('function linkifyRows(root)')
+    expect(html).toContain('post({ type: "openUrl", url: href })')
+  })
+
+  test('only hands http and https to the opener', () => {
+    expect(html).toContain(
+      'url.protocol === "http:" || url.protocol === "https:"',
+    )
+  })
+
+  test('carries the shared URL pattern rather than a second copy', () => {
+    expect(html).toContain(JSON.stringify(TERMINAL_URL_PATTERN.source))
   })
 })

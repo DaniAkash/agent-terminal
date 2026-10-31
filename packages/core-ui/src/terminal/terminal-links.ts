@@ -4,7 +4,7 @@
  * wterm only draws an anchor for a cell the terminal marked as a
  * hyperlink with OSC 8. Almost nothing an agent or a shell prints does
  * that, so without this a printed URL is plain text, which is a
- * capability xterm's web-links addon used to provide.
+ * capability xterm's web-links addon used to provide on every platform.
  *
  * Only a span whose whole text is a URL is wrapped. Each span carries an
  * explicit width in cells, so splitting one to wrap part of its text
@@ -17,25 +17,39 @@
  * the host's click handling all apply without a second code path.
  */
 
-const URL_PATTERN = /^(https?:\/\/[^\s<>"'`]+)$/
+export const TERMINAL_URL_PATTERN = /^(https?:\/\/[^\s<>"'`]+)$/
 
 /** Punctuation that ends a sentence rather than the URL inside it. */
-const TRAILING = /[.,;:!?)\]}>'"]+$/
+export const TERMINAL_TRAILING_PUNCTUATION = /[.,;:!?)\]}>'"]+$/
+
+/** Schemes an anchor may hand to an OS opener. */
+const OPENABLE_PROTOCOLS = new Set(['http:', 'https:'])
+
+/**
+ * Normalise an href for opening, or reject it.
+ *
+ * Applied to every anchor a host is about to open, not just the ones
+ * linkified here: an OSC 8 href is written by whatever produced the
+ * output, so it can name any scheme it likes, including `file:` and
+ * `javascript:`.
+ */
+export function openableHref(href: string | null | undefined): string | null {
+  if (!href) return null
+  try {
+    const url = new URL(href)
+    return OPENABLE_PROTOCOLS.has(url.protocol) ? url.href : null
+  } catch {
+    return null
+  }
+}
 
 export function hrefForSpanText(text: string): string | null {
   const trimmed = text.trim()
   if (trimmed.length === 0) return null
-  if (!URL_PATTERN.test(trimmed)) return null
-  const stripped = trimmed.replace(TRAILING, '')
+  if (!TERMINAL_URL_PATTERN.test(trimmed)) return null
+  const stripped = trimmed.replace(TERMINAL_TRAILING_PUNCTUATION, '')
   if (stripped.length === 0) return null
-  try {
-    const url = new URL(stripped)
-    return url.protocol === 'http:' || url.protocol === 'https:'
-      ? url.href
-      : null
-  } catch {
-    return null
-  }
+  return openableHref(stripped)
 }
 
 /**
@@ -44,12 +58,13 @@ export function hrefForSpanText(text: string): string | null {
  * no-op and the observer that drives this cannot loop.
  */
 export function linkifyRows(root: ParentNode): number {
+  const doc = (root as Element).ownerDocument ?? (root as unknown as Document)
   let wrapped = 0
   for (const span of root.querySelectorAll('.term-row span')) {
     if (span.closest('a')) continue
     const href = hrefForSpanText(span.textContent ?? '')
     if (!href) continue
-    const anchor = document.createElement('a')
+    const anchor = doc.createElement('a')
     anchor.className = 'term-link'
     anchor.href = href
     anchor.target = '_blank'

@@ -1,5 +1,6 @@
 'use dom'
 
+import { linkifyRows, openableHref } from '@agent-terminal/core-ui'
 import { WTerm } from '@wterm/dom'
 import '@wterm/dom/css'
 import { GhosttyCore } from '@wterm/ghostty'
@@ -9,7 +10,10 @@ import { type Ref, useEffect, useRef } from 'react'
 // @ts-expect-error Metro resolves this through `assetExts`, which has no types.
 import wasmAsset from '@wterm/ghostty/ghostty-vt.wasm'
 import { assetUrl } from './ghostty-wasm.helpers'
-import { useTerminalCallbackRefs } from './terminal-callbacks.hooks'
+import {
+  type TerminalCallbacks,
+  useTerminalCallbackRefs,
+} from './terminal-callbacks.hooks'
 
 type Args = Parameters<DOMImperativeFactory[string]>
 
@@ -21,16 +25,20 @@ export interface TerminalHandle extends DOMImperativeFactory {
   blurInput: (...args: Args) => void
 }
 
-interface TerminalDomProps {
-  onData: (data: string) => Promise<void>
-  onResize: (cols: number, rows: number) => Promise<void>
-  onReady: () => Promise<void>
+interface TerminalDomProps extends TerminalCallbacks {
   ref: Ref<TerminalHandle>
   dom?: DOMProps
 }
 
 /** Erase the screen, erase the scrollback, home the cursor. */
 const CLEAR_SEQUENCE = '\x1b[2J\x1b[3J\x1b[H'
+
+// ghostty budgets scrollback in bytes, not lines, and allocates it in
+// pages, so the retained row count falls as the terminal gets wider.
+// Measured against this core: 2 MB holds about 2,085 rows at the 57
+// columns a phone shows, covering the 2,000 lines xterm was configured
+// for here. The default is 10,000 bytes, about 1,260 rows at that width.
+const SCROLLBACK_BYTES = 2_000_000
 
 const THEME = {
   background: 0x0e0f10,
@@ -68,6 +76,7 @@ export default function TerminalDom({
   onData,
   onResize,
   onReady,
+  onOpenUrl,
   ref,
 }: TerminalDomProps) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -77,7 +86,8 @@ export default function TerminalDom({
     onData: onDataRef,
     onResize: onResizeRef,
     onReady: onReadyRef,
-  } = useTerminalCallbackRefs({ onData, onResize, onReady })
+    onOpenUrl: onOpenUrlRef,
+  } = useTerminalCallbackRefs({ onData, onResize, onReady, onOpenUrl })
 
   useDOMImperativeHandle(ref, () => ({
     write: (...args: Args) => {
@@ -112,12 +122,29 @@ export default function TerminalDom({
     let disposed = false
     let term: WTerm | null = null
     let core: GhosttyCore | null = null
+    let linkObserver: MutationObserver | null = null
+    let linkFrame = 0
 
-    async function boot() {
+    // The WebView cannot open a link itself, and following one in place
+    // would replace the terminal with the page. Every anchor is routed
+    // out to the OS instead, and only after its scheme checks out: an
+    // OSC 8 href is written by whatever produced the output.
+    function onClickCapture(e: MouseEvent) {
+      const anchor = (e.target as Element | null)?.closest('a[href]')
+      if (!anchor) return
+      e.preventDefault()
+      const href = openableHref(anchor.getAttribute('href'))
+      if (href) void onOpenUrlRef.current(href)
+    }
+
+    container.addEventListener('click', onClickCapture, { capture: true })
+
+    async function boot(host: HTMLDivElement) {
       // Metro has no notion of the `new URL(..., import.meta.url)` asset
       // pattern the default loader uses, so the binary is located for it.
       core = await GhosttyCore.load({
         wasmPath: assetUrl(wasmAsset),
+        scrollbackLimit: SCROLLBACK_BYTES,
         foregroundColor: '#e6e8eb',
         backgroundColor: '#0e0f10',
       })
@@ -126,7 +153,7 @@ export default function TerminalDom({
         return
       }
 
-      term = new WTerm(container as HTMLElement, {
+      term = new WTerm(host, {
         core,
         autoResize: true,
         cursorBlink: true,
@@ -150,16 +177,35 @@ export default function TerminalDom({
       }
 
       term.setThemeColors({ ...THEME, palette: [...THEME.palette] })
+
+      // wterm anchors OSC 8 hyperlinks only, so a printed URL is plain
+      // text until it is wrapped. wterm also rebuilds a row's markup on
+      // every repaint, which discards the previous pass's anchors, so
+      // this reapplies per frame rather than once. Coalescing into an
+      // animation frame keeps a burst of output to one sweep.
+      linkifyRows(host)
+      linkObserver = new MutationObserver(() => {
+        if (disposed || linkFrame !== 0) return
+        linkFrame = requestAnimationFrame(() => {
+          linkFrame = 0
+          if (!disposed) linkifyRows(host)
+        })
+      })
+      linkObserver.observe(host, { childList: true, subtree: true })
+
       termRef.current = term
       void onReadyRef.current()
     }
 
-    boot().catch((err: unknown) => {
+    boot(container).catch((err: unknown) => {
       console.error('[TerminalDom] wterm boot failed:', err)
     })
 
     return () => {
       disposed = true
+      container.removeEventListener('click', onClickCapture, { capture: true })
+      linkObserver?.disconnect()
+      if (linkFrame !== 0) cancelAnimationFrame(linkFrame)
       term?.destroy()
       // destroy() leaves a host-supplied core alone by design, so the
       // WASM instance behind it is this component's to release.
