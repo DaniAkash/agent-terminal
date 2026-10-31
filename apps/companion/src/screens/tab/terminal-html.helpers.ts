@@ -129,6 +129,55 @@ try {
   });
   await term.init();
 
+  // The soft keyboard shrinks the WebView, and wterm keeps its scroll
+  // offset across the re-fit, so the live prompt ends up far below the
+  // fold. Re-pin after the reflow lands, and only when the view was
+  // already at the bottom, so a reader who scrolled up into history is
+  // not yanked back down.
+  // wterm puts its class on the host element rather than nesting, and
+  // .wterm is what the stylesheet gives overflow-y, so the class is the
+  // thing to query: it names the scroll container wherever it sits.
+  const scroller = document.querySelector(".wterm");
+  const BOTTOM_SLACK_PX = 4;
+  let pinnedToBottom = true;
+  let settlingUntil = 0;
+
+  function isAtBottom() {
+    return (
+      scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop <=
+      BOTTOM_SLACK_PX
+    );
+  }
+
+  scroller.addEventListener(
+    "scroll",
+    function () {
+      // A shrinking viewport fires scroll events of its own, and they
+      // read as "not at the bottom" before the re-pin runs. Only a
+      // scroll outside that settling window counts as the user's.
+      if (Date.now() < settlingUntil) return;
+      pinnedToBottom = isAtBottom();
+    },
+    { passive: true },
+  );
+
+  function repinToBottom() {
+    // The keyboard animates, so resize fires repeatedly; each pass keeps
+    // the prompt in view until the viewport stops moving.
+    settlingUntil = Date.now() + 500;
+    if (!pinnedToBottom) return;
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        if (pinnedToBottom) scroller.scrollTop = scroller.scrollHeight;
+      });
+    });
+  }
+
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", repinToBottom);
+  }
+  window.addEventListener("resize", repinToBottom);
+
   window.__terminal_bridge = {
     write: function (data) { term.write(data); },
     // wterm has no clear(); erase the screen, the scrollback, then home.

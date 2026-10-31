@@ -151,3 +151,25 @@ describe('terminal font sizing', () => {
     expect(html).toContain('--term-row-height: 14px;')
   })
 })
+
+describe('keyboard re-pin', () => {
+  const html = buildTerminalHtml(DEFAULT_TERMINAL_HTML_CONFIG)
+
+  test('re-pins the scrollback when the viewport shrinks', () => {
+    // The soft keyboard shrinks the WebView; without this the prompt
+    // sits below the fold because the scroll offset is kept.
+    expect(html).toContain(
+      'window.visualViewport.addEventListener("resize", repinToBottom)',
+    )
+    expect(html).toContain('window.addEventListener("resize", repinToBottom)')
+    expect(html).toContain('scroller.scrollTop = scroller.scrollHeight')
+  })
+
+  test('only re-pins when the view was already at the bottom', () => {
+    expect(html).toContain('if (!pinnedToBottom) return;')
+  })
+
+  test('ignores the scroll events a shrinking viewport fires itself', () => {
+    expect(html).toContain('if (Date.now() < settlingUntil) return;')
+  })
+})
