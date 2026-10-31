@@ -1,9 +1,9 @@
 import { useStore } from '@nanostores/react'
 import React, { useCallback, useEffect, useRef } from 'react'
 import {
-  type XTermHandle,
-  XTermTerminal,
-} from '@/components/XTermTerminal/XTermTerminal'
+  type WTermHandle,
+  WTermTerminal,
+} from '@/components/WTermTerminal/WTermTerminal'
 import { IPC } from '@/modules/ipc/commands'
 import { onPtyExit, onPtyRespawned } from '@/modules/ipc/events'
 import {
@@ -23,7 +23,7 @@ type Props = {
   tabId: string
   cwd: string
   /** True when this tab is the currently visible one. Used to auto-focus
-   *  the xterm canvas so the user can type immediately after switching tabs
+   *  the terminal so the user can type immediately after switching tabs
    *  or projects without needing to click into the terminal first. */
   isActive: boolean
 }
@@ -35,18 +35,18 @@ export const TerminalPane = React.memo(function TerminalPane({
   isActive,
 }: Props) {
   const tabKey = makeTabKey(projectId, tabId)
-  const handleRef = useRef<XTermHandle | null>(null)
+  const handleRef = useRef<WTermHandle | null>(null)
   // Reactive read — flips on the next render whenever ClaudeCodeMod /
-  // CodexMod sets or clears `type === 'agent'` for this tab. xterm's
+  // CodexMod sets or clears `type === 'agent'` for this tab. The
   // key handler reads it (via ref) on the next keypress.
   const allTabMeta = useStore($tabMeta)
   const isAgent = allTabMeta[tabKey]?.type === 'agent'
 
-  // Auto-focus the xterm canvas when this tab becomes active.
+  // Auto-focus the terminal when this tab becomes active.
   //
   // The effect runs after React has painted, which means WorkspaceView has
   // already applied `display: block` to the container div. Calling focus()
-  // on a display:none element is a no-op in xterm, so the paint-after timing
+  // on a display:none element is a no-op, so the paint-after timing
   // here is load-bearing — do not call focus() synchronously on prop change.
   useEffect(() => {
     if (isActive) {
@@ -69,7 +69,7 @@ export const TerminalPane = React.memo(function TerminalPane({
     }
   }, [tabKey])
 
-  // Called once when the xterm canvas is ready.
+  // Called once when the terminal is ready.
   //
   // Pty lifecycle is owned by the store, not this component:
   //   - openTab is idempotent — returns true if a new pty was spawned,
@@ -82,7 +82,7 @@ export const TerminalPane = React.memo(function TerminalPane({
   // Data arrives via the per-tab Channel passed to openTab — no global event
   // bus listener, no fan-out to other tabs.
   const handleReady = useCallback(
-    (handle: XTermHandle) => {
+    (handle: WTermHandle) => {
       handleRef.current = handle
       registerTerminalHandle(tabKey, handle)
 
@@ -132,7 +132,7 @@ export const TerminalPane = React.memo(function TerminalPane({
     const unlistenRespawn = onPtyRespawned((id, cwd) => {
       if (id !== tabKey) return
       // Strip Unicode control characters (Cc category — covers C0/C1) from
-      // the path before injecting it into the xterm stream. cwd ultimately
+      // the path before injecting it into the terminal stream. cwd ultimately
       // comes from a shell-emitted OSC 7 + URL decode, which can produce
       // literal control bytes if a directory name contains `%1B` or
       // similar — without this scrub, opening such a folder would inject
@@ -155,7 +155,7 @@ export const TerminalPane = React.memo(function TerminalPane({
   }, [tabKey])
 
   return (
-    <XTermTerminal
+    <WTermTerminal
       onReady={handleReady}
       onData={handleData}
       onResize={handleResize}

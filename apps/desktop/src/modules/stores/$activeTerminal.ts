@@ -1,10 +1,10 @@
 import { atom, computed } from 'nanostores'
-import type { XTermHandle } from '@/components/XTermTerminal/XTermTerminal'
+import type { WTermHandle } from '@/components/WTermTerminal/WTermTerminal'
 import { $activeProjectId, $activeTabId } from '@/modules/stores/$navigation'
 import { makeTabKey } from '@/screens/workspace/workspace.helpers'
 
 /** Every mounted pane's handle, keyed by `${projectId}:${tabId}`. */
-export const $terminalHandles = atom<Map<string, XTermHandle>>(new Map())
+export const $terminalHandles = atom<Map<string, WTermHandle>>(new Map())
 
 /** Active tab key derived from navigation; null when nothing is selected. */
 export const $activeTabKey = computed(
@@ -18,7 +18,7 @@ export const $activeTabKey = computed(
 
 export function registerTerminalHandle(
   tabKey: string,
-  handle: XTermHandle,
+  handle: WTermHandle,
 ): void {
   const next = new Map($terminalHandles.get())
   next.set(tabKey, handle)
@@ -27,7 +27,7 @@ export function registerTerminalHandle(
 
 export function unregisterTerminalHandle(
   tabKey: string,
-  handle: XTermHandle,
+  handle: WTermHandle,
 ): void {
   // Identity guard: a same-key re-register can land before this cleanup
   // runs; without the guard we'd wipe the newer handle.
@@ -38,7 +38,7 @@ export function unregisterTerminalHandle(
   $terminalHandles.set(next)
 }
 
-export function getActiveTerminalHandle(): XTermHandle | null {
+export function getActiveTerminalHandle(): WTermHandle | null {
   const key = $activeTabKey.get()
   if (!key) return null
   return $terminalHandles.get().get(key) ?? null

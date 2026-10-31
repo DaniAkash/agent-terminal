@@ -11,8 +11,8 @@ import { getActiveTerminalHandle } from '@/modules/stores/$activeTerminal'
 
 /**
  * Floating overlay that opens via Cmd+F over the active terminal. Drives
- * `@xterm/addon-search` through the active-terminal handle registry. Esc
- * (or the close button) returns focus to xterm.
+ * wterm's own search through the active-terminal handle registry. Esc
+ * (or the close button) returns focus to the terminal.
  */
 export function TerminalSearchBar() {
   const search = useStore($activeSearch)

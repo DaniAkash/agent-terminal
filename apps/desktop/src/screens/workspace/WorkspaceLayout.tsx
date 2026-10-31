@@ -90,7 +90,7 @@ export function WorkspaceLayout() {
 
   useUpdaterWiring()
 
-  // enableOnFormTags is required because xterm uses a hidden <textarea> to
+  // enableOnFormTags is required because the terminal uses a hidden <textarea> to
   // capture keyboard input. Without it react-hotkeys-hook silently ignores
   // all key events while the terminal has focus.
   const hotkeyOpts = { preventDefault: true, enableOnFormTags: true } as const
