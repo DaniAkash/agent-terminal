@@ -219,6 +219,10 @@ export const WTermTerminal = React.memo(function WTermTerminal({
 
       term.setThemeColors(theme)
       termRef.current = term
+      // boot() is async, so the activation effect above has already run
+      // and found a null ref. This covers the terminal whose pane was
+      // shown before it finished loading.
+      if (isActiveRef.current) term.fit()
 
       onReadyRef.current(
         createWTermHandle({
@@ -252,6 +256,17 @@ export const WTermTerminal = React.memo(function WTermTerminal({
 
   useEffect(() => {
     termRef.current?.setRenderingPaused(!isActive)
+    if (!isActive) return
+    // wterm sizes its grid from a ResizeObserver, and an inactive pane is
+    // `display: none`, so it has no box and the observer reports nothing
+    // for it. A pane hidden while the window changed size therefore keeps
+    // the grid it had, and the session comes back occupying a corner of
+    // the pane it is now in.
+    //
+    // Deferred by a frame because the pane is still `display: none` while
+    // this effect runs; the box it has to measure exists on the next one.
+    const frame = requestAnimationFrame(() => termRef.current?.fit())
+    return () => cancelAnimationFrame(frame)
   }, [isActive])
 
   // Emptying the find field, and closing the bar, both leave the store

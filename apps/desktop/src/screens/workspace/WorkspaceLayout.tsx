@@ -35,6 +35,7 @@ import {
 import { toggleSidebarVisible } from '@/modules/stores/$sidebarVisible'
 import { useMetaHeldTracker } from '@/modules/stores/useMetaHeldTracker'
 import { useUpdaterWiring } from '@/modules/updater/useUpdaterWiring'
+import { useFitOnWindowFocus } from '@/modules/work/useFitOnWindowFocus'
 import { WorkspaceView } from '@/screens/workspace/WorkspaceView'
 
 export function WorkspaceLayout() {
@@ -93,6 +94,8 @@ export function WorkspaceLayout() {
   // enableOnFormTags is required because the terminal uses a hidden <textarea> to
   // capture keyboard input. Without it react-hotkeys-hook silently ignores
   // all key events while the terminal has focus.
+  useFitOnWindowFocus()
+
   const hotkeyOpts = { preventDefault: true, enableOnFormTags: true } as const
 
   // ⌘T — new tab in the active project

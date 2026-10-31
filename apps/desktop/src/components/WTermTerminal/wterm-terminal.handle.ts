@@ -4,6 +4,15 @@ import { $activeSearch } from '@/modules/stores/$activeSearch'
 export type WTermHandle = {
   write: (data: string) => void
   focus: () => void
+  /**
+   * Re-measure the pane and resize the grid to match.
+   *
+   * wterm sizes itself from a ResizeObserver, and an inactive pane is
+   * `display: none`, so it has no box and reports nothing. A pane that
+   * was hidden while the window changed size therefore keeps the grid it
+   * had, which is what leaves a session sitting in a corner of its pane.
+   */
+  fit: () => void
   /** Clears the visible buffer and the scrollback. */
   clear: () => void
   /** Selects all text in the buffer. */
@@ -77,6 +86,7 @@ export function createWTermHandle(opts: {
   return {
     write: (data) => getTerm()?.write(data),
     focus: () => getTerm()?.focus(),
+    fit: () => getTerm()?.fit(),
     clear: () => getTerm()?.write(CLEAR_SEQUENCE),
     selectAll: () => {
       void getTerm()?.selectAll()
