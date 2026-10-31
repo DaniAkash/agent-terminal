@@ -7,7 +7,7 @@ import type { DOMImperativeFactory, DOMProps } from 'expo/dom'
 import { useDOMImperativeHandle } from 'expo/dom'
 import { type Ref, useEffect, useRef } from 'react'
 // @ts-expect-error Metro resolves this through `assetExts`, which has no types.
-import wasmAsset from '@wterm/ghostty/wasm/ghostty-vt.wasm'
+import wasmAsset from '@wterm/ghostty/ghostty-vt.wasm'
 import { assetUrl } from './ghostty-wasm.helpers'
 import { useTerminalCallbackRefs } from './terminal-callbacks.hooks'
 
@@ -154,7 +154,9 @@ export default function TerminalDom({
       void onReadyRef.current()
     }
 
-    void boot()
+    boot().catch((err: unknown) => {
+      console.error('[TerminalDom] wterm boot failed:', err)
+    })
 
     return () => {
       disposed = true
