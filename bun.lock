@@ -12,7 +12,7 @@
     },
     "apps/companion": {
       "name": "companion",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "dependencies": {
         "@agent-terminal/core-ui": "workspace:*",
         "@expo/metro-runtime": "~56.0.18",
@@ -22,9 +22,8 @@
         "@react-native-async-storage/async-storage": "2.2.0",
         "@react-native-community/netinfo": "12.0.1",
         "@react-native-vector-icons/lucide": "^14.0.0",
-        "@xterm/addon-fit": "^0.11.0",
-        "@xterm/addon-web-links": "^0.12.0",
-        "@xterm/xterm": "^6.0.0",
+        "@wterm/dom": "0.5.6",
+        "@wterm/ghostty": "0.5.6",
         "expo": "~56.0.24",
         "expo-build-properties": "~56.0.27",
         "expo-camera": "~56.0.8",
@@ -68,7 +67,7 @@
     },
     "apps/desktop": {
       "name": "@agent-terminal/desktop",
-      "version": "0.4.0",
+      "version": "0.5.0",
       "dependencies": {
         "@agent-terminal/core-ui": "workspace:*",
         "@base-ui/react": "^1.9.0",
@@ -83,11 +82,8 @@
         "@tauri-apps/plugin-opener": "^2",
         "@tauri-apps/plugin-process": "^2",
         "@tauri-apps/plugin-updater": "^2",
-        "@xterm/addon-fit": "^0.11.0",
-        "@xterm/addon-search": "^0.16.0",
-        "@xterm/addon-web-links": "^0.12.0",
-        "@xterm/addon-webgl": "^0.19.0",
-        "@xterm/xterm": "^6.0.0",
+        "@wterm/dom": "0.5.6",
+        "@wterm/ghostty": "0.5.6",
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",
         "cmdk": "^1.1.1",
@@ -1190,21 +1186,17 @@
 
     "@vitejs/plugin-react": ["@vitejs/plugin-react@4.7.0", "", { "dependencies": { "@babel/core": "^7.28.0", "@babel/plugin-transform-react-jsx-self": "^7.27.1", "@babel/plugin-transform-react-jsx-source": "^7.27.1", "@rolldown/pluginutils": "1.0.0-beta.27", "@types/babel__core": "^7.20.5", "react-refresh": "^0.17.0" }, "peerDependencies": { "vite": "^4.2.0 || ^5.0.0 || ^6.0.0 || ^7.0.0" } }, "sha512-gUu9hwfWvvEDBBmgtAowQCojwZmJ5mcLn3aufeCsitijs3+f2NsrPtlAWIR6OPiqljl96GVCUbLe0HyqIpVaoA=="],
 
+    "@wterm/core": ["@wterm/core@0.5.6", "", {}, "sha512-etAO8J2U4/XYI2XAp5/inns//d2nJHLn3r9ua2fk6liX38ZK8mjslrTOyqlw56VTO5g6Dh5wDWAqyiU8cxXjyA=="],
+
+    "@wterm/dom": ["@wterm/dom@0.5.6", "", { "dependencies": { "@wterm/core": "0.5.6" } }, "sha512-4YuGpfm1bXkoSWN/odgFMHyKBOkGt7B94UexGlyB6h2S7GqvMV/Qd01Xsx0WLAv/oFYOLPwsx1i59mEGzJ+Maw=="],
+
+    "@wterm/ghostty": ["@wterm/ghostty@0.5.6", "", { "dependencies": { "@wterm/core": "0.5.6" } }, "sha512-I057CKoNj0K0dO9jp4QZhznyDx8CZfm3q64X1Tq5Gout9VJ//aCUt/k5fmba1jqaaH4fE+gR8yyb29ZMu25+iQ=="],
+
     "@xmldom/xmldom": ["@xmldom/xmldom@0.8.15", "", {}, "sha512-/5NV/vDALVFDXgLmfsy9TRCBlKwO2LNBFzpzvb9iIj+jR+eSc6DLYYvVOdivT/jm7MtU6TebYuRmzEOI7w40UA=="],
-
-    "@xterm/addon-fit": ["@xterm/addon-fit@0.11.0", "", {}, "sha512-jYcgT6xtVYhnhgxh3QgYDnnNMYTcf8ElbxxFzX0IZo+vabQqSPAjC3c1wJrKB5E19VwQei89QCiZZP86DCPF7g=="],
-
-    "@xterm/addon-search": ["@xterm/addon-search@0.16.0", "", {}, "sha512-9OeuBFu0/uZJPu+9AHKY6g/w0Czyb/Ut0A5t79I4ULoU4IfU5BEpPFVGQxP4zTTMdfZEYkVIRYbHBX1xWwjeSA=="],
 
     "@xterm/addon-serialize": ["@xterm/addon-serialize@0.14.0", "", {}, "sha512-uteyTU1EkrQa2Ux6P/uFl2fzmXI46jy5uoQMKEOM0fKTyiW7cSn0WrFenHm5vO5uEXX/GpwW/FgILvv3r0WbkA=="],
 
-    "@xterm/addon-web-links": ["@xterm/addon-web-links@0.12.0", "", {}, "sha512-4Smom3RPyVp7ZMYOYDoC/9eGJJJqYhnPLGGqJ6wOBfB8VxPViJNSKdgRYb8NpaM6YSelEKbA2SStD7lGyqaobw=="],
-
-    "@xterm/addon-webgl": ["@xterm/addon-webgl@0.19.0", "", {}, "sha512-b3fMOsyLVuCeNJWxolACEUED0vm7qC0cy4wRvf3oURSzDTYVQiGPhTnhWZwIHdvC48Y+oLhvYXnY4XDXPoJo6A=="],
-
     "@xterm/headless": ["@xterm/headless@5.5.0", "", {}, "sha512-5xXB7kdQlFBP82ViMJTwwEc3gKCLGKR/eoxQm4zge7GPBl86tCdI0IdPJjoKd8mUSFXz5V7i/25sfsEkP4j46g=="],
-
-    "@xterm/xterm": ["@xterm/xterm@6.0.0", "", {}, "sha512-TQwDdQGtwwDt+2cgKDLn0IRaSxYu1tSUjgKarSDkUM0ZNiSRXFpjxEsvc/Zgc5kq5omJ+V0a8/kIM2WD3sMOYg=="],
 
     "abort-controller": ["abort-controller@3.0.0", "", { "dependencies": { "event-target-shim": "^5.0.0" } }, "sha512-h8lQ8tacZYnR3vNQTgibj+tODHI5/+l06Au2Pcriv/Gmet0eaj4TwWH41sO9wnHDiQsEj19q0drzdWdeAHtweg=="],
 

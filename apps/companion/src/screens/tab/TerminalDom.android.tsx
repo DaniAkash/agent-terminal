@@ -1,7 +1,11 @@
 import type { Ref } from 'react'
-import { useEffect, useImperativeHandle, useRef } from 'react'
+import { useImperativeHandle, useRef } from 'react'
 import type { WebViewMessageEvent } from 'react-native-webview'
 import { WebView } from 'react-native-webview'
+import {
+  type TerminalCallbacks,
+  useTerminalCallbackRefs,
+} from './terminal-callbacks.hooks'
 import {
   buildTerminalHtml,
   DEFAULT_TERMINAL_HTML_CONFIG,
@@ -18,10 +22,7 @@ export interface TerminalHandle {
   blurInput: () => void
 }
 
-interface TerminalDomProps {
-  onData: (data: string) => Promise<void>
-  onResize: (cols: number, rows: number) => Promise<void>
-  onReady: () => Promise<void>
+interface TerminalDomProps extends TerminalCallbacks {
   ref: Ref<TerminalHandle>
   // Accepted for shape parity with iOS, and ignored. Both of these are
   // iOS-only props: react-native-webview implements neither on Android, so
@@ -35,35 +36,26 @@ type BridgeMessage =
   | { type: 'ready' }
   | { type: 'data'; payload: string }
   | { type: 'resize'; cols: number; rows: number }
+  | { type: 'openUrl'; url: string }
   | { type: 'error'; message: string }
 
 export default function TerminalDom({
   onData,
   onResize,
   onReady,
+  onOpenUrl,
   ref,
 }: TerminalDomProps) {
   const webviewRef = useRef<WebView | null>(null)
   const readyRef = useRef(false)
   const pendingWritesRef = useRef<string[]>([])
 
-  // Same ref-capture pattern as iOS. Keeps handler identity irrelevant
-  // to WebView lifecycle so parent state changes (modifier toggles from
-  // ExtraKeysBar) do not trigger unmount.
-  //
-  // Sync inside an effect (no deps → runs after every commit) instead of
-  // direct render-time mutation so we stay safe against React's
-  // concurrent-render replay semantics. One-render-cycle latency is
-  // invisible because refs are only read from later-fired WebView
-  // onMessage bridge callbacks, which happen after commit anyway.
-  const onDataRef = useRef(onData)
-  const onResizeRef = useRef(onResize)
-  const onReadyRef = useRef(onReady)
-  useEffect(() => {
-    onDataRef.current = onData
-    onResizeRef.current = onResize
-    onReadyRef.current = onReady
-  })
+  const {
+    onData: onDataRef,
+    onResize: onResizeRef,
+    onReady: onReadyRef,
+    onOpenUrl: onOpenUrlRef,
+  } = useTerminalCallbackRefs({ onData, onResize, onReady, onOpenUrl })
 
   useImperativeHandle(ref, () => ({
     write: (data: string) => {
@@ -125,6 +117,10 @@ export default function TerminalDom({
     }
     if (msg.type === 'resize') {
       void onResizeRef.current(msg.cols, msg.rows)
+      return
+    }
+    if (msg.type === 'openUrl') {
+      void onOpenUrlRef.current(msg.url)
       return
     }
     if (msg.type === 'error') {
