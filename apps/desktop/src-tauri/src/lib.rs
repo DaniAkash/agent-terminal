@@ -69,7 +69,9 @@ use mod_engine::{
 use notifications::NotificationService;
 use shell_integration::setup_shell_integration;
 use tauri::Manager;
-#[cfg(all(target_os = "macos", not(feature = "dev-instance")))]
+// Unconditional: the run loop emits the held-back quit on every
+// platform and in every feature configuration. It used to be macOS and
+// release only, for the Check for Updates menu item.
 use tauri::Emitter;
 #[cfg(target_os = "macos")]
 use tauri::menu::{MenuBuilder, SubmenuBuilder};
