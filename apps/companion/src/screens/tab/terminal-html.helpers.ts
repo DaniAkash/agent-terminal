@@ -1,7 +1,5 @@
 export interface TerminalHtmlConfig {
-  xtermVersion: string
-  fitAddonVersion: string
-  webLinksAddonVersion: string
+  wtermVersion: string
   initialCols: number
   initialRows: number
   fontFamily: string
@@ -13,9 +11,7 @@ export interface TerminalHtmlConfig {
 }
 
 export const DEFAULT_TERMINAL_HTML_CONFIG: TerminalHtmlConfig = {
-  xtermVersion: '6.0.0',
-  fitAddonVersion: '0.11.0',
-  webLinksAddonVersion: '0.12.0',
+  wtermVersion: '0.5.6',
   initialCols: 80,
   initialRows: 24,
   fontFamily: 'ui-monospace, "SF Mono", Menlo, Consolas, monospace',
@@ -43,140 +39,89 @@ export function safeCssColor(input: string): string {
 
 export function buildTerminalHtml(config: TerminalHtmlConfig): string {
   const cssBackground = safeCssColor(config.themeBackground)
+  const v = config.wtermVersion
   return `<!doctype html>
 <html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<link rel="stylesheet" href="https://unpkg.com/@xterm/xterm@${config.xtermVersion}/css/xterm.css">
+<link rel="stylesheet" href="https://unpkg.com/@wterm/dom@${v}/src/terminal.css">
 <style>
   html, body { margin: 0; padding: 0; height: 100%; width: 100%; background: ${cssBackground}; overflow: hidden; }
   #terminal { position: absolute; inset: 0; }
-  /* xterm has no touch scrolling of its own: its viewport moves on a
-     wheel event or a scrollbar drag, neither of which a finger produces.
-     touch-action: none stops the browser and xterm's selection handler
-     both claiming the drag, leaving it for the listener attached below,
-     which is what actually moves the viewport. */
-  .xterm-viewport, .xterm-screen { touch-action: none; }
+  /* wterm draws cells as DOM nodes and makes the scrollback a real
+     overflow container, so a finger scrolls it like any other page and
+     the touch handler xterm needed is gone. overscroll-behavior keeps a
+     flick past the top from turning into a WebView pull-to-refresh. */
+  .wterm {
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    border-radius: 0;
+    box-shadow: none;
+    overscroll-behavior: contain;
+    --term-font-family: ${JSON.stringify(config.fontFamily)};
+    --term-font-size: ${config.fontSize}px;
+    --term-line-height: 1.2;
+  }
 </style>
 </head>
 <body>
 <div id="terminal"></div>
-<script src="https://unpkg.com/@xterm/xterm@${config.xtermVersion}/lib/xterm.js"></script>
-<script src="https://unpkg.com/@xterm/addon-fit@${config.fitAddonVersion}/lib/addon-fit.js"></script>
-<script src="https://unpkg.com/@xterm/addon-web-links@${config.webLinksAddonVersion}/lib/addon-web-links.js"></script>
-<script>
-(function () {
-  // xterm scrolls its viewport on wheel events and scrollbar drags. A
-  // finger produces neither, which is why 2000 lines of scrollback were
-  // unreachable on a touch device no matter how the host WebView was
-  // configured. Translate the drag into scrollLines() ourselves.
-  //
-  // Movement accumulates in fractional rows so a slow drag still moves:
-  // truncating each frame's delta to a whole line would floor every small
-  // movement to zero and the viewport would never budge.
-  function attachTouchScroll(term) {
-    var el = term.element;
-    if (!el) return;
-    var lastY = null;
-    var carry = 0;
-    el.addEventListener('touchstart', function (e) {
-      if (e.touches.length !== 1) { lastY = null; return; }
-      lastY = e.touches[0].clientY;
-      carry = 0;
-    }, { passive: true });
-    el.addEventListener('touchmove', function (e) {
-      if (e.touches.length !== 1) return;
-      var y = e.touches[0].clientY;
-      // A second finger landing fires its own touchstart, which drops the
-      // reference point, and nothing sets it again while a finger stays
-      // down. Re-seed here or a pinch partway through a scroll leaves the
-      // terminal inert until every finger lifts.
-      if (lastY === null) { lastY = y; carry = 0; return; }
-      var dy = y - lastY;
-      lastY = y;
-      var rows = term.rows || 1;
-      var cell = el.clientHeight / rows;
-      if (!cell) return;
-      carry += dy / cell;
-      var lines = carry > 0 ? Math.floor(carry) : Math.ceil(carry);
-      if (lines === 0) return;
-      carry -= lines;
-      // Dragging down reveals earlier output, which is a negative scroll.
-      term.scrollLines(-lines);
-      e.preventDefault();
-    }, { passive: false });
-    var end = function () { lastY = null; };
-    el.addEventListener('touchend', end, { passive: true });
-    el.addEventListener('touchcancel', end, { passive: true });
+<script type="module">
+function post(msg) {
+  if (window.ReactNativeWebView) {
+    window.ReactNativeWebView.postMessage(JSON.stringify(msg));
   }
+}
 
-  function post(msg) {
-    if (window.ReactNativeWebView) {
-      window.ReactNativeWebView.postMessage(JSON.stringify(msg));
-    }
-  }
+// wterm ships ESM only, so this is a module import rather than the UMD
+// globals xterm exposed. A failed import rejects here instead of never
+// defining a global, which is why there is no retry loop any more: the
+// offline and CDN-down cases both land in the catch on the first try.
+try {
+  const [{ WTerm }, { GhosttyCore }] = await Promise.all([
+    import("https://esm.sh/@wterm/dom@${v}"),
+    import("https://esm.sh/@wterm/ghostty@${v}"),
+  ]);
 
-  // Max ~10 s (200 * 50 ms) waiting for the unpkg UMDs to register on
-  // window. If the tab is offline, on a captive-portal wifi, or unpkg is
-  // down, stop retrying and post an error so RN can log + optionally
-  // surface it. Prevents an infinite battery-draining loop.
-  var bootAttempts = 0;
-  var BOOT_MAX_ATTEMPTS = 200;
+  const core = await GhosttyCore.load({
+    // esm.sh rewrites module paths, so the binary is addressed on unpkg
+    // rather than left to the loader's import.meta.url default.
+    wasmPath: "https://unpkg.com/@wterm/ghostty@${v}/wasm/ghostty-vt.wasm",
+    foregroundColor: ${JSON.stringify(config.themeForeground)},
+    backgroundColor: ${JSON.stringify(config.themeBackground)},
+  });
 
-  function boot() {
-    if (!window.Terminal || !window.FitAddon || !window.WebLinksAddon) {
-      bootAttempts += 1;
-      if (bootAttempts >= BOOT_MAX_ATTEMPTS) {
-        post({ type: 'error', message: 'Failed to load xterm.js from unpkg (timeout)' });
-        return;
-      }
-      setTimeout(boot, 50);
-      return;
-    }
-    var term = new window.Terminal({
-      cols: ${config.initialCols},
-      rows: ${config.initialRows},
-      fontFamily: ${JSON.stringify(config.fontFamily)},
-      fontSize: ${config.fontSize},
-      cursorBlink: true,
-      scrollback: ${config.scrollback},
-      theme: {
-        background: ${JSON.stringify(config.themeBackground)},
-        foreground: ${JSON.stringify(config.themeForeground)},
-        cursor: ${JSON.stringify(config.themeCursor)},
-      },
-    });
-    var fit = new window.FitAddon.FitAddon();
-    term.loadAddon(fit);
-    term.loadAddon(new window.WebLinksAddon.WebLinksAddon());
-    term.open(document.getElementById('terminal'));
+  const term = new WTerm(document.getElementById("terminal"), {
+    core,
+    cols: ${config.initialCols},
+    rows: ${config.initialRows},
+    autoResize: true,
+    cursorBlink: true,
+    onData: function (data) { post({ type: "data", payload: data }); },
+    onResize: function (cols, rows) { post({ type: "resize", cols: cols, rows: rows }); },
+  });
+  await term.init();
 
-    attachTouchScroll(term);
+  window.__terminal_bridge = {
+    write: function (data) { term.write(data); },
+    // wterm has no clear(); erase the screen, the scrollback, then home.
+    clear: function () { term.write("\\u001b[2J\\u001b[3J\\u001b[H"); },
+    fit: function () { term.fit(); },
+    // The keyboard is raised by focus changing, and the terminal holds
+    // its hidden textarea's focus after the keyboard goes, so without
+    // this a later tap is not a change and nothing comes up.
+    blurInput: function () {
+      const textarea = term.element.querySelector("textarea");
+      if (textarea) textarea.blur();
+    },
+  };
 
-    term.onData(function (data) { post({ type: 'data', payload: data }); });
-    term.onResize(function (e) { post({ type: 'resize', cols: e.cols, rows: e.rows }); });
-
-    fit.fit();
-
-    var observer = new ResizeObserver(function () { fit.fit(); });
-    observer.observe(document.getElementById('terminal'));
-
-    window.__terminal_bridge = {
-      write: function (data) { term.write(data); },
-      clear: function () { term.clear(); },
-      fit: function () { fit.fit(); },
-      // See TerminalDom.tsx: the keyboard is raised by focus changing, and
-      // xterm holds its hidden textarea's focus after the keyboard goes,
-      // so without this a later tap is not a change and nothing comes up.
-      blurInput: function () { if (term.textarea) term.textarea.blur(); },
-    };
-
-    post({ type: 'ready' });
-  }
-
-  boot();
-})();
+  post({ type: "ready" });
+} catch (err) {
+  post({ type: "error", message: "Failed to load wterm: " + (err && err.message ? err.message : String(err)) });
+}
 </script>
 </body>
 </html>`

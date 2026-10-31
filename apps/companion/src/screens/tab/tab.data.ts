@@ -32,7 +32,7 @@ export function useTabData(projectId: string, tabId: string) {
   const [ctrlArmed, setCtrlArmed] = useState(false)
   const [altArmed, setAltArmed] = useState(false)
 
-  // Single funnel for input coming from either xterm.js's onData path
+  // Single funnel for input coming from either the terminal's onData path
   // (soft keyboard capture) or the ExtraKeysBar. Applies any armed
   // modifier, sends the byte sequence over the WSS, then disarms.
   // Rewritten on every commit to close over the latest state; consumers

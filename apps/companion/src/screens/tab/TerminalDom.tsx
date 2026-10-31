@@ -1,13 +1,15 @@
 'use dom'
 
-import { FitAddon } from '@xterm/addon-fit'
-import { WebLinksAddon } from '@xterm/addon-web-links'
-import { Terminal } from '@xterm/xterm'
-import '@xterm/xterm/css/xterm.css'
+import { WTerm } from '@wterm/dom'
+import '@wterm/dom/css'
+import { GhosttyCore } from '@wterm/ghostty'
 import type { DOMImperativeFactory, DOMProps } from 'expo/dom'
 import { useDOMImperativeHandle } from 'expo/dom'
 import { type Ref, useEffect, useRef } from 'react'
-import { attachTouchScroll } from './terminal-touch-scroll.helpers'
+// @ts-expect-error Metro resolves this through `assetExts`, which has no types.
+import wasmAsset from '@wterm/ghostty/wasm/ghostty-vt.wasm'
+import { assetUrl } from './ghostty-wasm.helpers'
+import { useTerminalCallbackRefs } from './terminal-callbacks.hooks'
 
 type Args = Parameters<DOMImperativeFactory[string]>
 
@@ -27,16 +29,38 @@ interface TerminalDomProps {
   dom?: DOMProps
 }
 
-// xterm scrolls its viewport on wheel events and scrollbar drags, neither
-// of which a finger produces. It ships a Gesture module that would cover
-// this, but nothing in the library ever registers a target for it, so no
-// gesture events are emitted and the scrollback is unreachable by touch.
-// `touch-action: none` keeps the browser from claiming the drag so the
-// listener below is the only thing acting on it.
-const VIEWPORT_TOUCH_CSS = `
-  .xterm-viewport,
-  .xterm-screen {
-    touch-action: none;
+/** Erase the screen, erase the scrollback, home the cursor. */
+const CLEAR_SEQUENCE = '\x1b[2J\x1b[3J\x1b[H'
+
+const THEME = {
+  background: 0x0e0f10,
+  foreground: 0xe6e8eb,
+  cursor: 0xe6e8eb,
+  palette: [
+    0x000000, 0xcd3131, 0x0dbc79, 0xe5e510, 0x2472c8, 0xbc3fbc, 0x11a8cd,
+    0xe5e5e5, 0x666666, 0xf14c4c, 0x23d18b, 0xf5f543, 0x3b8eea, 0xd670d6,
+    0x29b8db, 0xe5e5e5,
+  ],
+} as const
+
+// wterm draws cells as DOM nodes and lets the scrollback be a real
+// overflow container, so a finger scrolls it the way it scrolls any
+// other page. The whole touch-scroll shim xterm needed is gone with it.
+// `overscroll-behavior` keeps a flick at the top of the scrollback from
+// becoming a pull-to-refresh on the WebView itself.
+const HOST_CSS = `
+  html, body { margin: 0; padding: 0; background: #0e0f10; }
+  .wterm {
+    width: 100vw;
+    height: 100vh;
+    padding: 0;
+    border-radius: 0;
+    box-shadow: none;
+    overscroll-behavior: contain;
+    -webkit-text-size-adjust: 100%;
+    --term-font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    --term-font-size: 12px;
+    --term-line-height: 1.2;
   }
 `
 
@@ -47,29 +71,13 @@ export default function TerminalDom({
   ref,
 }: TerminalDomProps) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const termRef = useRef<Terminal | null>(null)
-  const fitRef = useRef<FitAddon | null>(null)
+  const termRef = useRef<WTerm | null>(null)
 
-  // Live refs to the latest callbacks. The setup useEffect below reads
-  // these during xterm.js events without needing the props themselves in
-  // its deps array. Keeps the effect (and the WebView-backed Terminal)
-  // mounted across parent state changes, e.g. modifier arm/disarm in
-  // TabScreen.
-  //
-  // Sync happens inside an effect (no deps → runs after every commit)
-  // rather than direct render-time mutation so we stay safe against
-  // React's concurrent-render replay semantics. Latency between prop
-  // change and ref update is one render cycle, invisible here because
-  // the refs are only read from later-fired xterm events + ResizeObserver
-  // callbacks, both of which happen after commit anyway.
-  const onDataRef = useRef(onData)
-  const onResizeRef = useRef(onResize)
-  const onReadyRef = useRef(onReady)
-  useEffect(() => {
-    onDataRef.current = onData
-    onResizeRef.current = onResize
-    onReadyRef.current = onReady
-  })
+  const {
+    onData: onDataRef,
+    onResize: onResizeRef,
+    onReady: onReadyRef,
+  } = useTerminalCallbackRefs({ onData, onResize, onReady })
 
   useDOMImperativeHandle(ref, () => ({
     write: (...args: Args) => {
@@ -77,89 +85,93 @@ export default function TerminalDom({
       if (typeof data === 'string') termRef.current?.write(data)
     },
     clear: () => {
-      termRef.current?.clear()
+      termRef.current?.write(CLEAR_SEQUENCE)
     },
     fit: () => {
-      fitRef.current?.fit()
+      termRef.current?.fit()
     },
-    // The keyboard is raised by focus CHANGING, and xterm keeps its hidden
-    // textarea focused after the keyboard goes away, so a later tap is not
-    // a change and the keyboard never returns. Giving the focus up when
-    // the keyboard does leaves the next tap able to take it, which is the
-    // same path that raises the keyboard on a freshly opened session.
+    // The keyboard is raised by focus CHANGING, and the terminal keeps
+    // its hidden textarea focused after the keyboard goes away, so a
+    // later tap is not a change and the keyboard never returns. Giving
+    // the focus up when the keyboard does leaves the next tap able to
+    // take it, which is the path that raises the keyboard on a freshly
+    // opened session.
     blurInput: () => {
-      termRef.current?.textarea?.blur()
+      const textarea = termRef.current?.element.querySelector('textarea')
+      textarea?.blur()
     },
   }))
 
+  // The refs exist to keep this effect out of the dependency graph.
+  // Listing their `.current` reads would remount the terminal on every
+  // parent render, which is the remount the indirection exists to stop.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: mount-once by design
   useEffect(() => {
-    if (!containerRef.current) return
-    const term = new Terminal({
-      cols: 80,
-      rows: 24,
-      fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
-      fontSize: 12,
-      cursorBlink: true,
-      scrollback: 2000,
-      theme: {
-        background: '#0e0f10',
-        foreground: '#e6e8eb',
-        cursor: '#e6e8eb',
-      },
-    })
-    const fit = new FitAddon()
-    term.loadAddon(fit)
-    term.loadAddon(new WebLinksAddon())
-    term.open(containerRef.current)
-    termRef.current = term
-    fitRef.current = fit
+    const container = containerRef.current
+    if (!container) return
+    let disposed = false
+    let term: WTerm | null = null
+    let core: GhosttyCore | null = null
 
-    // Register listeners BEFORE the initial fit() so the resize event
-    // it triggers (from the constructed 80x24 default to the container's
-    // actual cols/rows) reaches the native side. Otherwise the desktop's
-    // sidecar renders the snapshot at whatever dimensions the tab was
-    // created with, and the initial hydration looks wrong on mobile.
-    const dataDisposable = term.onData((data) => {
-      void onDataRef.current(data)
-    })
-    const resizeDisposable = term.onResize(({ cols, rows }) => {
-      void onResizeRef.current(cols, rows)
-    })
+    async function boot() {
+      // Metro has no notion of the `new URL(..., import.meta.url)` asset
+      // pattern the default loader uses, so the binary is located for it.
+      core = await GhosttyCore.load({
+        wasmPath: assetUrl(wasmAsset),
+        foregroundColor: '#e6e8eb',
+        backgroundColor: '#0e0f10',
+      })
+      if (disposed) {
+        core.dispose()
+        return
+      }
 
-    const detachTouchScroll = attachTouchScroll(term)
+      term = new WTerm(container as HTMLElement, {
+        core,
+        autoResize: true,
+        cursorBlink: true,
+        // Registered up front rather than after init, so the resize from
+        // the default 80x24 to the container's real size reaches the
+        // native side. Otherwise the desktop renders its snapshot at
+        // whatever size the tab was created with and the first paint on
+        // the phone is wrong.
+        onData: (data) => {
+          void onDataRef.current(data)
+        },
+        onResize: (cols, rows) => {
+          void onResizeRef.current(cols, rows)
+        },
+      })
+      await term.init()
+      if (disposed) {
+        term.destroy()
+        core.dispose()
+        return
+      }
 
-    fit.fit()
+      term.setThemeColors({ ...THEME, palette: [...THEME.palette] })
+      termRef.current = term
+      void onReadyRef.current()
+    }
 
-    const observer = new ResizeObserver(() => fit.fit())
-    observer.observe(containerRef.current)
-
-    void onReadyRef.current()
+    void boot()
 
     return () => {
-      detachTouchScroll()
-      observer.disconnect()
-      dataDisposable.dispose()
-      resizeDisposable.dispose()
-      term.dispose()
+      disposed = true
+      term?.destroy()
+      // destroy() leaves a host-supplied core alone by design, so the
+      // WASM instance behind it is this component's to release.
+      core?.dispose()
       termRef.current = null
-      fitRef.current = null
     }
   }, [])
 
   return (
     <>
-      {/* Mirrors the Android HTML's rule. touch-action is the part that
-          matters: without it a vertical drag is claimed by xterm's pointer
-          handlers and becomes a text selection, so the scrollback stays out
-          of reach no matter how the host WebView is configured. */}
-      <style>{VIEWPORT_TOUCH_CSS}</style>
+      <style>{HOST_CSS}</style>
       <div
         ref={containerRef}
-        style={{
-          width: '100vw',
-          height: '100vh',
-          background: '#0e0f10',
-        }}
+        style={{ width: '100vw', height: '100vh', background: '#0e0f10' }}
       />
     </>
   )

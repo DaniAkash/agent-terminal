@@ -8,15 +8,19 @@ import {
 describe('buildTerminalHtml', () => {
   const html = buildTerminalHtml(DEFAULT_TERMINAL_HTML_CONFIG)
 
-  test('references pinned unpkg URLs for xterm + addons', () => {
-    expect(html).toContain('https://unpkg.com/@xterm/xterm@6.0.0/css/xterm.css')
-    expect(html).toContain('https://unpkg.com/@xterm/xterm@6.0.0/lib/xterm.js')
+  test('references pinned CDN URLs for wterm, the core and the wasm', () => {
     expect(html).toContain(
-      'https://unpkg.com/@xterm/addon-fit@0.11.0/lib/addon-fit.js',
+      'https://unpkg.com/@wterm/dom@0.5.6/src/terminal.css',
     )
+    expect(html).toContain('import("https://esm.sh/@wterm/dom@0.5.6")')
+    expect(html).toContain('import("https://esm.sh/@wterm/ghostty@0.5.6")')
     expect(html).toContain(
-      'https://unpkg.com/@xterm/addon-web-links@0.12.0/lib/addon-web-links.js',
+      'https://unpkg.com/@wterm/ghostty@0.5.6/wasm/ghostty-vt.wasm',
     )
+  })
+
+  test('loads as a module, since wterm ships no UMD build', () => {
+    expect(html).toContain('<script type="module">')
   })
 
   test('embeds initial cols and rows from config', () => {
@@ -32,9 +36,9 @@ describe('buildTerminalHtml', () => {
   })
 
   test('posts ready/data/resize message types to RN', () => {
-    expect(html).toContain("type: 'ready'")
-    expect(html).toContain("type: 'data'")
-    expect(html).toContain("type: 'resize'")
+    expect(html).toContain('type: "ready"')
+    expect(html).toContain('type: "data"')
+    expect(html).toContain('type: "resize"')
   })
 
   test('sets viewport meta for mobile scaling', () => {
@@ -52,22 +56,19 @@ describe('buildTerminalHtml', () => {
     expect(evil).toContain('"red\\"; window.pwned = true; //"')
   })
 
-  test('the inlined touch handler re-seeds instead of bailing without a reference', () => {
-    // The shared module covers this path under test; the inlined copy here
-    // cannot import it, so the guard is that it still carries the re-seed.
-    // Bailing on a null lastY is what left the terminal inert after a pinch.
-    expect(html).toContain(
-      'if (lastY === null) { lastY = y; carry = 0; return; }',
-    )
-    expect(html).not.toContain(
-      'if (lastY === null || e.touches.length !== 1) return',
-    )
+  test('carries no touch-scroll handler, the scrollback being a real scroll container', () => {
+    // xterm needed a hand-written drag-to-scroll handler because its
+    // viewport only moved on wheel events. wterm's scrollback overflows
+    // natively, so the handler is gone rather than ported.
+    expect(html).not.toContain('touchmove')
+    expect(html).not.toContain('scrollLines')
+    expect(html).toContain('overscroll-behavior: contain')
   })
 
-  test('boot loader has a max-retry cap and posts an error on timeout', () => {
-    expect(html).toContain('BOOT_MAX_ATTEMPTS')
-    expect(html).toContain("type: 'error'")
-    expect(html).toContain('Failed to load xterm.js from unpkg')
+  test('a failed import posts an error rather than retrying forever', () => {
+    expect(html).toContain('type: "error"')
+    expect(html).toContain('Failed to load wterm')
+    expect(html).not.toContain('BOOT_MAX_ATTEMPTS')
   })
 
   test('CSS background falls back to safe default if the config value would break out', () => {
@@ -77,7 +78,7 @@ describe('buildTerminalHtml', () => {
     })
     // The CSS interpolation site must use the sanitised fallback, never
     // the raw payload. The evil string still appears elsewhere in the
-    // output because JSON.stringify hands it to xterm.js's theme object
+    // output because JSON.stringify hands it to the core's colour options
     // as a quoted string literal inside <script>, which is safe.
     expect(evil).toMatch(/background:\s*#000000;\s*overflow:\s*hidden/)
   })

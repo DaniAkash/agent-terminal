@@ -1,7 +1,8 @@
 import type { Ref } from 'react'
-import { useEffect, useImperativeHandle, useRef } from 'react'
+import { useImperativeHandle, useRef } from 'react'
 import type { WebViewMessageEvent } from 'react-native-webview'
 import { WebView } from 'react-native-webview'
+import { useTerminalCallbackRefs } from './terminal-callbacks.hooks'
 import {
   buildTerminalHtml,
   DEFAULT_TERMINAL_HTML_CONFIG,
@@ -47,23 +48,11 @@ export default function TerminalDom({
   const readyRef = useRef(false)
   const pendingWritesRef = useRef<string[]>([])
 
-  // Same ref-capture pattern as iOS. Keeps handler identity irrelevant
-  // to WebView lifecycle so parent state changes (modifier toggles from
-  // ExtraKeysBar) do not trigger unmount.
-  //
-  // Sync inside an effect (no deps → runs after every commit) instead of
-  // direct render-time mutation so we stay safe against React's
-  // concurrent-render replay semantics. One-render-cycle latency is
-  // invisible because refs are only read from later-fired WebView
-  // onMessage bridge callbacks, which happen after commit anyway.
-  const onDataRef = useRef(onData)
-  const onResizeRef = useRef(onResize)
-  const onReadyRef = useRef(onReady)
-  useEffect(() => {
-    onDataRef.current = onData
-    onResizeRef.current = onResize
-    onReadyRef.current = onReady
-  })
+  const {
+    onData: onDataRef,
+    onResize: onResizeRef,
+    onReady: onReadyRef,
+  } = useTerminalCallbackRefs({ onData, onResize, onReady })
 
   useImperativeHandle(ref, () => ({
     write: (data: string) => {
