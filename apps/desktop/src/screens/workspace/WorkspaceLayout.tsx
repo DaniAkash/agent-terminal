@@ -3,11 +3,13 @@ import { getCurrentWebview } from '@tauri-apps/api/webview'
 import { useEffect, useState } from 'react'
 import { useHotkeys } from 'react-hotkeys-hook'
 import { CompanionDialog } from '@/components/Companion/CompanionDialog'
+import { ConfirmInterrupt } from '@/components/ConfirmInterrupt/ConfirmInterrupt'
 import { Sidebar } from '@/components/Sidebar/Sidebar'
 import { StatusBar } from '@/components/StatusBar/StatusBar'
 import { TabSwitcher } from '@/components/TabSwitcher/TabSwitcher'
 import { TerminalSearchBar } from '@/components/TerminalSearchBar/TerminalSearchBar'
 import { UpdateBanner } from '@/components/UpdateBanner/UpdateBanner'
+import { UpdateDialog } from '@/components/UpdateDialog/UpdateDialog'
 import { formatDropPayload } from '@/modules/dragDrop/dropPayload'
 import { Keys, Mod } from '@/modules/keymap/keys'
 import { $activeSearch, openSearch } from '@/modules/stores/$activeSearch'
@@ -26,15 +28,12 @@ import {
   onTabRemoved,
   openNewTabInProject,
 } from '@/modules/stores/$navigation'
-import {
-  $projects,
-  addTab,
-  removeTab,
-  restoreTabLabel,
-} from '@/modules/stores/$projects'
+import { $projects, addTab, restoreTabLabel } from '@/modules/stores/$projects'
 import { toggleSidebarVisible } from '@/modules/stores/$sidebarVisible'
 import { useMetaHeldTracker } from '@/modules/stores/useMetaHeldTracker'
 import { useUpdaterWiring } from '@/modules/updater/useUpdaterWiring'
+import { requestCloseTab } from '@/modules/work/close-tab'
+import { useQuitGuard } from '@/modules/work/useQuitGuard'
 import { WorkspaceView } from '@/screens/workspace/WorkspaceView'
 
 export function WorkspaceLayout() {
@@ -89,6 +88,7 @@ export function WorkspaceLayout() {
   }, [])
 
   useUpdaterWiring()
+  useQuitGuard()
 
   // enableOnFormTags is required because the terminal uses a hidden <textarea> to
   // capture keyboard input. Without it react-hotkeys-hook silently ignores
@@ -115,7 +115,7 @@ export function WorkspaceLayout() {
       const tab = project?.tabs.find((t) => t.id === tabId)
       if (tab?.pinned) return
       onTabRemoved(projectId, tabId)
-      removeTab(projectId, tabId)
+      requestCloseTab(projectId, tabId)
     },
     hotkeyOpts,
   )
@@ -296,6 +296,8 @@ export function WorkspaceLayout() {
       </div>
       <StatusBar />
       <UpdateBanner />
+      <UpdateDialog />
+      <ConfirmInterrupt />
       {/* Self-contained: owns its open state + Cmd+P hotkey. */}
       <TabSwitcher />
       {/* Companion dialog for the pairing QR + paired-devices list.
