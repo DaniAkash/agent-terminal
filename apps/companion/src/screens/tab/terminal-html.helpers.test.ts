@@ -198,4 +198,9 @@ describe('scrollback and links', () => {
   test('carries the shared URL pattern rather than a second copy', () => {
     expect(html).toContain(JSON.stringify(TERMINAL_URL_PATTERN.source))
   })
+
+  test('strips trailing punctuation by scan, not a backtracking regex', () => {
+    expect(html).toContain('function stripTrailingPunctuation(text)')
+    expect(html).not.toContain('TRAILING_RE')
+  })
 })

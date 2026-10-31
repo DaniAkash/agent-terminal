@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { hrefForSpanText, openableHref } from '@agent-terminal/core-ui'
+import {
+  hrefForSpanText,
+  openableHref,
+  stripTrailingPunctuation,
+} from '@agent-terminal/core-ui'
 
 describe('hrefForSpanText', () => {
   test('accepts a bare http and https URL', () => {
@@ -64,5 +68,25 @@ describe('openableHref', () => {
     expect(openableHref(undefined)).toBeNull()
     expect(openableHref('')).toBeNull()
     expect(openableHref('not a url')).toBeNull()
+  })
+})
+
+describe('stripTrailingPunctuation', () => {
+  test('drops sentence punctuation from the end', () => {
+    expect(stripTrailingPunctuation('https://example.com).')).toBe(
+      'https://example.com',
+    )
+    expect(stripTrailingPunctuation('https://example.com')).toBe(
+      'https://example.com',
+    )
+  })
+
+  test('stays linear on a long run of the stripped characters', () => {
+    // A /[...]+$/ replace has no start anchor, so the engine retries
+    // from every offset and this input costs O(n^2).
+    const hostile = `https://example.com/${'!'.repeat(100_000)}`
+    const started = performance.now()
+    expect(stripTrailingPunctuation(hostile)).toBe('https://example.com/')
+    expect(performance.now() - started).toBeLessThan(250)
   })
 })

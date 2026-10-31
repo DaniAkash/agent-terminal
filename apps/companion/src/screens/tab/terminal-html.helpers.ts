@@ -1,5 +1,5 @@
 import {
-  TERMINAL_TRAILING_PUNCTUATION,
+  TERMINAL_TRAILING_CHARS,
   TERMINAL_URL_PATTERN,
 } from '@agent-terminal/core-ui'
 
@@ -75,7 +75,7 @@ export function buildTerminalHtml(config: TerminalHtmlConfig): string {
   // instead, which keeps the scheme matching from drifting between the
   // platforms even though the loop below is written out again here.
   const urlPattern = TERMINAL_URL_PATTERN.source
-  const trailingPattern = TERMINAL_TRAILING_PUNCTUATION.source
+  const trailingChars = TERMINAL_TRAILING_CHARS
   const v = config.wtermVersion
   return `<!doctype html>
 <html>
@@ -200,12 +200,21 @@ try {
   // carries an explicit width in cells, so splitting one would break
   // the column alignment of the rest of the row.
   const URL_RE = new RegExp(${JSON.stringify(urlPattern)});
-  const TRAILING_RE = new RegExp(${JSON.stringify(trailingPattern)});
+  const TRAILING_CHARS = ${JSON.stringify(trailingChars)};
+
+  // A scan rather than a /[...]+$/ replace: that pattern has no start
+  // anchor, so the engine retries from every offset and a long run of
+  // one of these characters costs O(n^2).
+  function stripTrailingPunctuation(text) {
+    let end = text.length;
+    while (end > 0 && TRAILING_CHARS.includes(text[end - 1])) end -= 1;
+    return text.slice(0, end);
+  }
 
   function hrefForSpanText(text) {
     const trimmed = text.trim();
     if (!trimmed || !URL_RE.test(trimmed)) return null;
-    const stripped = trimmed.replace(TRAILING_RE, "");
+    const stripped = stripTrailingPunctuation(trimmed);
     if (!stripped) return null;
     return openableHref(stripped);
   }

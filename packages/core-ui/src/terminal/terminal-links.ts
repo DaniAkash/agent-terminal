@@ -20,7 +20,22 @@
 export const TERMINAL_URL_PATTERN = /^(https?:\/\/[^\s<>"'`]+)$/
 
 /** Punctuation that ends a sentence rather than the URL inside it. */
-export const TERMINAL_TRAILING_PUNCTUATION = /[.,;:!?)\]}>'"]+$/
+export const TERMINAL_TRAILING_CHARS = `.,;:!?)]}>'"`
+
+/**
+ * Drop sentence punctuation from the end of a URL.
+ *
+ * A scan rather than a `/[...]+$/` replace: that pattern has no start
+ * anchor, so the engine retries from every offset and a long run of one
+ * of these characters costs O(n^2). Span text is row-bounded today, but
+ * nothing in this module's signature promises that.
+ */
+export function stripTrailingPunctuation(text: string): string {
+  let end = text.length
+  while (end > 0 && TERMINAL_TRAILING_CHARS.includes(text[end - 1] ?? ''))
+    end -= 1
+  return text.slice(0, end)
+}
 
 /** Schemes an anchor may hand to an OS opener. */
 const OPENABLE_PROTOCOLS = new Set(['http:', 'https:'])
@@ -47,7 +62,7 @@ export function hrefForSpanText(text: string): string | null {
   const trimmed = text.trim()
   if (trimmed.length === 0) return null
   if (!TERMINAL_URL_PATTERN.test(trimmed)) return null
-  const stripped = trimmed.replace(TERMINAL_TRAILING_PUNCTUATION, '')
+  const stripped = stripTrailingPunctuation(trimmed)
   if (stripped.length === 0) return null
   return openableHref(stripped)
 }

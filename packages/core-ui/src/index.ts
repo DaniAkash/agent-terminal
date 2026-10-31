@@ -46,6 +46,7 @@ export {
   hrefForSpanText,
   linkifyRows,
   openableHref,
-  TERMINAL_TRAILING_PUNCTUATION,
+  stripTrailingPunctuation,
+  TERMINAL_TRAILING_CHARS,
   TERMINAL_URL_PATTERN,
 } from './terminal/terminal-links'
