@@ -3,7 +3,27 @@ import {
   buildTerminalHtml,
   DEFAULT_TERMINAL_HTML_CONFIG,
   safeCssColor,
+  safeCssFontFamily,
 } from './terminal-html.helpers'
+
+describe('safeCssFontFamily', () => {
+  test('passes a stack through unquoted so CSS reads it as a list', () => {
+    expect(safeCssFontFamily('ui-monospace, "SF Mono", Menlo, monospace')).toBe(
+      'ui-monospace, "SF Mono", Menlo, monospace',
+    )
+  })
+
+  test('rejects a value that would break out of the declaration', () => {
+    expect(safeCssFontFamily('monospace; } body { display: none')).toBe(
+      'monospace',
+    )
+    expect(safeCssFontFamily('a</style><script>x()</script>')).toBe('monospace')
+  })
+
+  test('falls back when the stack is empty', () => {
+    expect(safeCssFontFamily('  ,  ')).toBe('monospace')
+  })
+})
 
 describe('buildTerminalHtml', () => {
   const html = buildTerminalHtml(DEFAULT_TERMINAL_HTML_CONFIG)
@@ -112,5 +132,22 @@ describe('safeCssColor', () => {
     ).toBe('#000000')
     expect(safeCssColor('#000; background: url(evil)')).toBe('#000000')
     expect(safeCssColor('javascript:evil()')).toBe('#000000')
+  })
+})
+
+describe('terminal font sizing', () => {
+  const html = buildTerminalHtml(DEFAULT_TERMINAL_HTML_CONFIG)
+
+  test('emits the font stack as a bare CSS list, never one quoted name', () => {
+    // A single quoted name matches no installed font, so the WebView
+    // falls back to a proportional face and every column misaligns.
+    expect(html).toContain(
+      '--term-font-family: ui-monospace, "SF Mono", Menlo, "Roboto Mono", "Droid Sans Mono", monospace;',
+    )
+    expect(html).not.toContain('--term-font-family: "ui-monospace,')
+  })
+
+  test('pins row height to the configured font size', () => {
+    expect(html).toContain('--term-row-height: 14px;')
   })
 })

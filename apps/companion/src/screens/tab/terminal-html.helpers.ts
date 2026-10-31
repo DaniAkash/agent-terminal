@@ -14,7 +14,8 @@ export const DEFAULT_TERMINAL_HTML_CONFIG: TerminalHtmlConfig = {
   wtermVersion: '0.5.6',
   initialCols: 80,
   initialRows: 24,
-  fontFamily: 'ui-monospace, "SF Mono", Menlo, Consolas, monospace',
+  fontFamily:
+    'ui-monospace, "SF Mono", Menlo, "Roboto Mono", "Droid Sans Mono", monospace',
   fontSize: 12,
   scrollback: 2000,
   themeBackground: '#0e0f10',
@@ -37,8 +38,29 @@ export function safeCssColor(input: string): string {
   return SAFE_CSS_FALLBACK
 }
 
+const SAFE_FONT_FALLBACK = 'monospace'
+const BARE_FAMILY = /^[a-z][\w-]*(?: [\w-]+)*$/i
+const QUOTED_FAMILY = /^"[\w\s-]+"$/
+
+// A font stack has to reach CSS unquoted: JSON.stringify would wrap the
+// whole list in one pair of quotes, which CSS reads as a single family
+// name nothing can match, silently falling back to a proportional face
+// and breaking every column. Validate the list instead of escaping it.
+export function safeCssFontFamily(input: string): string {
+  const families = input
+    .split(',')
+    .map((family) => family.trim())
+    .filter(Boolean)
+  if (families.length === 0) return SAFE_FONT_FALLBACK
+  const safe = families.every(
+    (family) => BARE_FAMILY.test(family) || QUOTED_FAMILY.test(family),
+  )
+  return safe ? families.join(', ') : SAFE_FONT_FALLBACK
+}
+
 export function buildTerminalHtml(config: TerminalHtmlConfig): string {
   const cssBackground = safeCssColor(config.themeBackground)
+  const cssFontFamily = safeCssFontFamily(config.fontFamily)
   const v = config.wtermVersion
   return `<!doctype html>
 <html>
@@ -60,9 +82,12 @@ export function buildTerminalHtml(config: TerminalHtmlConfig): string {
     border-radius: 0;
     box-shadow: none;
     overscroll-behavior: contain;
-    --term-font-family: ${JSON.stringify(config.fontFamily)};
+    --term-font-family: ${cssFontFamily};
     --term-font-size: ${config.fontSize}px;
     --term-line-height: 1.2;
+    /* Rows size off --term-row-height, not line-height; leaving the
+       stylesheet default pairs 12px text with 17px rows. */
+    --term-row-height: ${Math.round(config.fontSize * 1.2)}px;
   }
 </style>
 </head>
