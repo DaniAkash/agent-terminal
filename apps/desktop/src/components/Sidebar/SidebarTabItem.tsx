@@ -16,7 +16,6 @@ import {
   $activeProjectId,
   $activeTabId,
   navigateToTab,
-  onTabRemoved,
 } from '@/modules/stores/$navigation'
 import { renameTab, toggleTabPin } from '@/modules/stores/$projects'
 import { $tabMeta } from '@/modules/stores/$tabMeta'
@@ -62,7 +61,6 @@ export function SidebarTabItem({
   }
 
   function handleClose() {
-    onTabRemoved(projectId, tab.id)
     requestCloseTab(projectId, tab.id)
   }
 

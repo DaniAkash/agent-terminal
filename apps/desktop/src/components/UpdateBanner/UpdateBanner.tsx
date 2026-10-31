@@ -9,9 +9,10 @@ import {
 /**
  * The quiet half of the update surface.
  *
- * Anything that needs a decision (available, downloading, ready to
- * restart) is a dialog now. What is left here is the news with no
- * action attached, plus the way back into an update the user deferred,
+ * The two states that need an answer (available, ready to restart) are
+ * a dialog. Everything that does not is here, including the download
+ * progress: a modal backdrop would block the terminal it just told the
+ * user to keep working in. Plus the way back into a deferred update,
  * which is the piece that used to be missing: dismissing set the state
  * to idle and the sticky launch check meant it never returned.
  */
@@ -20,7 +21,12 @@ export function UpdateBanner() {
   const deferred = useStore($deferredUpdate)
 
   const showDeferred = state.kind === 'idle' && deferred !== null
-  if (!showDeferred && state.kind !== 'up-to-date' && state.kind !== 'error') {
+  if (
+    !showDeferred &&
+    state.kind !== 'downloading' &&
+    state.kind !== 'up-to-date' &&
+    state.kind !== 'error'
+  ) {
     return null
   }
 
@@ -39,9 +45,29 @@ export function UpdateBanner() {
         >
           <span aria-hidden className="size-1.5 rounded-full bg-primary" />
           {deferred.staged
-            ? `Update ${deferred.version} is ready to install`
+            ? `Update ${deferred.version} installed, restart to finish`
             : `Update ${deferred.version} is available`}
         </button>
+      )}
+
+      {state.kind === 'downloading' && (
+        <div className="min-w-0 flex-1">
+          <div className="font-medium">
+            Downloading update {Math.round(state.progress * 100)}%
+          </div>
+          <div
+            className="mt-1 h-1 w-full overflow-hidden rounded bg-muted"
+            role="progressbar"
+            aria-valuenow={Math.round(state.progress * 100)}
+            aria-valuemin={0}
+            aria-valuemax={100}
+          >
+            <div
+              className="h-full bg-primary transition-[width] duration-150"
+              style={{ width: `${Math.round(state.progress * 100)}%` }}
+            />
+          </div>
+        </div>
       )}
 
       {state.kind === 'up-to-date' && (

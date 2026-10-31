@@ -11,7 +11,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { $projects, removeTab } from '@/modules/stores/$projects'
+import { $projects } from '@/modules/stores/$projects'
 import { $tabMeta } from '@/modules/stores/$tabMeta'
 import {
   $interrupt,
@@ -19,6 +19,7 @@ import {
   type InterruptIntent,
 } from '@/modules/work/$interrupt'
 import { type ActiveWork, collectActiveWork } from '@/modules/work/active-work'
+import { confirmCloseTab } from '@/modules/work/close-tab'
 import { interruptCopy } from '@/modules/work/interrupt.copy'
 
 /**
@@ -57,7 +58,7 @@ function InterruptDialog({ intent }: { intent: InterruptIntent }) {
       void relaunch()
       return
     }
-    removeTab(intent.projectId, intent.tabId)
+    confirmCloseTab(intent.projectId, intent.tabId)
   }
 
   return (

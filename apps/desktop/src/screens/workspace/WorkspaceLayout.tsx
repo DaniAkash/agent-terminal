@@ -25,7 +25,6 @@ import {
   $activeTabId,
   navigateToProject,
   navigateToTab,
-  onTabRemoved,
   openNewTabInProject,
 } from '@/modules/stores/$navigation'
 import { $projects, addTab, restoreTabLabel } from '@/modules/stores/$projects'
@@ -114,7 +113,6 @@ export function WorkspaceLayout() {
       const project = $projects.get().find((p) => p.id === projectId)
       const tab = project?.tabs.find((t) => t.id === tabId)
       if (tab?.pinned) return
-      onTabRemoved(projectId, tabId)
       requestCloseTab(projectId, tabId)
     },
     hotkeyOpts,

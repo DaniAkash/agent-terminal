@@ -30,11 +30,10 @@ export function UpdateDialog() {
   const projects = useStore($projects)
   const tabMeta = useStore($tabMeta)
 
-  if (
-    state.kind !== 'available' &&
-    state.kind !== 'downloading' &&
-    state.kind !== 'ready-to-restart'
-  ) {
+  // Only the two states that need an answer are modal. Progress lives in
+  // the banner: a backdrop that blocks the terminal cannot also claim the
+  // user can keep working while it downloads.
+  if (state.kind !== 'available' && state.kind !== 'ready-to-restart') {
     return null
   }
 
@@ -65,15 +64,12 @@ export function UpdateDialog() {
             <AlertDialogTitle>
               {state.kind === 'available' &&
                 `Version ${state.version} is available`}
-              {state.kind === 'downloading' && 'Downloading the update'}
               {state.kind === 'ready-to-restart' &&
                 'Restart to finish the update'}
             </AlertDialogTitle>
             <AlertDialogDescription className="mt-1.5">
               {state.kind === 'available' &&
                 'Downloads in the background. Nothing restarts until you say so.'}
-              {state.kind === 'downloading' &&
-                'You can keep working. The restart is still yours to make.'}
               {state.kind === 'ready-to-restart' &&
                 `Version ${state.version} is installed and runs after a restart.`}
             </AlertDialogDescription>
@@ -85,21 +81,6 @@ export function UpdateDialog() {
             <p className="whitespace-pre-line rounded-md border border-border bg-card/40 px-2.5 py-2 text-muted-foreground text-xs">
               {state.notes}
             </p>
-          </div>
-        )}
-
-        {state.kind === 'downloading' && (
-          <div
-            className="mt-3.5 h-1 w-full shrink-0 overflow-hidden rounded-full bg-muted"
-            role="progressbar"
-            aria-valuenow={Math.round(state.progress * 100)}
-            aria-valuemin={0}
-            aria-valuemax={100}
-          >
-            <div
-              className="h-full bg-primary transition-[width] duration-150"
-              style={{ width: `${Math.round(state.progress * 100)}%` }}
-            />
           </div>
         )}
 
