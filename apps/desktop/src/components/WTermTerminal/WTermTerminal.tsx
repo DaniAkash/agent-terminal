@@ -253,14 +253,15 @@ export const WTermTerminal = React.memo(function WTermTerminal({
         sendToPty: (data) => onDataRef.current(data),
         pasteToPty: (data) => {
           const bracketed = termRef.current?.bridge?.bracketedPaste() ?? false
-          onDataRef.current(
-            bracketed ? `\x1b[200~${data}\x1b[201~` : data,
-          )
+          onDataRef.current(bracketed ? `\x1b[200~${data}\x1b[201~` : data)
         },
       })
     }
 
-    void boot()
+    boot().catch((err: unknown) => {
+      // biome-ignore lint/suspicious/noConsole: a failed core load leaves an empty pane, which needs a breadcrumb in devtools
+      console.error('[WTermTerminal] wterm boot failed:', err)
+    })
 
     return () => {
       disposed = true
@@ -292,12 +293,14 @@ export const WTermTerminal = React.memo(function WTermTerminal({
     <div
       ref={containerRef}
       className={className ?? 'h-full min-h-0 w-full'}
-      style={{
-        '--term-font-family':
-          '"Geist Mono", "Cascadia Code", "Fira Code", monospace',
-        '--term-font-size': `${fontSize}px`,
-        '--term-line-height': '1.2',
-      } as React.CSSProperties}
+      style={
+        {
+          '--term-font-family':
+            '"Geist Mono", "Cascadia Code", "Fira Code", monospace',
+          '--term-font-size': `${fontSize}px`,
+          '--term-line-height': '1.2',
+        } as React.CSSProperties
+      }
     />
   )
 })
