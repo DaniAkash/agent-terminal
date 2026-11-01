@@ -8,7 +8,7 @@ import {
   createWTermHandle,
   type WTermHandle,
 } from '@/components/WTermTerminal/wterm-terminal.handle'
-import { classifyKeyEvent } from '@/components/WTermTerminal/wterm-terminal.keys'
+import { installKeyCapture } from '@/components/WTermTerminal/wterm-terminal.keys'
 import {
   coreThemeHex,
   terminalTheme,
@@ -36,15 +36,12 @@ type Props = {
   className?: string
 }
 
-/** Marks the copy of an app shortcut this component re-emits on document. */
 // ghostty budgets scrollback in bytes, not lines, and allocates it in
 // pages, so the retained row count falls as the terminal gets wider.
 // Measured against this core: 8 MB holds about 4,900 rows at 120
 // columns and about 7,200 at 80, covering the 5,000 lines xterm was
 // configured for here. The default is 10,000 bytes, about 535 rows.
 const SCROLLBACK_BYTES = 8_000_000
-
-const FORWARDED = '__wtermForwarded'
 
 export const WTermTerminal = React.memo(function WTermTerminal({
   onReady,
@@ -97,40 +94,10 @@ export const WTermTerminal = React.memo(function WTermTerminal({
 
     const darkMq = window.matchMedia('(prefers-color-scheme: dark)')
 
-    function onKeyDownCapture(e: KeyboardEvent) {
-      if (FORWARDED in e) return
-      const verdict = classifyKeyEvent(e, {
-        isAgent: isAgentRef.current,
-        onData: onDataRef.current,
-      })
-      if (verdict === 'terminal') return
-
-      // wterm's own listener sits on the textarea, below this one, and
-      // has no defaultPrevented check, so the only way to keep a key
-      // away from it is to stop the event here.
-      e.stopImmediatePropagation()
-
-      // Stopping it also keeps it from reaching react-hotkeys-hook,
-      // which binds on the document in the bubble phase, so an app
-      // shortcut is re-emitted there as a fresh event. The marker stops
-      // that copy from re-entering this handler.
-      if (verdict === 'app-shortcut') {
-        const forwarded = new KeyboardEvent(e.type, {
-          key: e.key,
-          code: e.code,
-          location: e.location,
-          repeat: e.repeat,
-          ctrlKey: e.ctrlKey,
-          altKey: e.altKey,
-          shiftKey: e.shiftKey,
-          metaKey: e.metaKey,
-          bubbles: true,
-          cancelable: true,
-        })
-        Object.defineProperty(forwarded, FORWARDED, { value: true })
-        document.dispatchEvent(forwarded)
-      }
-    }
+    const detachKeys = installKeyCapture(host, () => ({
+      isAgent: isAgentRef.current,
+      onData: onDataRef.current,
+    }))
 
     // Links are rendered as real anchors, and the webview would either
     // no-op on them or navigate the app window away. Route them to the
@@ -147,8 +114,6 @@ export const WTermTerminal = React.memo(function WTermTerminal({
       if (href) openUrl(href).catch(() => {})
     }
 
-    host.addEventListener('keydown', onKeyDownCapture, { capture: true })
-    host.addEventListener('keyup', onKeyDownCapture, { capture: true })
     host.addEventListener('click', onClickCapture, { capture: true })
 
     // wterm rebuilds a row's markup whenever it repaints, which discards
@@ -242,8 +207,7 @@ export const WTermTerminal = React.memo(function WTermTerminal({
       mo.disconnect()
       linkObserver.disconnect()
       if (linkFrame !== 0) cancelAnimationFrame(linkFrame)
-      host.removeEventListener('keydown', onKeyDownCapture, { capture: true })
-      host.removeEventListener('keyup', onKeyDownCapture, { capture: true })
+      detachKeys()
       host.removeEventListener('click', onClickCapture, { capture: true })
       term?.destroy()
       // destroy() deliberately leaves a host-supplied core alone, so the

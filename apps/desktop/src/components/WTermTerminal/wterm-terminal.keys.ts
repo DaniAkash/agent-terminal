@@ -137,3 +137,66 @@ export function classifyKeyEvent(
   if (isAppShortcut(e)) return 'app-shortcut'
   return 'terminal'
 }
+
+/** Marks the copy of an app shortcut this module re-emits on document. */
+const FORWARDED = '__wtermForwarded'
+
+/**
+ * Installs the capture-phase keyboard listener the terminal host needs,
+ * and returns the function that removes it.
+ *
+ * `opts` is read on every event rather than captured, so the host can
+ * mount this once and still have the latest props reach it.
+ */
+export function installKeyCapture(
+  host: HTMLElement,
+  opts: () => HandleKeyEventOpts,
+): () => void {
+  function onCapture(e: KeyboardEvent) {
+    if (FORWARDED in e) return
+    const verdict = classifyKeyEvent(e, opts())
+    if (verdict === 'terminal') return
+
+    // wterm's own listener sits on the textarea, below this one, and has
+    // no defaultPrevented check, so the only way to keep a key away from
+    // it is to stop the event here.
+    e.stopImmediatePropagation()
+
+    // Stopping it also means wterm never gets to cancel the browser
+    // default, and the default for Enter in its focused textarea is to
+    // insert a newline. wterm's `input` listener then forwards that
+    // newline as if it had been typed, so a translated Shift+Enter
+    // reaches the agent twice. Only translations are cancelled here: app
+    // shortcuts include Cmd+C and Cmd+V, whose defaults are the
+    // webview's own clipboard handling.
+    if (verdict === 'translated') e.preventDefault()
+
+    // Stopping it also keeps it from reaching react-hotkeys-hook, which
+    // binds on the document in the bubble phase, so an app shortcut is
+    // re-emitted there as a fresh event. The marker stops that copy from
+    // re-entering this handler.
+    if (verdict === 'app-shortcut') {
+      const forwarded = new KeyboardEvent(e.type, {
+        key: e.key,
+        code: e.code,
+        location: e.location,
+        repeat: e.repeat,
+        ctrlKey: e.ctrlKey,
+        altKey: e.altKey,
+        shiftKey: e.shiftKey,
+        metaKey: e.metaKey,
+        bubbles: true,
+        cancelable: true,
+      })
+      Object.defineProperty(forwarded, FORWARDED, { value: true })
+      document.dispatchEvent(forwarded)
+    }
+  }
+
+  host.addEventListener('keydown', onCapture, { capture: true })
+  host.addEventListener('keyup', onCapture, { capture: true })
+  return () => {
+    host.removeEventListener('keydown', onCapture, { capture: true })
+    host.removeEventListener('keyup', onCapture, { capture: true })
+  }
+}
