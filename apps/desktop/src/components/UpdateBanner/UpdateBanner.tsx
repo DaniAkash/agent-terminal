@@ -1,19 +1,34 @@
 import { useStore } from '@nanostores/react'
-import { Download, RefreshCw, X } from 'lucide-react'
-import { $updater } from '@/modules/updater/$updater'
-import { installUpdate } from '@/modules/updater/installUpdate'
+import { X } from 'lucide-react'
+import {
+  $deferredUpdate,
+  $updater,
+  resumeDeferredUpdate,
+} from '@/modules/updater/$updater'
 
 /**
- * Floating banner anchored above the status bar. Renders per `$updater`
- * state — only the user-actionable states (available, downloading,
- * ready-to-install, error, manual-check up-to-date) draw a frame. The
- * idle and silent-checking states render nothing so the chrome stays
- * out of the way until there's something to say.
+ * The quiet half of the update surface.
+ *
+ * The two states that need an answer (available, ready to restart) are
+ * a dialog. Everything that does not is here, including the download
+ * progress: a modal backdrop would block the terminal it just told the
+ * user to keep working in. Plus the way back into a deferred update,
+ * which is the piece that used to be missing: dismissing set the state
+ * to idle and the sticky launch check meant it never returned.
  */
 export function UpdateBanner() {
   const state = useStore($updater)
+  const deferred = useStore($deferredUpdate)
 
-  if (state.kind === 'idle' || state.kind === 'checking') return null
+  const showDeferred = state.kind === 'idle' && deferred !== null
+  if (
+    !showDeferred &&
+    state.kind !== 'downloading' &&
+    state.kind !== 'up-to-date' &&
+    state.kind !== 'error'
+  ) {
+    return null
+  }
 
   return (
     <div
@@ -22,66 +37,37 @@ export function UpdateBanner() {
       role="status"
       aria-live="polite"
     >
-      {state.kind === 'available' && (
-        <>
-          <Download size={14} className="mt-0.5 shrink-0" aria-hidden />
-          <div className="min-w-0 flex-1">
-            <div className="font-medium">
-              Update available — v{state.version}
-            </div>
-            {state.notes && (
-              <div className="mt-0.5 line-clamp-3 text-muted-foreground">
-                {state.notes}
-              </div>
-            )}
-            <div className="mt-2 flex gap-2">
-              <button
-                type="button"
-                onClick={() => installUpdate()}
-                className="rounded bg-primary px-2 py-1 text-primary-foreground hover:opacity-90"
-              >
-                Install now
-              </button>
-              <button
-                type="button"
-                onClick={() => $updater.set({ kind: 'idle' })}
-                className="rounded px-2 py-1 hover:bg-accent"
-              >
-                Later
-              </button>
-            </div>
-          </div>
-        </>
+      {showDeferred && deferred && (
+        <button
+          type="button"
+          onClick={resumeDeferredUpdate}
+          className="flex items-center gap-2 rounded hover:underline"
+        >
+          <span aria-hidden className="size-1.5 rounded-full bg-primary" />
+          {deferred.staged
+            ? `Update ${deferred.version} installed, restart to finish`
+            : `Update ${deferred.version} is available`}
+        </button>
       )}
 
       {state.kind === 'downloading' && (
-        <>
-          <RefreshCw
-            size={14}
-            className="mt-0.5 shrink-0 animate-spin"
-            aria-hidden
-          />
-          <div className="min-w-0 flex-1">
-            <div className="font-medium">
-              Downloading update… {Math.round(state.progress * 100)}%
-            </div>
-            <div className="mt-1 h-1 w-full overflow-hidden rounded bg-muted">
-              <div
-                className="h-full bg-primary transition-[width] duration-150"
-                style={{ width: `${Math.round(state.progress * 100)}%` }}
-              />
-            </div>
+        <div className="min-w-0 flex-1">
+          <div className="font-medium">
+            Downloading update {Math.round(state.progress * 100)}%
           </div>
-        </>
-      )}
-
-      {state.kind === 'ready-to-install' && (
-        <>
-          <Download size={14} className="mt-0.5 shrink-0" aria-hidden />
-          <div className="min-w-0 flex-1">
-            <div className="font-medium">Update installed — restarting…</div>
+          <div
+            className="mt-1 h-1 w-full overflow-hidden rounded bg-muted"
+            role="progressbar"
+            aria-valuenow={Math.round(state.progress * 100)}
+            aria-valuemin={0}
+            aria-valuemax={100}
+          >
+            <div
+              className="h-full bg-primary transition-[width] duration-150"
+              style={{ width: `${Math.round(state.progress * 100)}%` }}
+            />
           </div>
-        </>
+        </div>
       )}
 
       {state.kind === 'up-to-date' && (

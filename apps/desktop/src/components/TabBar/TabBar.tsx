@@ -26,16 +26,12 @@ import { cn } from '@/lib/utils'
 import {
   $activeTabId,
   navigateToTab,
-  onTabRemoved,
   openNewTabInProject,
 } from '@/modules/stores/$navigation'
-import {
-  removeTab,
-  reorderTabs,
-  toggleTabPin,
-} from '@/modules/stores/$projects'
+import { reorderTabs, toggleTabPin } from '@/modules/stores/$projects'
 import { $sidebarVisible } from '@/modules/stores/$sidebarVisible'
 import { $tabMeta } from '@/modules/stores/$tabMeta'
+import { requestCloseTab } from '@/modules/work/close-tab'
 import {
   MONO_FONT,
   makeTabKey,
@@ -66,8 +62,7 @@ function TabItem({ tab, projectId }: { tab: Tab; projectId: string }) {
   const { role: _role, ...safeAttributes } = attributes
 
   function handleClose() {
-    onTabRemoved(projectId, tab.id)
-    removeTab(projectId, tab.id)
+    requestCloseTab(projectId, tab.id)
   }
 
   return (
