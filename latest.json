@@ -1,15 +1,15 @@
 {
-  "version": "0.5.0",
-  "notes": "\n### Features\n\n- Render the terminal with wterm on the libghostty core (#210) (a537457)\n\n",
-  "pub_date": "2026-10-31T16:29:40Z",
+  "version": "0.5.1",
+  "notes": "\n### Bug Fixes\n\n- Re-fit the terminal when its tab or the window gains focus (4fb551c)\n\n- Make `clear` erase the scrollback last (6fb42ae)\n\n- Stop Shift+Enter reaching the agent twice (dd7b066)\n\n- Give the PTY the grid it was measured at, and stop the scrollbar resizing the terminal (30b9207)\n\n- Handle a failed window-focus listener teardown (4280e8b)\n\n- Only take a close's side effects once it is confirmed (213ee9b)\n\n- Guard the quit that comes from Cmd+Q and the menubar (432c441)\n\n- Import Emitter in every feature configuration (b93b252)\n\n\n### Dependencies\n\n- Bump the minor-and-patch groups across bun and cargo (1635c87)\n\n\n### Features\n\n- Add one reader for whether a tab is busy (cb66b85)\n\n- Confirm an interruption by naming what it would stop (7571dbd)\n\n- Ask before quitting or closing a tab that is working (a347ccc)\n\n- Make the update two decisions and let Later mean later (0325fa4)\n\n",
+  "pub_date": "2026-11-01T07:21:44Z",
   "platforms": {
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTY0t3bmtjL1JxZG40ZmZRdVFBYk5hMTArcVRnZGFGeEk3RUdvM1h0SHdtemZlaXQ1MUNzNndMcW9DdHRMTEx4a0tTcTRjRkcxdldnY1NzMFpZNFgxQUIveE84MDlRMEFvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzNDY0MTI0CWZpbGU6QWdlbnQgVGVybWluYWwuYXBwLnRhci5negl2ZXJzaW9uOjAuNS4wCkFrNE5vcERjSjZ2L1pUT2tEOWtvaHpQTzFyYTlBTy9MNWdJRzU0czRzTlkrZGhLVlRZbkFVazBVSWZDOVFJM2wzQUoxeXFpMkRkUnhNc1FXMzNMWkFBPT0K",
-      "url": "https://github.com/DaniAkash/agent-terminal/releases/download/v0.5.0/Agent.Terminal_aarch64.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTY0t3bmtjL1JxZHRVVFJqc3VhejVDVzZWZnRSWUNiRVBxeno3NVNkd0xSZ2lBbENGMXB4NzQzdGN5YXVKU0dGRjFGeUdYYXErSTBlclEwa2xuOUNJMkRMNmlOWVBzL1FFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzNTE3NjMxCWZpbGU6QWdlbnQgVGVybWluYWwuYXBwLnRhci5negl2ZXJzaW9uOjAuNS4xCitrbXBhaUhUbjc3c0dYS0NhRllDU3A1R0JpVG4yYWdVVmdCeGdjUzNFVFdXQ2VKVXpNQWZtTG54L3NFcWg1Y2tKZzZoQlFWRktEbWU4OXdOTE1RMkRnPT0K",
+      "url": "https://github.com/DaniAkash/agent-terminal/releases/download/v0.5.1/Agent.Terminal_aarch64.app.tar.gz"
     },
     "darwin-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTY0t3bmtjL1JxZGdGRDNQWWlaeXpGQ3ZoNWR1SUhpRzFKdFQyd09GeW1vMEFWVG15Wm41SS9qd0ZQV1I3Vys2VUgvbHdJZlBBMGliczVGOFRKanBzOGNHM3dIUUtTY0FvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzNDY0MTM3CWZpbGU6QWdlbnQgVGVybWluYWwuYXBwLnRhci5negl2ZXJzaW9uOjAuNS4wCjYxVEdzMjRYMnk4bU04Y1d1Mk15RDd0RE42K0NRU3RPWmVUVjQ5TUFaR3NsK1lReHhCZW5uK29vWXpFeG9DdHFRQlg3ZDMrN2RiWWpDc1hqMXNxcEJnPT0K",
-      "url": "https://github.com/DaniAkash/agent-terminal/releases/download/v0.5.0/Agent.Terminal_x64.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTY0t3bmtjL1JxZHI3a2I3NEZ1Ry92Y1grcXMrYWFVRkdZZ0VscVpFSitEMm1mUmZ0aWJYZE11TmNDSUxWLzRvb3FpNFdTbUJXTVRDRFBjYm42aFZteXVpZnE3VWpnbmdJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzNTE3NjcyCWZpbGU6QWdlbnQgVGVybWluYWwuYXBwLnRhci5negl2ZXJzaW9uOjAuNS4xCjRzWm9aSTBmb2xFVUxueHc5c053NjVxZGFGQ0djaVkyem5xdy9oUXRBS09PRzIySFQ1aDVKNFlZV1NQb0JJbGJwajRNMUxnOTA1SDRhY1QzQkhUQ0R3PT0K",
+      "url": "https://github.com/DaniAkash/agent-terminal/releases/download/v0.5.1/Agent.Terminal_x64.app.tar.gz"
     }
   }
 }
