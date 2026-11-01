@@ -43,7 +43,7 @@ export function WorkspaceEditSheet({ projectId }: { projectId: string }) {
 
   if (!project) {
     return (
-      <View className="flex-1 items-center justify-center bg-background p-6">
+      <View className="bg-background flex-1 items-center justify-center p-6">
         <Text className="text-muted-foreground text-sm">
           This workspace is no longer on the desktop.
         </Text>
@@ -146,7 +146,7 @@ export function WorkspaceEditSheet({ projectId }: { projectId: string }) {
         <View className="flex-1">
           <Text
             numberOfLines={1}
-            className="font-semibold text-base text-foreground"
+            className="text-foreground text-base font-semibold"
           >
             {project.name}
           </Text>
@@ -165,14 +165,14 @@ export function WorkspaceEditSheet({ projectId }: { projectId: string }) {
           }
           accessibilityRole="button"
           accessibilityLabel={pinned ? 'Unpin workspace' : 'Pin workspace'}
-          className="rounded-md border border-border px-2 py-1 active:bg-accent-soft"
+          className="border-border active:bg-accent-soft rounded-md border px-2 py-1"
         >
           <Icon name={pinned ? 'pin-off' : 'pin'} size={13} tone="foreground" />
         </Pressable>
         <Pressable
           onPress={() => setShowNewTab(true)}
           accessibilityRole="button"
-          className="rounded-md border border-border px-2 py-1 active:bg-accent-soft"
+          className="border-border active:bg-accent-soft rounded-md border px-2 py-1"
         >
           <View className="flex-row items-center gap-1">
             <Icon name="plus" size={12} tone="foreground" />
@@ -183,13 +183,13 @@ export function WorkspaceEditSheet({ projectId }: { projectId: string }) {
           onPress={openWorkspaceMenu}
           accessibilityRole="button"
           accessibilityLabel="Workspace options"
-          className="rounded-md border border-border px-2 py-1 active:bg-accent-soft"
+          className="border-border active:bg-accent-soft rounded-md border px-2 py-1"
         >
           <Icon name="ellipsis-vertical" size={14} tone="foreground" />
         </Pressable>
       </View>
 
-      <Text className="px-4 pb-2 text-muted-foreground text-xs">
+      <Text className="text-muted-foreground px-4 pb-2 text-xs">
         Drag the handle to reorder. Long press a session for more.
       </Text>
 
@@ -229,7 +229,7 @@ function EditableTabRow({ item, drag, isActive, onMore }: EditableTabRowProps) {
   // trying to rearrange, and it left the handle as decoration.
   return (
     <View
-      className={`mb-1 flex-row items-center rounded-md border border-border bg-card ${sleeping ? 'opacity-60' : ''} ${isActive ? 'opacity-80' : ''}`}
+      className={`border-border bg-card mb-1 flex-row items-center rounded-md border ${sleeping ? 'opacity-60' : ''} ${isActive ? 'opacity-80' : ''}`}
     >
       <Pressable
         onLongPress={drag}
@@ -252,13 +252,13 @@ function EditableTabRow({ item, drag, isActive, onMore }: EditableTabRowProps) {
       >
         <Text
           numberOfLines={1}
-          className="flex-1 font-mono text-foreground text-sm"
+          className="text-foreground flex-1 font-mono text-sm"
         >
           {sessionLabel(item)}
         </Text>
         {item.pinned && <Icon name="pin" size={11} tone="foreground" />}
         {sleeping && (
-          <Text className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground uppercase">
+          <Text className="bg-muted text-muted-foreground rounded px-1.5 py-0.5 text-[10px] uppercase">
             sleeping
           </Text>
         )}

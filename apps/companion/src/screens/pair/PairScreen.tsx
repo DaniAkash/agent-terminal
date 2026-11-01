@@ -72,7 +72,7 @@ export function PairScreen() {
   }
 
   return (
-    <View className="flex-1 bg-background">
+    <View className="bg-background flex-1">
       {stage.kind === 'scanning' && (
         <ScanStage
           hasPermission={permission?.granted ?? false}

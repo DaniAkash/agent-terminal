@@ -269,7 +269,7 @@ export function WorkspaceLayout() {
   )
 
   return (
-    <div className="relative flex h-screen w-screen flex-col overflow-hidden bg-background">
+    <div className="bg-background relative flex h-screen w-screen flex-col overflow-hidden">
       <div className="flex min-h-0 flex-1">
         <Sidebar />
         <div className="relative min-w-0 flex-1">

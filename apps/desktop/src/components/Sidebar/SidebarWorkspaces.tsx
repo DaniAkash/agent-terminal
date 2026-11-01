@@ -67,10 +67,10 @@ export function SidebarWorkspaces() {
     <>
       {projects.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-1 px-4 py-8 text-center">
-          <p className="text-[12px] text-sidebar-fg opacity-60">
+          <p className="text-sidebar-fg text-[12px] opacity-60">
             No projects yet.
           </p>
-          <p className="text-[11px] text-sidebar-fg opacity-40">
+          <p className="text-sidebar-fg text-[11px] opacity-40">
             Click below to add your first project.
           </p>
         </div>
@@ -94,7 +94,7 @@ export function SidebarWorkspaces() {
       <button
         type="button"
         onClick={handleAddProject}
-        className="mx-1.5 mt-1 flex h-[26px] w-[calc(100%-12px)] items-center gap-1.5 rounded-md px-3 text-[12px] text-sidebar-fg opacity-70 hover:bg-sidebar-hover hover:opacity-100"
+        className="text-sidebar-fg hover:bg-sidebar-hover mx-1.5 mt-1 flex h-[26px] w-[calc(100%-12px)] items-center gap-1.5 rounded-md px-3 text-[12px] opacity-70 hover:opacity-100"
       >
         <span className="text-[13px] leading-none">+</span>
         <span>New project</span>

@@ -32,7 +32,7 @@ export function UpdateBanner() {
 
   return (
     <div
-      className="pointer-events-auto absolute right-3 bottom-9 z-20 flex max-w-md items-start gap-3 rounded-md border border-border bg-popover px-3 py-2 text-xs shadow-lg"
+      className="border-border bg-popover pointer-events-auto absolute right-3 bottom-9 z-20 flex max-w-md items-start gap-3 rounded-md border px-3 py-2 text-xs shadow-lg"
       style={{ fontFamily: 'var(--font-ui)' }}
       role="status"
       aria-live="polite"
@@ -43,7 +43,7 @@ export function UpdateBanner() {
           onClick={resumeDeferredUpdate}
           className="flex items-center gap-2 rounded hover:underline"
         >
-          <span aria-hidden className="size-1.5 rounded-full bg-primary" />
+          <span aria-hidden className="bg-primary size-1.5 rounded-full" />
           {deferred.staged
             ? `Update ${deferred.version} installed, restart to finish`
             : `Update ${deferred.version} is available`}
@@ -56,14 +56,14 @@ export function UpdateBanner() {
             Downloading update {Math.round(state.progress * 100)}%
           </div>
           <div
-            className="mt-1 h-1 w-full overflow-hidden rounded bg-muted"
+            className="bg-muted mt-1 h-1 w-full overflow-hidden rounded"
             role="progressbar"
             aria-valuenow={Math.round(state.progress * 100)}
             aria-valuemin={0}
             aria-valuemax={100}
           >
             <div
-              className="h-full bg-primary transition-[width] duration-150"
+              className="bg-primary h-full transition-[width] duration-150"
               style={{ width: `${Math.round(state.progress * 100)}%` }}
             />
           </div>
@@ -78,7 +78,7 @@ export function UpdateBanner() {
           <button
             type="button"
             onClick={() => $updater.set({ kind: 'idle' })}
-            className="-mr-1 rounded p-1 hover:bg-accent"
+            className="hover:bg-accent -mr-1 rounded p-1"
             aria-label="Dismiss"
           >
             <X size={12} />
@@ -89,17 +89,17 @@ export function UpdateBanner() {
       {state.kind === 'error' && (
         <>
           <div className="min-w-0 flex-1">
-            <div className="font-medium text-destructive">
+            <div className="text-destructive font-medium">
               Couldn't check for updates
             </div>
-            <div className="mt-0.5 line-clamp-3 text-muted-foreground">
+            <div className="text-muted-foreground mt-0.5 line-clamp-3">
               {state.message}
             </div>
           </div>
           <button
             type="button"
             onClick={() => $updater.set({ kind: 'idle' })}
-            className="-mr-1 rounded p-1 hover:bg-accent"
+            className="hover:bg-accent -mr-1 rounded p-1"
             aria-label="Dismiss"
           >
             <X size={12} />

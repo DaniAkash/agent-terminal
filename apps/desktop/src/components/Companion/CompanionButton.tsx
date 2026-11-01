@@ -18,7 +18,7 @@ export function CompanionButton() {
       }}
       className={cn(
         buttonVariants({ variant: 'ghost', size: 'sm' }),
-        'group gap-1.5 px-2.5 font-medium text-[11px] text-muted-foreground',
+        'group text-muted-foreground gap-1.5 px-2.5 text-[11px] font-medium',
       )}
       style={{ fontFamily: 'var(--font-ui)' }}
       aria-label="Companion pairing"

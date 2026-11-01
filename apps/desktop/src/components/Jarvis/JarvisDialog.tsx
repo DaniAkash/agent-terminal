@@ -36,7 +36,7 @@ export function JarvisDialog({
         <div className="jarvis-header jarvis-dialog-header">
           <DialogHeader className="flex-row items-center gap-3">
             <div>
-              <DialogTitle className="font-semibold text-lg tracking-tight">
+              <DialogTitle className="text-lg font-semibold tracking-tight">
                 Jarvis
               </DialogTitle>
               <DialogDescription className="mt-1 text-xs">
@@ -62,7 +62,7 @@ export function JarvisDialog({
             <Button
               size="sm"
               variant="ghost"
-              className="h-8 gap-1.5 text-muted-foreground text-xs"
+              className="text-muted-foreground h-8 gap-1.5 text-xs"
               disabled={
                 loading ||
                 saving ||
@@ -86,7 +86,7 @@ export function JarvisDialog({
         {problem && (
           <div
             role="alert"
-            className="shrink-0 border-border/60 border-b bg-muted/50 px-5 py-3 text-destructive text-xs leading-relaxed"
+            className="border-border/60 bg-muted/50 text-destructive shrink-0 border-b px-5 py-3 text-xs leading-relaxed"
           >
             {problem}
             {!snapshot && (
@@ -105,7 +105,7 @@ export function JarvisDialog({
           aria-busy={loading || saving}
         >
           {loading && (
-            <p className="py-8 text-center text-[12px] text-muted-foreground">
+            <p className="text-muted-foreground py-8 text-center text-[12px]">
               Loading Jarvis…
             </p>
           )}
@@ -119,7 +119,7 @@ export function JarvisDialog({
               />
             ))}
         </div>
-        <div className="flex shrink-0 items-center justify-between border-border/60 border-t px-5 py-2.5 text-[11px] text-muted-foreground">
+        <div className="border-border/60 text-muted-foreground flex shrink-0 items-center justify-between border-t px-5 py-2.5 text-[11px]">
           <span>
             {snapshot?.preferences.providers.length ?? 0} providers selected
           </span>

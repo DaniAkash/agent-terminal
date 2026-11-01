@@ -61,10 +61,10 @@ export function SidebarRecent() {
   if (rows.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center gap-1 px-4 py-8 text-center">
-        <p className="text-[12px] text-sidebar-fg opacity-60">
+        <p className="text-sidebar-fg text-[12px] opacity-60">
           No recent tabs yet.
         </p>
-        <p className="text-[11px] text-sidebar-fg opacity-40">
+        <p className="text-sidebar-fg text-[11px] opacity-40">
           Switch between tabs to build up recency.
         </p>
       </div>

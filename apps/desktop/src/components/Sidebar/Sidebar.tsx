@@ -26,14 +26,14 @@ export function Sidebar() {
   if (!visible) return null
 
   return (
-    <div className="relative flex h-full w-[var(--sidebar-width)] min-w-[var(--sidebar-width)] flex-col border-sidebar-border border-r bg-sidebar">
+    <div className="border-sidebar-border bg-sidebar relative flex h-full w-[var(--sidebar-width)] min-w-[var(--sidebar-width)] flex-col border-r">
       {/* Header — drag region hosting the view toggle. Reserves the
           macOS traffic-light row (~80px) on the left. Traffic lights
           keep their default Tauri Overlay placement (looked correct
           before we started fiddling). */}
       <div
         data-tauri-drag-region
-        className="flex h-[38px] shrink-0 items-center justify-end border-sidebar-border border-b pr-3 pl-[80px]"
+        className="border-sidebar-border flex h-[38px] shrink-0 items-center justify-end border-b pr-3 pl-[80px]"
       >
         <SidebarViewToggle />
       </div>
@@ -41,7 +41,7 @@ export function Sidebar() {
       {/* Body — scrolls vertically; scrollbar hidden, bottom shadow
           gives a visual cue when more content exists below. */}
       <div className="relative min-h-0 flex-1 overflow-hidden">
-        <div className="h-full overflow-y-auto py-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="h-full [scrollbar-width:none] overflow-y-auto py-1.5 [&::-webkit-scrollbar]:hidden">
           {view === 'workspaces' ? <SidebarWorkspaces /> : <SidebarRecent />}
         </div>
 

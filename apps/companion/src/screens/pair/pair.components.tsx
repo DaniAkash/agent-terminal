@@ -32,11 +32,11 @@ export function ScanStage({
           </View>
         )}
       </View>
-      <View className="gap-2 bg-background p-6">
-        <Text className="text-center font-semibold text-foreground text-lg">
+      <View className="bg-background gap-2 p-6">
+        <Text className="text-foreground text-center text-lg font-semibold">
           Scan the QR from your desktop
         </Text>
-        <Text className="text-center text-muted-foreground text-sm">
+        <Text className="text-muted-foreground text-center text-sm">
           Open Agent Terminal on your Mac, click the Companion button in the
           status bar, and point your camera at the QR.
         </Text>
@@ -57,21 +57,21 @@ export function ConfirmStage({
   return (
     <View className="flex-1 justify-center gap-6 p-6">
       <View className="gap-2">
-        <Text className="text-center text-muted-foreground text-sm uppercase tracking-wide">
+        <Text className="text-muted-foreground text-center text-sm tracking-wide uppercase">
           Pairing with
         </Text>
-        <Text className="text-center font-semibold text-2xl text-foreground">
+        <Text className="text-foreground text-center text-2xl font-semibold">
           {payload.device_hint}
         </Text>
       </View>
-      <View className="gap-2 rounded-md border border-border bg-card p-4">
-        <Text className="text-muted-foreground text-xs uppercase tracking-wide">
+      <View className="border-border bg-card gap-2 rounded-md border p-4">
+        <Text className="text-muted-foreground text-xs tracking-wide uppercase">
           Fingerprint
         </Text>
-        <Text className="font-mono text-foreground text-sm">
+        <Text className="text-foreground font-mono text-sm">
           {formatFingerprintForVisualCompare(payload.fingerprint)}
         </Text>
-        <Text className="mt-1 text-muted-foreground text-xs">
+        <Text className="text-muted-foreground mt-1 text-xs">
           Compare this with the fingerprint shown on the desktop. Only tap
           Confirm if they match exactly.
         </Text>
@@ -79,17 +79,17 @@ export function ConfirmStage({
       <View className="gap-3">
         <Pressable
           onPress={onConfirm}
-          className="items-center rounded-md bg-accent px-4 py-3"
+          className="bg-accent items-center rounded-md px-4 py-3"
         >
-          <Text className="font-semibold text-accent-foreground text-base">
+          <Text className="text-accent-foreground text-base font-semibold">
             Fingerprints match, confirm
           </Text>
         </Pressable>
         <Pressable
           onPress={onCancel}
-          className="items-center rounded-md border border-border px-4 py-3"
+          className="border-border items-center rounded-md border px-4 py-3"
         >
-          <Text className="text-base text-foreground">Scan again</Text>
+          <Text className="text-foreground text-base">Scan again</Text>
         </Pressable>
       </View>
     </View>
@@ -121,27 +121,27 @@ export function ErrorStage({
 }) {
   return (
     <View className="flex-1 justify-center gap-4 p-6">
-      <Text className="text-center font-semibold text-destructive text-lg">
+      <Text className="text-destructive text-center text-lg font-semibold">
         Pairing failed
       </Text>
-      <Text className="text-center text-foreground text-sm">
+      <Text className="text-foreground text-center text-sm">
         {describeError(error)}
       </Text>
       <View className="gap-2">
         <Pressable
           onPress={onRetry}
-          className="items-center rounded-md bg-accent px-4 py-3"
+          className="bg-accent items-center rounded-md px-4 py-3"
         >
-          <Text className="font-semibold text-accent-foreground text-base">
+          <Text className="text-accent-foreground text-base font-semibold">
             Scan again
           </Text>
         </Pressable>
         {onOpenManualConnect !== undefined && (
           <Pressable
             onPress={onOpenManualConnect}
-            className="items-center rounded-md border border-border px-4 py-3"
+            className="border-border items-center rounded-md border px-4 py-3"
           >
-            <Text className="text-base text-foreground">
+            <Text className="text-foreground text-base">
               Use manual token (dev only)
             </Text>
           </Pressable>
@@ -153,8 +153,8 @@ export function ErrorStage({
 
 export function PermissionBlockedStage() {
   return (
-    <View className="flex-1 items-center justify-center bg-background p-6">
-      <Text className="text-center text-foreground text-lg">
+    <View className="bg-background flex-1 items-center justify-center p-6">
+      <Text className="text-foreground text-center text-lg">
         Camera access denied. Enable it in Settings to scan the pairing QR.
       </Text>
     </View>

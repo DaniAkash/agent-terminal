@@ -29,7 +29,7 @@ export function GitBadge({ tabId }: Props) {
 
   return (
     <span
-      className="pointer-events-none text-accent opacity-80"
+      className="text-accent pointer-events-none opacity-80"
       style={{ fontFamily: MONO_FONT, fontSize: 10.5 }}
     >
       {label}

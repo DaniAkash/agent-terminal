@@ -120,7 +120,7 @@ export function SidebarResizeHandle() {
       onDoubleClick={resetSidebarWidth}
       onKeyDown={onKeyDown}
       style={{ top: HEADER_HEIGHT }}
-      className="absolute right-0 bottom-0 z-10 w-2 translate-x-1/2 cursor-col-resize bg-transparent transition-colors hover:bg-sidebar-border focus-visible:bg-sidebar-border focus-visible:outline-none"
+      className="hover:bg-sidebar-border focus-visible:bg-sidebar-border absolute right-0 bottom-0 z-10 w-2 translate-x-1/2 cursor-col-resize bg-transparent transition-colors focus-visible:outline-none"
     />
   )
 }
