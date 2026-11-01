@@ -92,6 +92,14 @@ export const TerminalPane = React.memo(function TerminalPane({
       })
         .then((isNew) => {
           pendingOpens.delete(tabKey)
+          // The terminal measures itself and reports its grid before this
+          // call spawns the PTY, and `resize_pty` is a no-op for a tab that
+          // has none yet, so that first size is dropped and the PTY keeps
+          // the 80x24 it was born with while the grid is much larger.
+          const size = handleRef.current?.getSize()
+          if (size) {
+            IPC.resizePty(tabKey, size.cols, size.rows).catch(() => {})
+          }
           if (!isNew) {
             IPC.writePty(tabKey, '\r').catch(() => {})
           }

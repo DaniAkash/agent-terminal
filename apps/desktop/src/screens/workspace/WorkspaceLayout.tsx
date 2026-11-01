@@ -32,6 +32,7 @@ import { toggleSidebarVisible } from '@/modules/stores/$sidebarVisible'
 import { useMetaHeldTracker } from '@/modules/stores/useMetaHeldTracker'
 import { useUpdaterWiring } from '@/modules/updater/useUpdaterWiring'
 import { requestCloseTab } from '@/modules/work/close-tab'
+import { useFitOnWindowFocus } from '@/modules/work/useFitOnWindowFocus'
 import { useQuitGuard } from '@/modules/work/useQuitGuard'
 import { WorkspaceView } from '@/screens/workspace/WorkspaceView'
 
@@ -88,6 +89,7 @@ export function WorkspaceLayout() {
 
   useUpdaterWiring()
   useQuitGuard()
+  useFitOnWindowFocus()
 
   // enableOnFormTags is required because the terminal uses a hidden <textarea> to
   // capture keyboard input. Without it react-hotkeys-hook silently ignores

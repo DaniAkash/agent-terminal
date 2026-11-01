@@ -4,6 +4,23 @@ import { $activeSearch } from '@/modules/stores/$activeSearch'
 export type WTermHandle = {
   write: (data: string) => void
   focus: () => void
+  /**
+   * Re-measure the pane and resize the grid to match.
+   *
+   * wterm sizes itself from a ResizeObserver, and an inactive pane is
+   * `display: none`, so it has no box and reports nothing. A pane that
+   * was hidden while the window changed size therefore keeps the grid it
+   * had, which is what leaves a session sitting in a corner of its pane.
+   */
+  fit: () => void
+  /**
+   * The grid the terminal currently has, or null before it has booted.
+   *
+   * The PTY is spawned after the terminal has already measured itself, and
+   * a resize that arrives before it exists is dropped, so the caller has to
+   * re-assert the size once the PTY is there.
+   */
+  getSize: () => { cols: number; rows: number } | null
   /** Clears the visible buffer and the scrollback. */
   clear: () => void
   /** Selects all text in the buffer. */
@@ -77,6 +94,11 @@ export function createWTermHandle(opts: {
   return {
     write: (data) => getTerm()?.write(data),
     focus: () => getTerm()?.focus(),
+    fit: () => getTerm()?.fit(),
+    getSize: () => {
+      const term = getTerm()
+      return term ? { cols: term.cols, rows: term.rows } : null
+    },
     clear: () => getTerm()?.write(CLEAR_SEQUENCE),
     selectAll: () => {
       void getTerm()?.selectAll()

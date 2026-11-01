@@ -39,6 +39,15 @@ _at_osc133_exit() { printf '\033]133;D;%s\007' "$?"; }
 _at_osc133_prompt() { printf '\033]133;A\007'; }
 _at_osc133_preexec() { printf '\033]133;B\007'; }
 
+# `clear` erases the scrollback before it erases the screen. With a prompt
+# mark on screen the screen erase scrolls into scrollback rather than wiping
+# it, so the scrollback comes straight back holding the screen that was just
+# cleared. Erasing the scrollback last leaves nothing behind.
+clear() {
+  if (( $# )); then command clear "$@"; return; fi
+  printf '\033[H\033[2J\033[3J'
+}
+
 precmd_functions=(_at_osc133_exit _at_osc7 _at_osc133_prompt ${precmd_functions[@]})
 preexec_functions=(_at_osc133_preexec ${preexec_functions[@]})
 "#;
@@ -50,6 +59,15 @@ _at_osc7() { printf '\033]7;file://%s%s\007' "${HOSTNAME:-localhost}" "$PWD"; }
 _at_osc133_exit() { printf '\033]133;D;%s\007' "$?"; }
 _at_osc133_prompt() { printf '\033]133;A\007'; }
 _at_osc133_preexec() { printf '\033]133;B\007'; }
+
+# `clear` erases the scrollback before it erases the screen. With a prompt
+# mark on screen the screen erase scrolls into scrollback rather than wiping
+# it, so the scrollback comes straight back holding the screen that was just
+# cleared. Erasing the scrollback last leaves nothing behind.
+clear() {
+  if (( $# )); then command clear "$@"; return; fi
+  printf '\033[H\033[2J\033[3J'
+}
 
 PROMPT_COMMAND="_at_osc133_exit; _at_osc7; _at_osc133_prompt${PROMPT_COMMAND:+; $PROMPT_COMMAND}"
 trap '_at_osc133_preexec' DEBUG
@@ -86,4 +104,31 @@ pub fn setup_shell_integration() -> Result<(), String> {
         .map_err(|e| format!("failed to write bash integration script: {e}"))?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{BASH_SCRIPT, ZSH_SCRIPT};
+
+    /// The scrollback erase has to come after the screen erase. A prompt mark
+    /// on screen turns the screen erase into a scroll into scrollback, so the
+    /// conventional order refills the scrollback it just emptied.
+    #[test]
+    fn clear_erases_the_scrollback_last() {
+        for script in [ZSH_SCRIPT, BASH_SCRIPT] {
+            let body = script
+                .split_once("clear() {")
+                .expect("script defines a clear wrapper")
+                .1;
+            let sequence = body
+                .split_once("printf '")
+                .expect("wrapper printfs a sequence")
+                .1
+                .split_once('\'')
+                .expect("sequence is quoted")
+                .0;
+            assert_eq!(sequence, r"\033[H\033[2J\033[3J");
+            assert!(body.contains(r#"command clear "$@""#));
+        }
+    }
 }

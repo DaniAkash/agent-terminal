@@ -326,3 +326,16 @@
     font-family: var(--font-ui);
   }
 }
+
+/*
+ * wterm turns on `overflow-y: auto` only once scrollback exists, so the
+ * scrollbar appears mid-session, narrows the content box and makes the
+ * ResizeObserver report two fewer columns. The grid is resized as a
+ * result, which blanks the painted screen and sends SIGWINCH to whatever
+ * is running. Reserving the gutter from the start keeps the width
+ * constant, so the first scrolled line no longer resizes the terminal.
+ */
+.wterm {
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
