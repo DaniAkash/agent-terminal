@@ -93,12 +93,12 @@ export function CompanionDialog() {
 
           <PairingSection payload={payload} error={error} loading={loading} />
 
-          <div className="mt-4 border-border/60 border-t pt-3">
+          <div className="border-border/60 mt-4 border-t pt-3">
             <div className="mb-2 flex items-center justify-between">
-              <h3 className="font-semibold text-[11px] text-muted-foreground uppercase tracking-[0.16em]">
+              <h3 className="text-muted-foreground text-[11px] font-semibold tracking-[0.16em] uppercase">
                 Paired Devices
               </h3>
-              <span className="text-[11px] text-muted-foreground">
+              <span className="text-muted-foreground text-[11px]">
                 {devices.length}
               </span>
             </div>
@@ -182,7 +182,7 @@ interface PairingSectionProps {
 function PairingSection({ payload, error, loading }: PairingSectionProps) {
   if (error) {
     return (
-      <div className="flex flex-col items-center gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-4 text-center text-[12px] text-destructive">
+      <div className="border-destructive/40 bg-destructive/10 text-destructive flex flex-col items-center gap-2 rounded-md border p-4 text-center text-[12px]">
         <XCircle size={20} aria-hidden="true" />
         <span>{error}</span>
       </div>
@@ -190,7 +190,7 @@ function PairingSection({ payload, error, loading }: PairingSectionProps) {
   }
   if (loading || payload === null) {
     return (
-      <div className="flex h-[240px] items-center justify-center text-[12px] text-muted-foreground">
+      <div className="text-muted-foreground flex h-[240px] items-center justify-center text-[12px]">
         Preparing pairing session…
       </div>
     )
@@ -198,11 +198,11 @@ function PairingSection({ payload, error, loading }: PairingSectionProps) {
   const qrValue = JSON.stringify(payload)
   return (
     <div className="flex flex-col items-center gap-3">
-      <div className="rounded-md border border-border/60 bg-white p-3">
+      <div className="border-border/60 rounded-md border bg-white p-3">
         <QRCodeSVG value={qrValue} size={192} level="M" />
       </div>
       <div className="w-full space-y-1 text-center">
-        <div className="text-[11px] text-muted-foreground">
+        <div className="text-muted-foreground text-[11px]">
           Fingerprint (verify matches on your phone)
         </div>
         <Fingerprint value={payload.fingerprint} />
@@ -219,7 +219,7 @@ interface DevicesListProps {
 function DevicesList({ devices, onRevoke }: DevicesListProps) {
   if (devices.length === 0) {
     return (
-      <div className="rounded-md border border-border/40 border-dashed py-6 text-center text-[12px] text-muted-foreground">
+      <div className="border-border/40 text-muted-foreground rounded-md border border-dashed py-6 text-center text-[12px]">
         No devices paired yet.
       </div>
     )
@@ -241,13 +241,13 @@ interface DeviceRowProps {
 function DeviceRow({ device, onRevoke }: DeviceRowProps) {
   const Icon = device.platform === 'android' ? Tablet : Smartphone
   return (
-    <li className="flex items-center gap-3 rounded-md px-2 py-2 hover:bg-accent/40">
-      <Icon size={18} className="shrink-0 text-muted-foreground" />
+    <li className="hover:bg-accent/40 flex items-center gap-3 rounded-md px-2 py-2">
+      <Icon size={18} className="text-muted-foreground shrink-0" />
       <div className="min-w-0 flex-1">
-        <div className="truncate font-medium text-[12px]">
+        <div className="truncate text-[12px] font-medium">
           {device.device_name}
         </div>
-        <div className="truncate text-[11px] text-muted-foreground">
+        <div className="text-muted-foreground truncate text-[11px]">
           {`Paired ${relativeTime(device.paired_at)} · Last seen ${relativeTime(
             device.last_seen,
           )}`}
@@ -256,7 +256,7 @@ function DeviceRow({ device, onRevoke }: DeviceRowProps) {
       <Button
         variant="ghost"
         size="sm"
-        className="text-[11px] text-destructive/80 hover:text-destructive"
+        className="text-destructive/80 hover:text-destructive text-[11px]"
         onClick={() => onRevoke(device.id)}
       >
         Revoke
@@ -284,7 +284,7 @@ function Fingerprint({ value }: { value: string }) {
     blocks.push(pairs.slice(i, i + 4).join(':'))
   }
   return (
-    <output className="mx-auto block max-w-full font-mono text-[12px] text-foreground/90 tabular-nums">
+    <output className="text-foreground/90 mx-auto block max-w-full font-mono text-[12px] tabular-nums">
       <div className="flex flex-wrap justify-center gap-x-3 gap-y-1">
         {blocks.map((block) => (
           <span key={block} className="whitespace-nowrap">

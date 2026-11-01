@@ -32,8 +32,8 @@ export function JarvisProvider({ provider }: { provider: ProviderUsage }) {
             size={18}
           />
           <div>
-            <h3 className="font-semibold text-[15px]">{provider.name}</h3>
-            <p className="mt-0.5 text-[11px] text-muted-foreground">
+            <h3 className="text-[15px] font-semibold">{provider.name}</h3>
+            <p className="text-muted-foreground mt-0.5 text-[11px]">
               {installationLabel(provider.detected)}
             </p>
           </div>
@@ -49,7 +49,7 @@ export function JarvisProvider({ provider }: { provider: ProviderUsage }) {
         ))}
       </div>
       {provider.message && (
-        <p className="mt-2 text-muted-foreground text-xs leading-relaxed">
+        <p className="text-muted-foreground mt-2 text-xs leading-relaxed">
           {provider.message}
         </p>
       )}
@@ -96,11 +96,11 @@ function WindowMeter({
   return (
     <div className="jarvis-window">
       <div className="mb-2 flex items-center justify-between gap-3">
-        <span className="font-medium text-xs">{window.label}</span>
+        <span className="text-xs font-medium">{window.label}</span>
         <span className="jarvis-reading" style={{ color }}>
           {Math.round(remaining)}
           <span className="text-[13px]">%</span>
-          <span className="ml-1.5 font-normal text-[11px] text-muted-foreground">
+          <span className="text-muted-foreground ml-1.5 text-[11px] font-normal">
             left
           </span>
         </span>
@@ -131,7 +131,7 @@ function WindowMeter({
           )
         })}
       </div>
-      <p className="mt-2 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+      <p className="text-muted-foreground mt-2 flex items-center gap-1.5 text-[11px]">
         <Clock3 size={11} aria-hidden="true" />
         <span
           title={

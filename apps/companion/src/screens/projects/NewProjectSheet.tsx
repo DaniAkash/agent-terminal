@@ -61,7 +61,7 @@ export function NewProjectSheet({ visible, onDismiss }: Props) {
     >
       <View className="gap-3">
         <View>
-          <Text className="mb-1 text-muted-foreground text-xs">Name</Text>
+          <Text className="text-muted-foreground mb-1 text-xs">Name</Text>
           <Controller
             control={control}
             name="name"
@@ -72,18 +72,18 @@ export function NewProjectSheet({ visible, onDismiss }: Props) {
                 onChangeText={onChange}
                 onBlur={onBlur}
                 placeholder="Notes"
-                className="rounded-md border border-border bg-card px-3 py-2 text-foreground"
+                className="border-border bg-card text-foreground rounded-md border px-3 py-2"
               />
             )}
           />
           {errors.name?.message && (
-            <Text className="mt-1 text-destructive text-xs">
+            <Text className="text-destructive mt-1 text-xs">
               {errors.name.message}
             </Text>
           )}
         </View>
         <View>
-          <Text className="mb-1 text-muted-foreground text-xs">
+          <Text className="text-muted-foreground mb-1 text-xs">
             Path (optional)
           </Text>
           <Controller
@@ -97,7 +97,7 @@ export function NewProjectSheet({ visible, onDismiss }: Props) {
                 placeholder="/Users/you/notes"
                 autoCapitalize="none"
                 autoCorrect={false}
-                className="rounded-md border border-border bg-card px-3 py-2 text-foreground"
+                className="border-border bg-card text-foreground rounded-md border px-3 py-2"
               />
             )}
           />

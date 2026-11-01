@@ -3,11 +3,13 @@ import { getCurrentWebview } from '@tauri-apps/api/webview'
 import { useEffect, useState } from 'react'
 import { useHotkeys } from 'react-hotkeys-hook'
 import { CompanionDialog } from '@/components/Companion/CompanionDialog'
+import { ConfirmInterrupt } from '@/components/ConfirmInterrupt/ConfirmInterrupt'
 import { Sidebar } from '@/components/Sidebar/Sidebar'
 import { StatusBar } from '@/components/StatusBar/StatusBar'
 import { TabSwitcher } from '@/components/TabSwitcher/TabSwitcher'
 import { TerminalSearchBar } from '@/components/TerminalSearchBar/TerminalSearchBar'
 import { UpdateBanner } from '@/components/UpdateBanner/UpdateBanner'
+import { UpdateDialog } from '@/components/UpdateDialog/UpdateDialog'
 import { formatDropPayload } from '@/modules/dragDrop/dropPayload'
 import { Keys, Mod } from '@/modules/keymap/keys'
 import { $activeSearch, openSearch } from '@/modules/stores/$activeSearch'
@@ -23,19 +25,15 @@ import {
   $activeTabId,
   navigateToProject,
   navigateToTab,
-  onTabRemoved,
   openNewTabInProject,
 } from '@/modules/stores/$navigation'
-import {
-  $projects,
-  addTab,
-  removeTab,
-  restoreTabLabel,
-} from '@/modules/stores/$projects'
+import { $projects, addTab, restoreTabLabel } from '@/modules/stores/$projects'
 import { toggleSidebarVisible } from '@/modules/stores/$sidebarVisible'
 import { useMetaHeldTracker } from '@/modules/stores/useMetaHeldTracker'
 import { useUpdaterWiring } from '@/modules/updater/useUpdaterWiring'
+import { requestCloseTab } from '@/modules/work/close-tab'
 import { useFitOnWindowFocus } from '@/modules/work/useFitOnWindowFocus'
+import { useQuitGuard } from '@/modules/work/useQuitGuard'
 import { WorkspaceView } from '@/screens/workspace/WorkspaceView'
 
 export function WorkspaceLayout() {
@@ -90,12 +88,12 @@ export function WorkspaceLayout() {
   }, [])
 
   useUpdaterWiring()
+  useQuitGuard()
+  useFitOnWindowFocus()
 
   // enableOnFormTags is required because the terminal uses a hidden <textarea> to
   // capture keyboard input. Without it react-hotkeys-hook silently ignores
   // all key events while the terminal has focus.
-  useFitOnWindowFocus()
-
   const hotkeyOpts = { preventDefault: true, enableOnFormTags: true } as const
 
   // ⌘T — new tab in the active project
@@ -117,8 +115,7 @@ export function WorkspaceLayout() {
       const project = $projects.get().find((p) => p.id === projectId)
       const tab = project?.tabs.find((t) => t.id === tabId)
       if (tab?.pinned) return
-      onTabRemoved(projectId, tabId)
-      removeTab(projectId, tabId)
+      requestCloseTab(projectId, tabId)
     },
     hotkeyOpts,
   )
@@ -274,7 +271,7 @@ export function WorkspaceLayout() {
   )
 
   return (
-    <div className="relative flex h-screen w-screen flex-col overflow-hidden bg-background">
+    <div className="bg-background relative flex h-screen w-screen flex-col overflow-hidden">
       <div className="flex min-h-0 flex-1">
         <Sidebar />
         <div className="relative min-w-0 flex-1">
@@ -299,6 +296,8 @@ export function WorkspaceLayout() {
       </div>
       <StatusBar />
       <UpdateBanner />
+      <UpdateDialog />
+      <ConfirmInterrupt />
       {/* Self-contained: owns its open state + Cmd+P hotkey. */}
       <TabSwitcher />
       {/* Companion dialog for the pairing QR + paired-devices list.

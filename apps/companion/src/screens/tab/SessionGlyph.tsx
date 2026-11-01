@@ -35,7 +35,7 @@ export function SessionGlyph({
   // A dead socket says nothing about what the agent is doing now, so the
   // dot reports the connection instead of the last thing it heard.
   if (!connected) {
-    return <View className="h-2 w-2 rounded-full bg-destructive" />
+    return <View className="bg-destructive h-2 w-2 rounded-full" />
   }
   if (visual.kind === 'shell') {
     return <Dot visual={visual} pulses={visual.pulses} />
@@ -154,7 +154,7 @@ function PulseRing({ size, color }: { size: number; color: string }) {
 function CompletedBadge({ size }: { size: number }) {
   return (
     <View
-      className="absolute items-center justify-center rounded-full border-background bg-success"
+      className="border-background bg-success absolute items-center justify-center rounded-full"
       style={{
         right: -Math.round(size * 0.15),
         bottom: -Math.round(size * 0.15),

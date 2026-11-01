@@ -59,7 +59,7 @@ export function ThemeToggle() {
             {...triggerProps}
             className={cn(
               buttonVariants({ variant: 'ghost', size: 'sm' }),
-              'group gap-1.5 px-2.5 font-medium text-[11px] text-muted-foreground',
+              'group text-muted-foreground gap-1.5 px-2.5 text-[11px] font-medium',
               triggerProps.className,
             )}
             style={{
@@ -89,7 +89,7 @@ export function ThemeToggle() {
         style={{ fontFamily: 'var(--font-ui)' }}
       >
         <DropdownMenuGroup>
-          <DropdownMenuLabel className="px-1.5 pt-1 pb-0.5 font-semibold text-[9px] uppercase leading-none tracking-[0.16em]">
+          <DropdownMenuLabel className="px-1.5 pt-1 pb-0.5 text-[9px] leading-none font-semibold tracking-[0.16em] uppercase">
             Theme
           </DropdownMenuLabel>
           <DropdownMenuSeparator />

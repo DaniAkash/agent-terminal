@@ -45,15 +45,15 @@ export function ActiveTabBar({
         connected,
         agent,
       )}
-      className="flex-row items-center gap-2 border-border border-b bg-muted px-4 py-1.5 active:bg-accent-soft"
+      className="border-border bg-muted active:bg-accent-soft flex-row items-center gap-2 border-b px-4 py-1.5"
     >
       <View className="h-4 w-4 items-center justify-center">
         <SessionGlyph visual={visual} size={14} connected={connected} />
       </View>
-      <Text numberOfLines={1} className="font-medium text-foreground text-xs">
+      <Text numberOfLines={1} className="text-foreground text-xs font-medium">
         {label}
       </Text>
-      <Text numberOfLines={1} className="flex-1 text-muted-foreground text-xs">
+      <Text numberOfLines={1} className="text-muted-foreground flex-1 text-xs">
         {projectName}
       </Text>
       {visual.showDanger && <DangerBadge />}

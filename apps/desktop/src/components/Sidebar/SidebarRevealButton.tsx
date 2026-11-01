@@ -40,7 +40,7 @@ export function SidebarRevealButton() {
               // Opt this button out of the parent TabBar's tauri drag region
               // so clicks toggle instead of moving the window.
               data-tauri-drag-region={undefined}
-              className="-mb-px flex h-7 w-7 shrink-0 items-center justify-center rounded text-tab-fg hover:bg-sidebar-hover hover:text-tab-fg-active"
+              className="text-tab-fg hover:bg-sidebar-hover hover:text-tab-fg-active -mb-px flex h-7 w-7 shrink-0 items-center justify-center rounded"
             >
               <Icon size={14} />
             </button>

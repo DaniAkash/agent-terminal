@@ -16,10 +16,10 @@ import {
   $activeProjectId,
   $activeTabId,
   navigateToTab,
-  onTabRemoved,
 } from '@/modules/stores/$navigation'
-import { removeTab, renameTab, toggleTabPin } from '@/modules/stores/$projects'
+import { renameTab, toggleTabPin } from '@/modules/stores/$projects'
 import { $tabMeta } from '@/modules/stores/$tabMeta'
+import { requestCloseTab } from '@/modules/work/close-tab'
 import {
   MONO_FONT,
   makeTabKey,
@@ -61,8 +61,7 @@ export function SidebarTabItem({
   }
 
   function handleClose() {
-    onTabRemoved(projectId, tab.id)
-    removeTab(projectId, tab.id)
+    requestCloseTab(projectId, tab.id)
   }
 
   return (
@@ -92,7 +91,7 @@ export function SidebarTabItem({
             }}
           >
             {isActive && (
-              <span className="absolute top-1.5 bottom-1.5 left-3.5 w-0.5 rounded-sm bg-accent" />
+              <span className="bg-accent absolute top-1.5 bottom-1.5 left-3.5 w-0.5 rounded-sm" />
             )}
 
             {/*

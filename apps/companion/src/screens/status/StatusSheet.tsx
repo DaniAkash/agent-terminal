@@ -21,7 +21,7 @@ export function StatusSheet({ projectId, tabId }: StatusSheetProps) {
 
   if (!status) {
     return (
-      <View className="flex-1 items-center justify-center bg-background p-6">
+      <View className="bg-background flex-1 items-center justify-center p-6">
         <Text className="text-muted-foreground text-sm">
           This session is no longer on the desktop.
         </Text>
@@ -30,14 +30,14 @@ export function StatusSheet({ projectId, tabId }: StatusSheetProps) {
   }
 
   return (
-    <View collapsable={false} className="flex-1 gap-4 bg-background px-4 pt-4">
+    <View collapsable={false} className="bg-background flex-1 gap-4 px-4 pt-4">
       <View className="flex-row items-center gap-2">
         <View
           className={`h-2.5 w-2.5 rounded-full ${dotClass(status.visual)}`}
         />
         <Text
           numberOfLines={1}
-          className="flex-1 font-semibold text-base text-foreground"
+          className="text-foreground flex-1 text-base font-semibold"
         >
           {status.label}
         </Text>
@@ -56,9 +56,9 @@ export function StatusSheet({ projectId, tabId }: StatusSheetProps) {
 function FieldRow({ field }: { field: StatusField }) {
   return (
     <View className="flex-row items-start gap-3">
-      <Text className="w-24 text-muted-foreground text-xs">{field.label}</Text>
+      <Text className="text-muted-foreground w-24 text-xs">{field.label}</Text>
       <Text
-        className={`flex-1 text-foreground text-xs ${field.mono ? 'font-mono' : ''}`}
+        className={`text-foreground flex-1 text-xs ${field.mono ? 'font-mono' : ''}`}
       >
         {field.value}
       </Text>

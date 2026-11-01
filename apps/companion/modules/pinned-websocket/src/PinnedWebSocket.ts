@@ -1,4 +1,3 @@
-import PinnedWebSocketModule from './PinnedWebSocketModule'
 import type {
   PinnedWebSocketCloseEvent,
   PinnedWebSocketErrorEvent,
@@ -7,6 +6,7 @@ import type {
   PinnedWebSocketOptions,
   PinnedWebSocketReadyState,
 } from './PinnedWebSocket.types'
+import PinnedWebSocketModule from './PinnedWebSocketModule'
 
 type Disposer = () => void
 

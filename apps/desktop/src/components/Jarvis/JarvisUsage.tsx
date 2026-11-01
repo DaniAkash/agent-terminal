@@ -23,14 +23,14 @@ export function JarvisUsage({
         <Gauge
           size={28}
           aria-hidden="true"
-          className="mx-auto mb-3 text-muted-foreground/60"
+          className="text-muted-foreground/60 mx-auto mb-3"
         />
-        <p className="mb-1 font-medium text-[13px]">
+        <p className="mb-1 text-[13px] font-medium">
           {snapshot.preferences.enabled
             ? 'Choose your providers'
             : 'Jarvis is paused'}
         </p>
-        <p className="mb-4 text-[11px] text-muted-foreground">
+        <p className="text-muted-foreground mb-4 text-[11px]">
           Select your providers in settings to see their limits.
         </p>
         <Button

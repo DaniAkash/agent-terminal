@@ -162,7 +162,7 @@ export function SidebarProjectRow({ project }: { project: Project }) {
 
             <button
               type="button"
-              className="flex h-full flex-1 cursor-grab select-none items-center gap-1.5 pr-1.5 text-left text-[12.5px]"
+              className="flex h-full flex-1 cursor-grab items-center gap-1.5 pr-1.5 text-left text-[12.5px] select-none"
               onClick={() => {
                 if (renaming) return
                 navigateToProject(project.id)
@@ -182,7 +182,7 @@ export function SidebarProjectRow({ project }: { project: Project }) {
                   }}
                 />
                 {metaHeld && projectNumber >= 1 && projectNumber <= 9 && (
-                  <span className="absolute -top-1.5 -right-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-primary font-bold text-[8px] text-primary-foreground leading-none">
+                  <span className="bg-primary text-primary-foreground absolute -top-1.5 -right-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full text-[8px] leading-none font-bold">
                     {projectNumber}
                   </span>
                 )}
