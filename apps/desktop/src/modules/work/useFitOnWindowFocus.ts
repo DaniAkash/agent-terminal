@@ -26,7 +26,7 @@ export function useFitOnWindowFocus(): void {
       requestAnimationFrame(() => getActiveTerminalHandle()?.fit())
     })
     return () => {
-      void unlisten.then((off) => off())
+      unlisten.then((off) => off()).catch(() => {})
     }
   }, [])
 }
