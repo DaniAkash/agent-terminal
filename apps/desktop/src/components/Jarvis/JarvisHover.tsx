@@ -33,13 +33,13 @@ export function JarvisHover({
         provider.status === 'available',
     ) ?? []
   return (
-    <div className="jarvis-surface jarvis-hover-strip rounded-lg border border-border p-2 text-popover-foreground shadow-lg">
+    <div className="jarvis-surface jarvis-hover-strip border-border text-popover-foreground rounded-lg border p-2 shadow-lg">
       {providers.length ? (
         prioritizeProvider(providers, priorityProviderId).map((provider) => (
           <ProviderGauge key={provider.id} provider={provider} />
         ))
       ) : (
-        <p className="col-span-full px-3 py-2 text-muted-foreground text-xs">
+        <p className="text-muted-foreground col-span-full px-3 py-2 text-xs">
           {snapshot ? 'No providers · Click Jarvis to configure' : 'Loading…'}
         </p>
       )}
@@ -142,7 +142,7 @@ function ProviderGauge({ provider }: { provider: ProviderUsage }) {
             : STATUS_LABEL[provider.status]}
         </text>
       </svg>
-      <figcaption className="truncate font-medium text-[11px]">
+      <figcaption className="truncate text-[11px] font-medium">
         {provider.id === 'claude-code' ? 'Claude' : provider.name}
       </figcaption>
     </figure>

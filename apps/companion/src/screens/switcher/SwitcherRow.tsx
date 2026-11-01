@@ -89,7 +89,7 @@ function RowBody({
         <SessionGlyph visual={node.visual} size={14} />
       </View>
       <View className="flex-1">
-        <Text numberOfLines={1} className="font-medium text-foreground text-sm">
+        <Text numberOfLines={1} className="text-foreground text-sm font-medium">
           {node.label}
         </Text>
         {standalone && (

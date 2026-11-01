@@ -143,7 +143,7 @@ function buildProcItems(
     items.push(
       <span
         key="ports"
-        className="flex items-center gap-1 text-accent opacity-80"
+        className="text-accent flex items-center gap-1 opacity-80"
         style={{ fontFamily: MONO_FONT }}
       >
         <Plug
@@ -193,7 +193,7 @@ function buildProcItems(
 function GitItem({ git }: { git: GitInfo }) {
   return (
     <span
-      className="flex items-center gap-1 text-accent opacity-80"
+      className="text-accent flex items-center gap-1 opacity-80"
       style={{ fontFamily: MONO_FONT }}
     >
       <GitBranch

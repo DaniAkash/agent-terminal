@@ -19,7 +19,7 @@ export function ConnectScreen() {
   const serverMessage = connectErrorMessage(status, serverError)
 
   return (
-    <View className="flex-1 bg-background p-6">
+    <View className="bg-background flex-1 p-6">
       <View className="gap-6">
         <ConnectHeader />
         <UrlField control={control} errors={errors} />
@@ -35,7 +35,7 @@ export function ConnectScreen() {
 function ConnectHeader() {
   return (
     <View className="gap-2">
-      <Text className="font-semibold text-2xl text-foreground">
+      <Text className="text-foreground text-2xl font-semibold">
         Pair with desktop
       </Text>
       <Text className="text-muted-foreground text-sm">
@@ -58,7 +58,7 @@ function LabeledField({
 }) {
   return (
     <View className="gap-2">
-      <Text className="text-muted-foreground text-xs uppercase tracking-wide">
+      <Text className="text-muted-foreground text-xs tracking-wide uppercase">
         {label}
       </Text>
       {children}
@@ -80,7 +80,7 @@ function UrlField({ control, errors }: FieldProps) {
         name="url"
         render={({ field: { onChange, value, onBlur } }) => (
           <TextInput
-            className="rounded-md border border-input bg-card px-3 py-3 text-foreground"
+            className="border-input bg-card text-foreground rounded-md border px-3 py-3"
             placeholder="ws://192.168.1.42:47823/stream"
             autoCapitalize="none"
             autoCorrect={false}
@@ -103,7 +103,7 @@ function TokenField({ control, errors }: FieldProps) {
         name="token"
         render={({ field: { onChange, value, onBlur } }) => (
           <TextInput
-            className="rounded-md border border-input bg-card px-3 py-3 font-mono text-foreground"
+            className="border-input bg-card text-foreground rounded-md border px-3 py-3 font-mono"
             placeholder="paste the UUID from companion-dev.json"
             autoCapitalize="none"
             autoCorrect={false}
@@ -125,7 +125,7 @@ function FingerprintField({ control, errors }: FieldProps) {
         name="fingerprint"
         render={({ field: { onChange, value, onBlur } }) => (
           <TextInput
-            className="rounded-md border border-input bg-card px-3 py-3 font-mono text-foreground"
+            className="border-input bg-card text-foreground rounded-md border px-3 py-3 font-mono"
             placeholder="paste the fingerprint from companion-dev.json"
             autoCapitalize="none"
             autoCorrect={false}
@@ -168,9 +168,9 @@ function SubmitButton({
     <Pressable
       onPress={onPress}
       disabled={disabled}
-      className="items-center rounded-md bg-accent px-4 py-3"
+      className="bg-accent items-center rounded-md px-4 py-3"
     >
-      <Text className="font-semibold text-accent-foreground text-base">
+      <Text className="text-accent-foreground text-base font-semibold">
         {disabled ? 'Connecting…' : 'Connect'}
       </Text>
     </Pressable>

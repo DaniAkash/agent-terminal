@@ -72,7 +72,7 @@ function InterruptDialog({ intent }: { intent: InterruptIntent }) {
         <AlertDialogHeader className="flex shrink-0 flex-row items-start gap-3 space-y-0 text-left">
           <span
             aria-hidden
-            className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-amber-500"
+            className="bg-muted mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md text-amber-500"
           >
             <TriangleAlert size={17} />
           </span>
@@ -88,7 +88,7 @@ function InterruptDialog({ intent }: { intent: InterruptIntent }) {
             thing that scrolls and the buttons stay reachable. */}
         {work.length > 0 && (
           <div className="-mx-1 mt-3.5 min-h-0 flex-1 overflow-y-auto px-1">
-            <ul className="divide-y divide-border overflow-hidden rounded-md border border-border">
+            <ul className="divide-border border-border divide-y overflow-hidden rounded-md border">
               {work.map((item) => (
                 <WorkRow key={`${item.projectId}:${item.tabId}`} work={item} />
               ))}
@@ -109,7 +109,7 @@ function InterruptDialog({ intent }: { intent: InterruptIntent }) {
 
 function WorkRow({ work }: { work: ActiveWork }) {
   return (
-    <li className="flex items-center gap-2.5 bg-card/40 px-2.5 py-2">
+    <li className="bg-card/40 flex items-center gap-2.5 px-2.5 py-2">
       <span
         aria-hidden
         className={`size-1.5 shrink-0 rounded-full ${
@@ -121,12 +121,12 @@ function WorkRow({ work }: { work: ActiveWork }) {
           {work.tabLabel}{' '}
           <span className="text-muted-foreground">{work.projectName}</span>
         </span>
-        <span className="block truncate font-mono text-[11px] text-muted-foreground">
+        <span className="text-muted-foreground block truncate font-mono text-[11px]">
           {work.detail}
         </span>
       </span>
       {work.elapsed && (
-        <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
+        <span className="text-muted-foreground shrink-0 font-mono text-[11px]">
           {work.elapsed}
         </span>
       )}

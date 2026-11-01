@@ -69,7 +69,7 @@ export function SwitcherSheet({ currentKey }: SwitcherSheetProps) {
   // lays out below the visible area at zero height, so every row mounts and
   // nothing paints.
   return (
-    <View collapsable={false} className="flex-1 bg-background">
+    <View collapsable={false} className="bg-background flex-1">
       <FlatList
         data={items}
         keyExtractor={switcherItemKey}
@@ -86,16 +86,16 @@ export function SwitcherSheet({ currentKey }: SwitcherSheetProps) {
         ListHeaderComponent={
           <View className="gap-2 px-2 pt-3 pb-1">
             <View className="flex-row items-center justify-between">
-              <Text className="font-semibold text-base text-foreground">
+              <Text className="text-foreground text-base font-semibold">
                 Sessions
               </Text>
               <Pressable
                 onPress={openDesktops}
                 accessibilityRole="button"
                 accessibilityLabel={`Connected to ${deviceName ?? 'a desktop'}. Switch desktop.`}
-                className="flex-row items-center gap-1.5 rounded-full bg-muted px-3 py-1.5 active:bg-accent-soft"
+                className="bg-muted active:bg-accent-soft flex-row items-center gap-1.5 rounded-full px-3 py-1.5"
               >
-                <View className="h-1.5 w-1.5 rounded-full bg-success" />
+                <View className="bg-success h-1.5 w-1.5 rounded-full" />
                 <Text numberOfLines={1} className="text-foreground text-xs">
                   {deviceName ?? 'desktop'}
                 </Text>
@@ -120,7 +120,7 @@ export function SwitcherSheet({ currentKey }: SwitcherSheetProps) {
           <Pressable
             onPress={() => setShowNewProject(true)}
             accessibilityRole="button"
-            className="mx-1 mt-3 items-center rounded-lg border border-border px-3 py-2.5 active:bg-accent-soft"
+            className="border-border active:bg-accent-soft mx-1 mt-3 items-center rounded-lg border px-3 py-2.5"
           >
             <Text className="text-foreground text-sm">New workspace</Text>
           </Pressable>
@@ -162,7 +162,7 @@ function SwitcherItemRow({
 }) {
   if (item.type === 'empty') {
     return (
-      <Text className="px-3 py-6 text-center text-muted-foreground text-sm">
+      <Text className="text-muted-foreground px-3 py-6 text-center text-sm">
         No sessions on this desktop yet.
       </Text>
     )

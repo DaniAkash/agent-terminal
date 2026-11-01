@@ -26,7 +26,7 @@ export function ExtraKeysBar({
   onMore,
 }: ExtraKeysBarProps) {
   return (
-    <View className="border-border border-t bg-muted">
+    <View className="border-border bg-muted border-t">
       <View className="flex-row">
         <KeyButton label="ESC" onPress={() => onKey(SEQ.esc)} />
         <KeyButton label="/" onPress={() => onKey(SEQ.slash)} />

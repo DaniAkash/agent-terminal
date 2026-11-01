@@ -47,9 +47,9 @@ export function DesktopsSheet() {
   }, [settled, router])
 
   return (
-    <View collapsable={false} className="flex-1 bg-background">
+    <View collapsable={false} className="bg-background flex-1">
       <View className="px-4 pt-3 pb-1">
-        <Text className="font-semibold text-base text-foreground">
+        <Text className="text-foreground text-base font-semibold">
           Desktops
         </Text>
         <Text className="text-muted-foreground text-xs">
@@ -58,7 +58,7 @@ export function DesktopsSheet() {
       </View>
 
       {rows.length === 0 ? (
-        <Text className="px-4 py-6 text-muted-foreground text-sm">
+        <Text className="text-muted-foreground px-4 py-6 text-sm">
           No desktops paired yet.
         </Text>
       ) : (
@@ -78,7 +78,7 @@ export function DesktopsSheet() {
       <Pressable
         onPress={() => router.replace('/pair')}
         accessibilityRole="button"
-        className="mx-4 mt-2 items-center rounded-md border border-border px-3 py-2.5 active:bg-accent-soft"
+        className="border-border active:bg-accent-soft mx-4 mt-2 items-center rounded-md border px-3 py-2.5"
       >
         <Text className="text-foreground text-sm">Pair another desktop</Text>
       </Pressable>
@@ -106,7 +106,7 @@ function DesktopRowItem({ row, busy, status, onPress }: DesktopRowItemProps) {
       disabled={busy}
       accessibilityRole="button"
       accessibilityLabel={`${row.name}${row.isActive ? ', connected' : ''}. ${row.endpoint}`}
-      className={`flex-row items-center gap-3 rounded-lg px-3 py-3 active:bg-accent-soft ${
+      className={`active:bg-accent-soft flex-row items-center gap-3 rounded-lg px-3 py-3 ${
         row.isActive ? 'bg-accent-soft' : ''
       }`}
     >
@@ -120,7 +120,7 @@ function DesktopRowItem({ row, busy, status, onPress }: DesktopRowItemProps) {
         }`}
       />
       <View className="flex-1">
-        <Text numberOfLines={1} className="font-medium text-foreground text-sm">
+        <Text numberOfLines={1} className="text-foreground text-sm font-medium">
           {row.name}
         </Text>
         <Text numberOfLines={1} className="text-muted-foreground text-xs">

@@ -115,7 +115,7 @@ export function TabScreen({ projectId, tabId }: TabScreenProps) {
   // repo's standing rule about keeping it out of _layout.tsx.
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <View className="flex-1 bg-background">
+      <View className="bg-background flex-1">
         {/* The navigation header used to hold this screen clear of the
             status bar. With the header gone the top inset moves here,
             painted in the bar's own colour so the strip above it reads as

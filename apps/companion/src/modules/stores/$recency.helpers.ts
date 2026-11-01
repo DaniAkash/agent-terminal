@@ -71,7 +71,7 @@ export interface SwipeRun {
 
 export function beginSwipe(order: string[], currentKey: string): SwipeRun {
   const index = order.indexOf(currentKey)
-  return { frozen: [...order], index: index < 0 ? 0 : index }
+  return { frozen: [...order], index: Math.max(index, 0) }
 }
 
 /**

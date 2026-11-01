@@ -91,7 +91,7 @@ export function SidebarTabItem({
             }}
           >
             {isActive && (
-              <span className="absolute top-1.5 bottom-1.5 left-3.5 w-0.5 rounded-sm bg-accent" />
+              <span className="bg-accent absolute top-1.5 bottom-1.5 left-3.5 w-0.5 rounded-sm" />
             )}
 
             {/*

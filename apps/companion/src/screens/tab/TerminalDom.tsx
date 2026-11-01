@@ -4,11 +4,11 @@ import { linkifyRows, openableHref } from '@agent-terminal/core-ui'
 import { WTerm } from '@wterm/dom'
 import '@wterm/dom/css'
 import { GhosttyCore } from '@wterm/ghostty'
+// @ts-expect-error Metro resolves this through `assetExts`, which has no types.
+import wasmAsset from '@wterm/ghostty/ghostty-vt.wasm'
 import type { DOMImperativeFactory, DOMProps } from 'expo/dom'
 import { useDOMImperativeHandle } from 'expo/dom'
 import { type Ref, useEffect, useRef } from 'react'
-// @ts-expect-error Metro resolves this through `assetExts`, which has no types.
-import wasmAsset from '@wterm/ghostty/ghostty-vt.wasm'
 import { assetUrl } from './ghostty-wasm.helpers'
 import {
   type TerminalCallbacks,

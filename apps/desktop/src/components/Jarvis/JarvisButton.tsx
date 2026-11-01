@@ -53,7 +53,7 @@ export function JarvisButton() {
           }}
           className={cn(
             buttonVariants({ variant: 'ghost', size: 'sm' }),
-            'gap-1.5 px-2 font-medium text-[11px] text-muted-foreground',
+            'text-muted-foreground gap-1.5 px-2 text-[11px] font-medium',
           )}
           style={{ fontFamily: 'var(--font-ui)' }}
           aria-label={`Open Jarvis usage and settings · ${label}`}

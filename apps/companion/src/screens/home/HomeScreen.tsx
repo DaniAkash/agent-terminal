@@ -36,19 +36,19 @@ export function HomeScreen() {
 
 function UnpairedHome() {
   return (
-    <View className="flex-1 items-center justify-center gap-6 bg-background p-6">
+    <View className="bg-background flex-1 items-center justify-center gap-6 p-6">
       <View className="items-center gap-2">
-        <Text className="font-semibold text-2xl text-foreground">
+        <Text className="text-foreground text-2xl font-semibold">
           Agent Terminal
         </Text>
-        <Text className="text-center text-muted-foreground text-sm">
+        <Text className="text-muted-foreground text-center text-sm">
           Pair with a desktop to view and drive its tabs from here.
         </Text>
       </View>
       <View className="w-full gap-3">
         <Link href="/pair" asChild>
-          <Pressable className="items-center rounded-md bg-accent px-6 py-3">
-            <Text className="font-semibold text-accent-foreground text-base">
+          <Pressable className="bg-accent items-center rounded-md px-6 py-3">
+            <Text className="text-accent-foreground text-base font-semibold">
               Scan QR to pair
             </Text>
           </Pressable>
@@ -60,8 +60,8 @@ function UnpairedHome() {
             eliminates from the shipped bundle. */}
         {__DEV__ && (
           <Link href="/connect" asChild>
-            <Pressable className="items-center rounded-md border border-border px-6 py-3">
-              <Text className="text-base text-foreground">
+            <Pressable className="border-border items-center rounded-md border px-6 py-3">
+              <Text className="text-foreground text-base">
                 Use manual token (dev only)
               </Text>
             </Pressable>
@@ -81,17 +81,17 @@ function ConnectingHome({
 }) {
   const stuck = useStuckTimer(STUCK_CONNECTING_MS)
   return (
-    <View className="flex-1 items-center justify-center gap-4 bg-background p-6">
+    <View className="bg-background flex-1 items-center justify-center gap-4 p-6">
       <ActivityIndicator size="large" />
-      <Text className="text-center font-semibold text-foreground text-lg">
+      <Text className="text-foreground text-center text-lg font-semibold">
         Connecting to {hint ?? 'desktop'}…
       </Text>
-      <Text className="text-center text-muted-foreground text-sm">
+      <Text className="text-muted-foreground text-center text-sm">
         Looking for the desktop on your local network.
       </Text>
       {stuck && (
         <Pressable onPress={onUnpair} hitSlop={12} className="mt-2">
-          <Text className="text-center text-muted-foreground text-sm underline">
+          <Text className="text-muted-foreground text-center text-sm underline">
             Stuck? Unpair
           </Text>
         </Pressable>
@@ -129,24 +129,24 @@ function UnreachableHome({
   onUnpair: () => void
 }) {
   return (
-    <View className="flex-1 items-center justify-center gap-4 bg-background p-6">
-      <Text className="text-center font-semibold text-destructive text-lg">
+    <View className="bg-background flex-1 items-center justify-center gap-4 p-6">
+      <Text className="text-destructive text-center text-lg font-semibold">
         Can't reach {hint ?? 'desktop'}
       </Text>
-      <Text className="text-center text-muted-foreground text-sm">
+      <Text className="text-muted-foreground text-center text-sm">
         {lastError ??
           'Check that the desktop app is running and both devices are on the same Wi-Fi.'}
       </Text>
       <Pressable
         onPress={onRetry}
-        className="items-center rounded-md bg-accent px-6 py-3"
+        className="bg-accent items-center rounded-md px-6 py-3"
       >
-        <Text className="font-semibold text-accent-foreground text-base">
+        <Text className="text-accent-foreground text-base font-semibold">
           Retry
         </Text>
       </Pressable>
       <Pressable onPress={onUnpair} hitSlop={12} className="mt-2">
-        <Text className="text-center text-muted-foreground text-sm underline">
+        <Text className="text-muted-foreground text-center text-sm underline">
           Unpair from desktop
         </Text>
       </Pressable>
@@ -163,9 +163,9 @@ function PairedHome({
   disconnect,
 }: PairedHomeProps) {
   return (
-    <View className="flex-1 gap-6 bg-background p-6">
+    <View className="bg-background flex-1 gap-6 p-6">
       <View className="gap-1">
-        <Text className="text-muted-foreground text-xs uppercase tracking-wide">
+        <Text className="text-muted-foreground text-xs tracking-wide uppercase">
           Connected to
         </Text>
         {/* The desktop's name, not this phone's. `session.deviceName` is
@@ -173,7 +173,7 @@ function PairedHome({
             token, which makes it the wrong end of the connection to show
             here. The connecting and unreachable states above already use
             `hint`; this is the one that did not. */}
-        <Text className="font-semibold text-2xl text-foreground">
+        <Text className="text-foreground text-2xl font-semibold">
           {hint ?? 'your desktop'}
         </Text>
       </View>
@@ -182,17 +182,17 @@ function PairedHome({
         <StatTile label="Tabs" value={tabCount} />
       </View>
       <Link href="/switcher" asChild>
-        <Pressable className="items-center rounded-md bg-accent px-4 py-3">
-          <Text className="font-semibold text-accent-foreground text-base">
+        <Pressable className="bg-accent items-center rounded-md px-4 py-3">
+          <Text className="text-accent-foreground text-base font-semibold">
             Browse projects
           </Text>
         </Pressable>
       </Link>
       <Pressable
         onPress={disconnect}
-        className="items-center rounded-md border border-border bg-muted px-4 py-3"
+        className="border-border bg-muted items-center rounded-md border px-4 py-3"
       >
-        <Text className="text-base text-foreground">Disconnect</Text>
+        <Text className="text-foreground text-base">Disconnect</Text>
       </Pressable>
     </View>
   )
@@ -200,9 +200,9 @@ function PairedHome({
 
 function StatTile({ label, value }: { label: string; value: number }) {
   return (
-    <View className="flex-1 rounded-md border border-border bg-card p-4">
+    <View className="border-border bg-card flex-1 rounded-md border p-4">
       <Text className="text-muted-foreground text-xs uppercase">{label}</Text>
-      <Text className="font-semibold text-3xl text-foreground">{value}</Text>
+      <Text className="text-foreground text-3xl font-semibold">{value}</Text>
     </View>
   )
 }

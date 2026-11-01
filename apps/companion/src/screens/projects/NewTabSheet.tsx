@@ -66,7 +66,7 @@ export function NewTabSheet({ projectId, onDismiss }: Props) {
     >
       <View className="gap-3">
         <View>
-          <Text className="mb-1 text-muted-foreground text-xs">
+          <Text className="text-muted-foreground mb-1 text-xs">
             Label (optional)
           </Text>
           <Controller
@@ -79,12 +79,12 @@ export function NewTabSheet({ projectId, onDismiss }: Props) {
                 onChangeText={onChange}
                 onBlur={onBlur}
                 placeholder="shell"
-                className="rounded-md border border-border bg-card px-3 py-2 text-foreground"
+                className="border-border bg-card text-foreground rounded-md border px-3 py-2"
               />
             )}
           />
           {errors.label?.message && (
-            <Text className="mt-1 text-destructive text-xs">
+            <Text className="text-destructive mt-1 text-xs">
               {errors.label.message}
             </Text>
           )}
@@ -100,7 +100,7 @@ export function NewTabSheet({ projectId, onDismiss }: Props) {
         {advanced && (
           <>
             <View>
-              <Text className="mb-1 text-muted-foreground text-xs">
+              <Text className="text-muted-foreground mb-1 text-xs">
                 Starting cwd
               </Text>
               <Controller
@@ -114,13 +114,13 @@ export function NewTabSheet({ projectId, onDismiss }: Props) {
                     placeholder="/Users/you/repo"
                     autoCapitalize="none"
                     autoCorrect={false}
-                    className="rounded-md border border-border bg-card px-3 py-2 text-foreground"
+                    className="border-border bg-card text-foreground rounded-md border px-3 py-2"
                   />
                 )}
               />
             </View>
             <View>
-              <Text className="mb-1 text-muted-foreground text-xs">
+              <Text className="text-muted-foreground mb-1 text-xs">
                 Command (defaults to $SHELL)
               </Text>
               <Controller
@@ -134,7 +134,7 @@ export function NewTabSheet({ projectId, onDismiss }: Props) {
                     placeholder="/bin/zsh"
                     autoCapitalize="none"
                     autoCorrect={false}
-                    className="rounded-md border border-border bg-card px-3 py-2 text-foreground"
+                    className="border-border bg-card text-foreground rounded-md border px-3 py-2"
                   />
                 )}
               />

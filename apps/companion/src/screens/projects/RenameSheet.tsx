@@ -100,12 +100,12 @@ export function RenameSheet({ target, onDismiss }: Props) {
             value={value}
             onChangeText={onChange}
             onBlur={onBlur}
-            className="rounded-md border border-border bg-card px-3 py-2 text-foreground"
+            className="border-border bg-card text-foreground rounded-md border px-3 py-2"
           />
         )}
       />
       {errors.name?.message && (
-        <Text className="mt-1 text-destructive text-xs">
+        <Text className="text-destructive mt-1 text-xs">
           {errors.name.message}
         </Text>
       )}

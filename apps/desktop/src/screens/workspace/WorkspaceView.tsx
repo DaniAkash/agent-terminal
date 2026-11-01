@@ -34,7 +34,7 @@ export function WorkspaceView({ project }: Props) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <TabBar project={project} />
-      <div className="relative min-h-0 flex-1 bg-terminal">
+      <div className="bg-terminal relative min-h-0 flex-1">
         {project.tabs.map((tab) => {
           if (!mounted.has(tab.id)) return null
           const isActive =
