@@ -4,8 +4,9 @@ import { onMount } from 'svelte'
 let canvas: HTMLCanvasElement
 
 onMount(() => {
-  const context = canvas.getContext('2d')
-  if (!context) return
+  const maybeContext = canvas.getContext('2d')
+  if (!maybeContext) return
+  const context: CanvasRenderingContext2D = maybeContext
   const width = 200
   const height = 120
   canvas.width = width

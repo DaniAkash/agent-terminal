@@ -16,8 +16,9 @@ function noise(x: number, y: number, t: number) {
   )
 }
 onMount(() => {
-  const ctx = canvas.getContext('2d')
-  if (!ctx) return
+  const maybeCtx = canvas.getContext('2d')
+  if (!maybeCtx) return
+  const ctx: CanvasRenderingContext2D = maybeCtx
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)')
   const pointer = { x: -10000, y: -10000, tx: -10000, ty: -10000 }
   let cols = 0,
