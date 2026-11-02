@@ -13,12 +13,17 @@
 # testing
 /coverage
 
-# next.js
-/.next/
-/out/
+# SvelteKit and Vite
+/.svelte-kit/
+/.vite/
+/dist/
 
 # production
 /build
+
+# Playwright
+/playwright-report/
+/test-results/
 
 # misc
 .DS_Store
