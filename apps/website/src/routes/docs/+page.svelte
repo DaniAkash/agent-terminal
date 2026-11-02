@@ -77,6 +77,7 @@ const sections = [
           <div>
             <span>HOMEBREW</span
             ><button
+              type="button"
               onclick={copy}
               aria-label={copied
                 ? 'Copied command'
@@ -196,7 +197,8 @@ const sections = [
         <h2>Jarvis</h2>
         <p>
           Jarvis shows provider usage and reset windows. Open
-          <strong>Jarvis</strong> from the status bar, choose
+          <strong>Jarvis</strong>
+          from the status bar, choose
           <strong>Settings</strong>, enable it, and select the providers you
           want to track. Sources remain off until selected.
         </p>
@@ -225,9 +227,10 @@ const sections = [
         <p>
           Jarvis refreshes every five minutes by default; manual, one-minute,
           and fifteen-minute modes are also available. Use
-          <strong>Refresh</strong> after changing credentials. If a provider
-          session has expired, renew it in that provider’s CLI. Claude Code may
-          require explicitly authorizing Keychain access from its usage card.
+          <strong>Refresh</strong>
+          after changing credentials. If a provider session has expired, renew
+          it in that provider’s CLI. Claude Code may require explicitly
+          authorizing Keychain access from its usage card.
         </p>
         <p>
           Jarvis detects installed executables at startup and periodically

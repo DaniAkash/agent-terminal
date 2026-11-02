@@ -9,7 +9,7 @@ import kimi from '@lobehub/icons-static-svg/icons/kimi-color.svg'
 import mastra from '@lobehub/icons-static-svg/icons/mastra.svg'
 import opencode from '@lobehub/icons-static-svg/icons/opencode.svg'
 import qoder from '@lobehub/icons-static-svg/icons/qoder-color.svg'
-import { ArrowUpRight, PlugsConnected, TerminalWindow } from 'phosphor-svelte'
+import { ArrowUpRight, TerminalWindow } from 'phosphor-svelte'
 
 const agents = [
   {
@@ -212,6 +212,7 @@ const planned = [
       <p>These integrations are planned and aren’t supported yet.</p>
     </div>
     <div
+      role="img"
       class="planned-marquee"
       aria-label="Planned integrations: Cursor, GitHub Copilot CLI, Factory Droid, and Qoder"
     >

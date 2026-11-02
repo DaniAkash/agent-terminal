@@ -59,6 +59,7 @@ onMount(() => {
     <div class="terminal-dots" aria-hidden="true"><i></i><i></i><i></i></div>
     <span>terminal — zsh</span
     ><button
+      type="button"
       onclick={copy}
       aria-label={copied ? 'Copied install command' : 'Copy install command'}
       title={copied ? 'Copied!' : 'Copy command'}
@@ -70,7 +71,7 @@ onMount(() => {
       {/if}
     </button>
   </div>
-  <div
+  <section
     class="terminal-body"
     aria-label="Homebrew installation command and example output"
   >
@@ -87,12 +88,13 @@ onMount(() => {
     <div class:visible={step >= 3} class="terminal-line terminal-success">
       ✓ Agent Terminal is ready to open.
     </div>
-  </div>
+  </section>
   <div class="terminal-footer">Install with Homebrew <span>macOS</span></div>
 </div>
 <div class="mobile-install-command">
   <span>$</span><code>{command}</code
   ><button
+    type="button"
     onclick={copy}
     aria-label={copied ? 'Copied install command' : 'Copy install command'}
   >

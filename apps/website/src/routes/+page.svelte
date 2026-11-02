@@ -8,19 +8,15 @@ import mastraLogo from '@lobehub/icons-static-svg/icons/mastra.svg'
 import opencodeLogo from '@lobehub/icons-static-svg/icons/opencode.svg'
 import {
   ArrowDown,
-  ArrowRight,
   ArrowUpRight,
   Check,
   Command,
   Copy,
-  GitBranch,
   Lightning,
   Monitor,
   SquaresFour,
-  Star,
-  TerminalWindow,
 } from 'phosphor-svelte'
-import { siApple, siGithub, siGoogleplay, siHomebrew, siX } from 'simple-icons'
+import { siApple, siGithub, siGoogleplay } from 'simple-icons'
 import AsciiField from '#lib/AsciiField.svelte'
 import InstallTerminal from '#lib/InstallTerminal.svelte'
 import RibbonField from '#lib/RibbonField.svelte'
@@ -50,6 +46,7 @@ async function copyInstall() {
     <div class="hero-install">
       <span>$</span><code>{install}</code
       ><button
+        type="button"
         onclick={copyInstall}
         aria-label={copied
           ? 'Copied full Homebrew command'
@@ -122,6 +119,7 @@ async function copyInstall() {
         </p>
       </div>
       <div
+        role="img"
         class="marquee"
         aria-label="Claude Code, Codex and OpenCode supported; Amp, Kilo Code, Kimi and Mastra experimental"
       >
@@ -276,6 +274,7 @@ async function copyInstall() {
         </div>
       </div>
       <div
+        role="img"
         class="phone-stage"
         aria-label="Illustration of the Agent Terminal mobile companion"
       >

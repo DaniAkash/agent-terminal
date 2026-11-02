@@ -36,15 +36,15 @@ onMount(() => {
     canvas.height = Math.round(height * dpr)
     cols = Math.ceil(width / cellSize)
     rows = Math.ceil(height / cellSize)
-    ctx!.setTransform(dpr, 0, 0, dpr, 0, 0)
-    ctx!.font = `${cellSize * 0.85}px "DM Mono", monospace`
-    ctx!.textAlign = 'center'
-    ctx!.textBaseline = 'middle'
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    ctx.font = `${cellSize * 0.85}px "DM Mono", monospace`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
     if (reduced.matches) draw()
   }
   function draw() {
-    ctx!.clearRect(0, 0, width, height)
-    ctx!.fillStyle = '#b5bab0'
+    ctx.clearRect(0, 0, width, height)
+    ctx.fillStyle = '#b5bab0'
     pointer.x += (pointer.tx - pointer.x) * 0.12
     pointer.y += (pointer.ty - pointer.y) * 0.12
     const r2 = cursorRadius * cursorRadius
@@ -57,11 +57,11 @@ onMount(() => {
         if (d2 < r2 * 4) lum = Math.min(1, lum + Math.exp(-d2 / r2) * 0.7)
         const char = ramp[Math.floor(lum * (ramp.length - 1))]
         if (char !== ' ') {
-          ctx!.globalAlpha = 0.25 + lum * 0.75
-          ctx!.fillText(char, px, py)
+          ctx.globalAlpha = 0.25 + lum * 0.75
+          ctx.fillText(char, px, py)
         }
       }
-    ctx!.globalAlpha = 1
+    ctx.globalAlpha = 1
   }
   function loop(now: number) {
     if (now - last >= 33) {

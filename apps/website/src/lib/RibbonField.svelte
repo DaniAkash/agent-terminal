@@ -51,7 +51,7 @@ onMount(() => {
         frame.data[i + 3] = 255
       }
     }
-    context!.putImageData(frame, 0, 0)
+    context.putImageData(frame, 0, 0)
     if (!reduced.matches) animation = requestAnimationFrame(draw)
   }
   function updateMotion() {

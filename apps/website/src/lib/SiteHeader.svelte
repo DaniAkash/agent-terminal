@@ -3,7 +3,6 @@ import {
   ArrowUpRight,
   BookOpen,
   CaretDown,
-  Check,
   ClockCounterClockwise,
   Robot,
   SquaresFour,
@@ -37,7 +36,7 @@ function outside(event: MouseEvent) {
   if (mobileMenu?.open && !mobileMenu.contains(event.target as Node))
     mobileMenu.open = false
 }
-function escape(event: KeyboardEvent) {
+function handleEscape(event: KeyboardEvent) {
   if (event.key === 'Escape' && mobileMenu?.open) {
     mobileMenu.open = false
     mobileMenu.querySelector('summary')?.focus()
@@ -55,15 +54,15 @@ onMount(() => {
     })
     .catch(() => {})
   document.addEventListener('pointerdown', outside)
-  document.addEventListener('keydown', escape)
+  document.addEventListener('keydown', handleEscape)
   return () => {
     controller.abort()
     document.removeEventListener('pointerdown', outside)
-    document.removeEventListener('keydown', escape)
+    document.removeEventListener('keydown', handleEscape)
   }
 })
 </script>
-<header class="notch-header" aria-label="Site header">
+<header class="notch-header">
   <div class="notch-desktop">
     <div class="notch-brand">
       <a class="brand" href="/" aria-label="Agent Terminal home"

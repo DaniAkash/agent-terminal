@@ -1,5 +1,5 @@
 <script lang="ts">
-import { ArrowLeft, ArrowUpRight, GitCommit, GithubLogo } from 'phosphor-svelte'
+import { ArrowUpRight, GitCommit } from 'phosphor-svelte'
 import { onMount, untrack } from 'svelte'
 import type { PageData } from './$types'
 
@@ -91,7 +91,7 @@ async function loadReleases(nextPage = 1) {
     hasMore =
       response.headers.get('Link')?.includes('rel="next"') ?? data.length === 5
     page = nextPage
-  } catch (err) {
+  } catch (_err) {
     if (!controller.signal.aborted)
       error =
         'Could not load releases from GitHub. Please try again in a moment.'
@@ -129,7 +129,7 @@ onMount(() => {
   {:else if error && releases.length === 0}
     <div class="release-state" role="alert">
       <p>{error}</p>
-      <button onclick={() => loadReleases()}>Try again</button
+      <button type="button" onclick={() => loadReleases()}>Try again</button
       ><a href="https://github.com/DaniAkash/agent-terminal/releases"
         >View releases on GitHub <ArrowUpRight size={14} /></a
       >
@@ -215,11 +215,14 @@ onMount(() => {
     {#if error}
       <div class="release-state" role="alert">
         {error}
-        <button onclick={() => loadReleases(page + 1)}>Try again</button>
+        <button type="button" onclick={() => loadReleases(page + 1)}>
+          Try again
+        </button>
       </div>
     {/if}
     {#if hasMore}
       <button
+        type="button"
         class="load-releases"
         disabled={loading}
         onclick={() => loadReleases(page + 1)}
