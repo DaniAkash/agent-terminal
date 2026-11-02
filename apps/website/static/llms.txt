@@ -18,7 +18,7 @@ Agent Terminal is stable on macOS 13 or later with Zsh. Apple Silicon and Intel 
 Install the macOS application with Homebrew:
 
 ```sh
-brew tap daniakash/tap && brew install --cask agent-terminal
+brew install --cask daniakash/tap/agent-terminal
 ```
 
 Alternatively, download the Apple Silicon or Intel DMG from [GitHub Releases](https://github.com/DaniAkash/agent-terminal/releases).

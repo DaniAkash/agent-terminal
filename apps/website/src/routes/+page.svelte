@@ -32,7 +32,7 @@ const agents = [
 ]
 
 let copied = $state(false)
-const install = 'brew tap daniakash/tap && brew install --cask agent-terminal'
+const install = 'brew install --cask daniakash/tap/agent-terminal'
 async function copyInstall() {
   await navigator.clipboard.writeText(install)
   copied = true

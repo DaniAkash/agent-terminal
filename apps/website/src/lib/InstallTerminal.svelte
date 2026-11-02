@@ -6,7 +6,7 @@ let terminal: HTMLDivElement
 let typed = $state('')
 let step = $state(0)
 let copied = $state(false)
-const command = 'brew tap daniakash/tap && brew install --cask agent-terminal'
+const command = 'brew install --cask daniakash/tap/agent-terminal'
 let timers: ReturnType<typeof setTimeout>[] = []
 async function copy() {
   await navigator.clipboard.writeText(command)
@@ -20,7 +20,7 @@ onMount(() => {
     started = true
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       typed = command
-      step = 3
+      step = 4
       return
     }
     let index = 0
@@ -31,8 +31,9 @@ onMount(() => {
       } else {
         timers.push(
           setTimeout(() => (step = 1), 250),
-          setTimeout(() => (step = 2), 700),
-          setTimeout(() => (step = 3), 1150),
+          setTimeout(() => (step = 2), 600),
+          setTimeout(() => (step = 3), 950),
+          setTimeout(() => (step = 4), 1300),
         )
       }
     }
@@ -83,9 +84,12 @@ onMount(() => {
       ==&gt; Tapping daniakash/tap
     </div>
     <div class:visible={step >= 2} class="terminal-line">
-      ==&gt; Installing agent-terminal
+      ==&gt; Trusted cask daniakash/tap/agent-terminal
     </div>
-    <div class:visible={step >= 3} class="terminal-line terminal-success">
+    <div class:visible={step >= 3} class="terminal-line">
+      ==&gt; Installing Cask agent-terminal
+    </div>
+    <div class:visible={step >= 4} class="terminal-line terminal-success">
       ✓ Agent Terminal is ready to open.
     </div>
   </section>

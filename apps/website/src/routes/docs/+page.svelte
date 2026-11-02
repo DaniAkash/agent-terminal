@@ -2,7 +2,7 @@
 import { ArrowUpRight, BookOpen, Check, Copy } from 'phosphor-svelte'
 
 let copied = $state(false)
-const command = 'brew tap daniakash/tap && brew install --cask agent-terminal'
+const command = 'brew install --cask daniakash/tap/agent-terminal'
 async function copy() {
   await navigator.clipboard.writeText(command)
   copied = true
