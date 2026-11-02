@@ -18,7 +18,7 @@
 
 <p align="center">
   <em>or install via Homebrew:</em><br/>
-  <code>brew tap daniakash/tap && brew install --cask agent-terminal</code>
+  <code>brew install --cask daniakash/tap/agent-terminal</code>
 </p>
 
 <p align="center">
