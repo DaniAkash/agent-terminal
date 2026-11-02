@@ -1,0 +1,33 @@
+# Agent Terminal
+
+> Agent Terminal is a free, open-source terminal workspace built around AI coding agents. It organizes terminal tabs by project and shows agent activity and live process, Git, port, and working-directory context.
+
+Agent Terminal is stable on macOS 13 or later with Zsh. Apple Silicon and Intel downloads are available. Bash is lightly tested; Linux and Windows are untested and need contributors. The project is MIT-licensed.
+
+## Documentation
+
+- [Documentation](https://agent-terminal.org/docs): Installation, projects, agent integrations, status bar, Jarvis provider usage, mobile companion, shortcuts, platforms, and contributing.
+- [Agent integrations](https://agent-terminal.org/agents): Support status, launch commands, and setup links for coding agents.
+- [Changelog](https://agent-terminal.org/changelog): Published release notes from GitHub.
+- [GitHub repository](https://github.com/DaniAkash/agent-terminal): Source code, README, issues, and releases.
+- [Jarvis provider usage](https://github.com/DaniAkash/agent-terminal/blob/main/docs/jarvis.md): Provider quota sources, settings, and troubleshooting.
+- [Contributing](https://github.com/DaniAkash/agent-terminal/blob/main/CONTRIBUTING.md): Development setup and adding agent integrations.
+
+## Installation
+
+Install the macOS application with Homebrew:
+
+```sh
+brew install --cask daniakash/tap/agent-terminal
+```
+
+Alternatively, download the Apple Silicon or Intel DMG from [GitHub Releases](https://github.com/DaniAkash/agent-terminal/releases).
+
+## Agent support
+
+Claude Code, Codex CLI, and opencode are supported. Amp, Kilo Code, Kimi CLI, and Mastra are experimental. Cursor, GitHub Copilot CLI, Factory Droid, and Qoder are planned. Install an agent separately and launch it in an Agent Terminal tab.
+
+## Optional
+
+- [GitHub releases](https://github.com/DaniAkash/agent-terminal/releases): Downloads and detailed release notes.
+- [GitHub issues](https://github.com/DaniAkash/agent-terminal/issues): Report bugs or request an integration.
