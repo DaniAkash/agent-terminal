@@ -8,12 +8,13 @@
     "build": "vite build",
     "preview": "vite preview",
     "prepare": "svelte-kit sync || echo ''",
-    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-    "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
-    "lint": "prettier --check . && eslint .",
-    "format": "prettier --write .",
+    "fmt": "biome format",
+    "lint": "biome lint",
+    "typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "typecheck:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "test:e2e": "playwright install && playwright test",
-    "test": "npm run test:e2e"
+    "test": "bun run test:e2e",
+    "check": "concurrently --group --names fmt,lint,typecheck --prefix-colors auto \"bun run fmt\" \"bun run lint\" \"bun run typecheck\""
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",
