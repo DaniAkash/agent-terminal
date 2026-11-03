@@ -101,7 +101,10 @@ Avoid deriving quotas from installed agent names or command-line model flags.
 Provider response formats can change: treat unknown schemas as unavailable and
 test against new source fixtures before updating an adapter.
 
-The integration uses these reference contracts, with independent Rust parsers:
+Codex and Claude quota responses are collected with `agentstat` 0.1.1;
+Jarvis continues to own credential access and refresh scheduling. OpenCode Go
+uses the Jarvis collector to retain support for partial quota responses and
+entitlement-specific errors. Other providers also use Jarvis collectors. The integration uses these reference contracts:
 [Codex](https://github.com/steipete/CodexBar/blob/main/docs/codex.md),
 [Claude](https://github.com/steipete/CodexBar/blob/main/docs/claude.md),
 [OpenCode](https://github.com/steipete/CodexBar/blob/main/docs/opencode.md),
