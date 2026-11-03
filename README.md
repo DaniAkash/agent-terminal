@@ -1,6 +1,8 @@
 <div align="center">
   <img src="./docs/assets/readme-header.jpg" alt="Agent Terminal — One terminal. Every agent. Total clarity." />
 
+  <br /><br />
+
   [![Latest release](https://img.shields.io/github/v/release/DaniAkash/agent-terminal?include_prereleases&label=latest&color=blue)](https://github.com/DaniAkash/agent-terminal/releases)
   [![Status](https://img.shields.io/badge/status-stable-brightgreen)](#status)
   [![Platform](https://img.shields.io/badge/platform-macOS-lightgrey)](https://github.com/DaniAkash/agent-terminal/releases)
