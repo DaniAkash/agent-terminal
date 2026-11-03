@@ -22,7 +22,7 @@ export function SwitcherViewToggle({
   onChange: (view: SessionView) => void
 }) {
   return (
-    <View className="flex-row gap-0.5 rounded-lg bg-muted p-0.5">
+    <View className="bg-muted flex-row gap-0.5 rounded-lg p-0.5">
       {OPTIONS.map((opt) => {
         const active = view === opt.value
         return (
@@ -37,7 +37,7 @@ export function SwitcherViewToggle({
           >
             <Text
               className={`text-xs ${
-                active ? 'font-medium text-foreground' : 'text-muted-foreground'
+                active ? 'text-foreground font-medium' : 'text-muted-foreground'
               }`}
             >
               {opt.label}

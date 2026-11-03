@@ -20,7 +20,7 @@ import { installMobileOpsListener } from '@/modules/wss-bridge/mobile-ops'
 import { initProjectsSync } from '@/modules/wss-bridge/projects-sync.init'
 import { WorkspaceLayout } from '@/screens/workspace/WorkspaceLayout'
 import type { Project } from '@/screens/workspace/workspace.types'
-import '@xterm/xterm/css/xterm.css'
+import '@wterm/dom/css'
 import './index.css'
 import '@/components/Jarvis/jarvis.css'
 

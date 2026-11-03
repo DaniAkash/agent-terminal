@@ -4,8 +4,6 @@ export type SearchState = {
   tabKey: string
   query: string
   matchCase: boolean
-  wholeWord: boolean
-  regex: boolean
 }
 
 /**
@@ -20,8 +18,6 @@ export function openSearch(tabKey: string): void {
     tabKey,
     query: '',
     matchCase: false,
-    wholeWord: false,
-    regex: false,
   })
 }
 

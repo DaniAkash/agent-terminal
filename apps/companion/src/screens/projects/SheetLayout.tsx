@@ -46,8 +46,8 @@ export function SheetLayout({
         className="flex-1 justify-end"
       >
         <Pressable className="flex-1 bg-black/40" onPress={onDismiss} />
-        <View className="rounded-t-2xl bg-background p-6">
-          <Text className="mb-4 font-semibold text-foreground text-lg">
+        <View className="bg-background rounded-t-2xl p-6">
+          <Text className="text-foreground mb-4 text-lg font-semibold">
             {title}
           </Text>
           {children}
@@ -62,9 +62,9 @@ export function SheetLayout({
             <Pressable
               onPress={onSubmit}
               disabled={isSubmitting}
-              className="rounded-md bg-primary px-4 py-2"
+              className="bg-primary rounded-md px-4 py-2"
             >
-              <Text className="font-medium text-primary-foreground">
+              <Text className="text-primary-foreground font-medium">
                 {submitLabel}
               </Text>
             </Pressable>

@@ -13,11 +13,12 @@ import {
 import TerminalDom from './TerminalDom'
 import { useTabData } from './tab.data'
 
-// The host scroller has to stay on. xterm keeps its scrollback in its own
-// `.xterm-viewport`, and that element only scrolls under a finger when the
-// surface hosting it is scrollable: with this off, 2000 lines of history
-// exist and none of them can be reached on a touch device.
-const DOM_PROPS = { scrollEnabled: true, hideKeyboardAccessoryView: true }
+// The host scroller stays off. wterm's scrollback is a real overflow
+// container inside the WebView, so the gesture belongs to it; leaving the
+// RN scroller on makes the two compete for the same drag. xterm needed the
+// opposite, because its viewport only moved when the hosting surface was
+// itself scrollable.
+const DOM_PROPS = { scrollEnabled: false, hideKeyboardAccessoryView: true }
 
 // Approximates the curve UIKit moves the keyboard along. The exact one is
 // private, and the default ease makes the bar visibly lag the keyboard it
@@ -37,6 +38,7 @@ export function TabScreen({ projectId, tabId }: TabScreenProps) {
     onData,
     onResize,
     onReady,
+    onOpenUrl,
     onKey,
     ctrlArmed,
     altArmed,
@@ -113,7 +115,7 @@ export function TabScreen({ projectId, tabId }: TabScreenProps) {
   // repo's standing rule about keeping it out of _layout.tsx.
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <View className="flex-1 bg-background">
+      <View className="bg-background flex-1">
         {/* The navigation header used to hold this screen clear of the
             status bar. With the header gone the top inset moves here,
             painted in the bar's own colour so the strip above it reads as
@@ -133,6 +135,7 @@ export function TabScreen({ projectId, tabId }: TabScreenProps) {
             onData={onData}
             onResize={onResize}
             onReady={onReady}
+            onOpenUrl={onOpenUrl}
             dom={DOM_PROPS}
           />
         </View>

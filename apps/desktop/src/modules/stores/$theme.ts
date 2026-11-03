@@ -104,7 +104,7 @@ export function applyThemeToDocument(t: Theme) {
   const resolved = t === 'system' ? resolveSystemTheme() : t
   // Short-circuit on no-op writes — setAttribute still fires a
   // MutationRecord even when the value is unchanged, and every mounted
-  // xterm's MutationObserver would then call term.refresh for nothing.
+  // The terminal's MutationObserver would then re-apply colours for nothing.
   if (html.getAttribute('data-theme') === resolved) return
   html.setAttribute('data-theme', resolved)
 }

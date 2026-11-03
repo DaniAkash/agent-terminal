@@ -43,7 +43,7 @@ describe('$updater store', () => {
       { kind: 'checking' },
       { kind: 'available', version: '1.0.0', notes: 'notes' },
       { kind: 'downloading', progress: 0.5 },
-      { kind: 'ready-to-install' },
+      { kind: 'ready-to-restart', version: '9.9.9' },
       { kind: 'error', message: 'boom' },
       { kind: 'up-to-date', currentVersion: '0.1.3' },
     ]

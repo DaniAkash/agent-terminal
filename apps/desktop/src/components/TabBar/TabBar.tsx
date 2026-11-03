@@ -26,16 +26,12 @@ import { cn } from '@/lib/utils'
 import {
   $activeTabId,
   navigateToTab,
-  onTabRemoved,
   openNewTabInProject,
 } from '@/modules/stores/$navigation'
-import {
-  removeTab,
-  reorderTabs,
-  toggleTabPin,
-} from '@/modules/stores/$projects'
+import { reorderTabs, toggleTabPin } from '@/modules/stores/$projects'
 import { $sidebarVisible } from '@/modules/stores/$sidebarVisible'
 import { $tabMeta } from '@/modules/stores/$tabMeta'
+import { requestCloseTab } from '@/modules/work/close-tab'
 import {
   MONO_FONT,
   makeTabKey,
@@ -66,8 +62,7 @@ function TabItem({ tab, projectId }: { tab: Tab; projectId: string }) {
   const { role: _role, ...safeAttributes } = attributes
 
   function handleClose() {
-    onTabRemoved(projectId, tab.id)
-    removeTab(projectId, tab.id)
+    requestCloseTab(projectId, tab.id)
   }
 
   return (
@@ -88,8 +83,8 @@ function TabItem({ tab, projectId }: { tab: Tab; projectId: string }) {
             className={cn(
               'relative -mb-px flex h-7 min-w-[90px] items-center rounded-t-[7px] text-[11.5px] transition-colors',
               isActive
-                ? 'border-[var(--tab-border)] border-t border-r border-l bg-tab-active text-tab-fg-active'
-                : 'bg-transparent text-tab-fg hover:text-tab-fg-active',
+                ? 'bg-tab-active text-tab-fg-active border-t border-r border-l border-[var(--tab-border)]'
+                : 'text-tab-fg hover:text-tab-fg-active bg-transparent',
             )}
           >
             {/* Navigation area — fills the pill, triggers tab switch */}
@@ -128,7 +123,7 @@ function TabItem({ tab, projectId }: { tab: Tab; projectId: string }) {
             ) : (
               <button
                 type="button"
-                className="mr-1.5 inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded opacity-40 hover:bg-sidebar-hover hover:opacity-100"
+                className="hover:bg-sidebar-hover mr-1.5 inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded opacity-40 hover:opacity-100"
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={(e) => {
                   e.stopPropagation()
@@ -196,7 +191,7 @@ export function TabBar({ project }: { project: Project }) {
     <div
       data-tauri-drag-region
       className={cn(
-        'flex h-[38px] shrink-0 items-end border-[var(--tab-border)] border-b bg-tab-bar pr-2',
+        'bg-tab-bar flex h-[38px] shrink-0 items-end border-b border-[var(--tab-border)] pr-2',
         // Reserve the ~78px macOS traffic-light row when the TabBar is
         // the window's top-left component (sidebar hidden). When the
         // sidebar is visible, the sidebar owns that reservation via its
@@ -217,7 +212,7 @@ export function TabBar({ project }: { project: Project }) {
         style={{ maxWidth: 'calc(100% - 1.5rem)' }}
       >
         <div
-          className="flex items-end overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          className="flex [scrollbar-width:none] items-end overflow-x-auto [&::-webkit-scrollbar]:hidden"
           style={{ gap: 2 }}
         >
           <DndContext
@@ -250,7 +245,7 @@ export function TabBar({ project }: { project: Project }) {
       <button
         type="button"
         data-tauri-drag-region={undefined}
-        className="-mb-px flex h-7 w-6 shrink-0 items-center justify-center rounded text-tab-fg hover:bg-sidebar-hover hover:text-tab-fg-active"
+        className="text-tab-fg hover:bg-sidebar-hover hover:text-tab-fg-active -mb-px flex h-7 w-6 shrink-0 items-center justify-center rounded"
         onClick={handleAddTab}
       >
         <svg

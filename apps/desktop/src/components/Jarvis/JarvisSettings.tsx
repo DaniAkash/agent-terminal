@@ -53,8 +53,8 @@ export function JarvisSettings({ snapshot }: { snapshot: UsageSnapshot }) {
           disabled={saving}
           onChange={(enabled) => void saveJarvisPreferences({ enabled })}
         />
-        <div className="flex flex-wrap items-center justify-between gap-2 border-border/60 border-t pt-3">
-          <span className="flex shrink-0 items-center gap-2 whitespace-nowrap text-[12px]">
+        <div className="border-border/60 flex flex-wrap items-center justify-between gap-2 border-t pt-3">
+          <span className="flex shrink-0 items-center gap-2 text-[12px] whitespace-nowrap">
             <Timer
               size={13}
               className="text-muted-foreground"
@@ -66,7 +66,7 @@ export function JarvisSettings({ snapshot }: { snapshot: UsageSnapshot }) {
             <DropdownMenuTrigger
               disabled={saving || !prefs.enabled}
               aria-label="Refresh interval"
-              className="flex shrink-0 items-center gap-2 whitespace-nowrap rounded-md border border-input bg-popover px-2.5 py-1.5 font-mono text-[11px] text-popover-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+              className="border-input bg-popover text-popover-foreground focus-visible:ring-ring flex shrink-0 items-center gap-2 rounded-md border px-2.5 py-1.5 font-mono text-[11px] whitespace-nowrap outline-none focus-visible:ring-2 disabled:opacity-50"
             >
               {
                 INTERVALS.find(
@@ -103,11 +103,11 @@ export function JarvisSettings({ snapshot }: { snapshot: UsageSnapshot }) {
       </div>
       <div className="jarvis-settings-providers">
         <div className="mb-1 flex items-center justify-between gap-2">
-          <h3 className="font-semibold text-[13px]">Providers</h3>
+          <h3 className="text-[13px] font-semibold">Providers</h3>
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 text-muted-foreground text-xs"
+            className="text-muted-foreground h-7 text-xs"
             disabled={scanning}
             onClick={async () => {
               setScanning(true)
@@ -126,7 +126,7 @@ export function JarvisSettings({ snapshot }: { snapshot: UsageSnapshot }) {
             {scanning ? 'Scanning…' : 'Rescan'}
           </Button>
         </div>
-        <p className="mb-3 text-muted-foreground text-xs">
+        <p className="text-muted-foreground mb-3 text-xs">
           {installed} installed · Detected automatically. Enable usage for the
           agents you use.
         </p>
@@ -162,7 +162,7 @@ export function JarvisSettings({ snapshot }: { snapshot: UsageSnapshot }) {
           ))}
         </div>
       </div>
-      <p className="jarvis-settings-note border-border/60 border-t pt-3 text-[11px] text-muted-foreground leading-relaxed">
+      <p className="jarvis-settings-note border-border/60 text-muted-foreground border-t pt-3 text-[11px] leading-relaxed">
         Usage is reported by your provider account and may include other
         devices. Credentials stay on this device and are sent only to their own
         provider. Jarvis does not save credentials, read browser cookies, or
@@ -190,16 +190,16 @@ function Toggle({
   return (
     <label className="flex w-full cursor-pointer items-center justify-between gap-4">
       <span className="min-w-0">
-        <span className="block font-medium text-[13px]">{label}</span>
+        <span className="block text-[13px] font-medium">{label}</span>
         {status && (
           <span
-            className="mt-1 block text-[11px] text-muted-foreground"
+            className="text-muted-foreground mt-1 block text-[11px]"
             aria-live="polite"
           >
             {status}
           </span>
         )}
-        <span className="mt-1 block text-[11px] text-muted-foreground leading-relaxed">
+        <span className="text-muted-foreground mt-1 block text-[11px] leading-relaxed">
           {description}
         </span>
       </span>

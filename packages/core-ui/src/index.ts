@@ -42,3 +42,11 @@ export {
   type SessionView,
   type WorkspaceGroup,
 } from './sessions/session.types'
+export {
+  hrefForSpanText,
+  linkifyRows,
+  openableHref,
+  stripTrailingPunctuation,
+  TERMINAL_TRAILING_CHARS,
+  TERMINAL_URL_PATTERN,
+} from './terminal/terminal-links'

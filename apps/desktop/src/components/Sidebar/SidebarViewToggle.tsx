@@ -24,7 +24,7 @@ const OPTIONS: Array<{ value: SidebarView; label: string }> = [
 export function SidebarViewToggle() {
   const current = useStore($sidebarView)
   return (
-    <div className="flex h-[24px] items-center gap-0.5 rounded-md border border-sidebar-border bg-sidebar-active p-0.5">
+    <div className="border-sidebar-border bg-sidebar-active flex h-[24px] items-center gap-0.5 rounded-md border p-0.5">
       {/* No ARIA grouping: each button is self-labelled ("Workspaces" /
           "Recent") and carries its own aria-pressed state, which is what
           a screen reader needs. Adding a group role would just repeat
@@ -38,7 +38,7 @@ export function SidebarViewToggle() {
             aria-pressed={active}
             onClick={() => setSidebarView(opt.value)}
             className={cn(
-              'h-full flex-1 rounded-[3px] px-2.5 font-medium text-[10.5px] leading-none transition-colors',
+              'h-full flex-1 rounded-[3px] px-2.5 text-[10.5px] leading-none font-medium transition-colors',
               // Active pill uses --background so it sits visibly above
               // the sidebar surface AND the inset track, regardless of
               // theme. shadow-sm reinforces the raised feel.

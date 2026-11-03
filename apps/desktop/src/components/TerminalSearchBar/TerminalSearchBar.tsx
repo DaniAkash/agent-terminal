@@ -11,8 +11,8 @@ import { getActiveTerminalHandle } from '@/modules/stores/$activeTerminal'
 
 /**
  * Floating overlay that opens via Cmd+F over the active terminal. Drives
- * `@xterm/addon-search` through the active-terminal handle registry. Esc
- * (or the close button) returns focus to xterm.
+ * wterm's own search through the active-terminal handle registry. Esc
+ * (or the close button) returns focus to the terminal.
  */
 export function TerminalSearchBar() {
   const search = useStore($activeSearch)
@@ -38,7 +38,7 @@ export function TerminalSearchBar() {
   if (!search) return null
 
   return (
-    <div className="absolute top-2 right-2 z-10 flex items-center gap-1 rounded-md border border-border bg-popover px-2 py-1 shadow-md">
+    <div className="border-border bg-popover absolute top-2 right-2 z-10 flex items-center gap-1 rounded-md border px-2 py-1 shadow-md">
       <input
         ref={inputRef}
         value={search.query}
@@ -63,7 +63,7 @@ export function TerminalSearchBar() {
       <button
         type="button"
         onClick={() => getActiveTerminalHandle()?.searchPrevious()}
-        className="rounded px-1 text-xs hover:bg-accent"
+        className="hover:bg-accent rounded px-1 text-xs"
         title="Previous (⇧⏎)"
         aria-label="Previous match"
       >
@@ -72,7 +72,7 @@ export function TerminalSearchBar() {
       <button
         type="button"
         onClick={() => getActiveTerminalHandle()?.searchNext()}
-        className="rounded px-1 text-xs hover:bg-accent"
+        className="hover:bg-accent rounded px-1 text-xs"
         title="Next (⏎)"
         aria-label="Next match"
       >
@@ -84,7 +84,7 @@ export function TerminalSearchBar() {
           closeSearch()
           getActiveTerminalHandle()?.focus()
         }}
-        className="rounded px-1 text-xs hover:bg-accent"
+        className="hover:bg-accent rounded px-1 text-xs"
         title="Close (Esc)"
         aria-label="Close find"
       >

@@ -37,7 +37,7 @@ export function WorkspaceHeader({
         </View>
         <Text
           numberOfLines={1}
-          className="flex-1 font-medium text-foreground text-xs uppercase"
+          className="text-foreground flex-1 text-xs font-medium uppercase"
         >
           {group.projectName}
         </Text>

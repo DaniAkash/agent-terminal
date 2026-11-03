@@ -17,7 +17,7 @@ mock.module('@/modules/ipc/commands', () => ({
 }))
 
 import { beforeEach, describe, expect, test } from 'bun:test'
-import type { XTermHandle } from '@/components/XTermTerminal/XTermTerminal'
+import type { WTermHandle } from '@/components/WTermTerminal/wterm-terminal.handle'
 import {
   $activeTabKey,
   $terminalHandles,
@@ -32,7 +32,7 @@ import { makeTabKey } from '@/screens/workspace/workspace.helpers'
 // registry uses object identity for race-safe unregistration. Factory
 // returns distinct objects with no behaviour; the registry never calls
 // any method during these unit tests.
-function fakeHandle(): XTermHandle {
+function fakeHandle(): WTermHandle {
   return {
     write: () => {},
     focus: () => {},
@@ -42,7 +42,7 @@ function fakeHandle(): XTermHandle {
     searchPrevious: () => {},
     sendToPty: () => {},
     pasteToPty: () => {},
-  } as XTermHandle
+  } as WTermHandle
 }
 
 beforeEach(() => {
@@ -154,7 +154,7 @@ describe('register / unregister', () => {
     // register anything itself. handleReady registers later. The cleanup,
     // captured at mount, must still unregister whatever was registered
     // when it eventually runs at unmount — or the handle leaks.
-    const handleRef: { current: XTermHandle | null } = { current: null }
+    const handleRef: { current: WTermHandle | null } = { current: null }
 
     // 1. "Mount effect" runs — ref is null, nothing to do, but the
     //    closure captures handleRef for the cleanup.

@@ -1,9 +1,13 @@
-import { relaunch } from '@tauri-apps/plugin-process'
 import { check, type Update } from '@tauri-apps/plugin-updater'
-import { $updater } from '@/modules/updater/$updater'
+import { $deferredUpdate, $updater } from '@/modules/updater/$updater'
 
 /**
- * Download + install the pending update, then relaunch the app.
+ * Download and stage the pending update, without taking the restart.
+ *
+ * Relaunching from inside the download meant an update could make the
+ * app vanish while an agent was mid turn. Staging and stopping lets the
+ * user pick the moment, and sends that choice through the same guard
+ * that protects quitting.
  *
  * The check() call is repeated here (rather than passed in from the
  * caller) because the Update object's downloadAndInstall is bound to a
@@ -44,11 +48,11 @@ export async function installUpdate(): Promise<void> {
           })
           break
         case 'Finished':
-          $updater.set({ kind: 'ready-to-install' })
           break
       }
     })
-    await relaunch()
+    $updater.set({ kind: 'ready-to-restart', version: update.version })
+    $deferredUpdate.set({ version: update.version, staged: true })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     $updater.set({ kind: 'error', message })
