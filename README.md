@@ -1,7 +1,9 @@
 <div align="center">
-  <img src="./docs/assets/readme-header.jpg" alt="Agent Terminal — One terminal. Every agent. Total clarity." />
+  <img src="./docs/assets/readme-header.jpg" alt="Agent Terminal" />
 
-  <br /><br />
+  # Agent Terminal
+
+  **A terminal workspace built around AI coding agents.**
 
   [![Latest release](https://img.shields.io/github/v/release/DaniAkash/agent-terminal?include_prereleases&label=latest&color=blue)](https://github.com/DaniAkash/agent-terminal/releases)
   [![Status](https://img.shields.io/badge/status-stable-brightgreen)](#status)
@@ -22,6 +24,8 @@
 <p align="center">
   <a href="https://www.producthunt.com/products/agent-terminal?embed=true&utm_source=badge-featured&utm_medium=badge&utm_campaign=badge-agent-terminal" target="_blank"><img src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1136595&theme=light&t=1777623264721" alt="Agent terminal - One terminal. Every agent. Total clarity. | Product Hunt" width="250" height="54" /></a>
 </p>
+
+---
 
 ## Status
 
