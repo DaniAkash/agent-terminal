@@ -20,6 +20,7 @@ import { siGithub, siX } from 'simple-icons'
         >
       </div>
       <div class="footer-location">SHIPPED FROM CHENNAI</div>
+      <a class="footer-product-hunt" href="https://www.producthunt.com/products/agent-terminal?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-agent-terminal" target="_blank" rel="noreferrer"><img src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1136595&amp;theme=dark&amp;t=1777623264721" alt="Agent Terminal featured on Product Hunt" width="150" height="32" loading="lazy" /></a>
     </div>
     <div class="footer-links">
       <div>
@@ -35,8 +36,8 @@ import { siGithub, siX } from 'simple-icons'
           >Contributing</a
         ><a href="https://github.com/DaniAkash/agent-terminal/blob/main/LICENSE"
           >License</a
-        ><a href="https://github.com/DaniAkash/agent-terminal/issues"
-          >Support</a
+        ><a href="https://github.com/DaniAkash/agent-terminal/issues/new/choose"
+          >Issue</a
         >
       </div>
       <div>

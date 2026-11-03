@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="https://raw.githubusercontent.com/DaniAkash/agent-terminal/main/assets/agent-terminal-icon.svg" width="128" alt="Agent Terminal" />
+  <img src="./docs/assets/readme-header.jpg" alt="Agent Terminal — One terminal. Every agent. Total clarity." />
 
   # Agent Terminal
 
