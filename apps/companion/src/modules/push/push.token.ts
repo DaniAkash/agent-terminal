@@ -1,5 +1,4 @@
 import Constants from 'expo-constants'
-import * as Device from 'expo-device'
 import * as Notifications from 'expo-notifications'
 import { Platform } from 'react-native'
 import { $push, setPushPrefs } from './$push'
@@ -77,10 +76,8 @@ function resolveProjectId(): string | undefined {
  * registration gate do the rest once the desktop has advertised push.
  */
 export async function enablePush(): Promise<boolean> {
-  if (!Device.isDevice) {
-    $push.setKey('support', 'unsupported')
-    return false
-  }
+  // No platform guess here either: `getExpoPushTokenAsync` failing is
+  // the authoritative answer, and `fetchToken` already records it.
   if (!(await requestPermission())) return false
   if (!(await fetchToken())) return false
   await setPushPrefs({ enabled: true })

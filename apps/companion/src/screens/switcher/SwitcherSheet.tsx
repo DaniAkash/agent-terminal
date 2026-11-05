@@ -87,10 +87,15 @@ export function SwitcherSheet({ currentKey }: SwitcherSheetProps) {
         ListHeaderComponent={
           <View className="gap-2 px-2 pt-3 pb-1">
             <View className="flex-row items-center justify-between">
-              <Text className="text-foreground text-base font-semibold">
-                Sessions
-              </Text>
-              <View className="flex-row items-center gap-1.5">
+              {/* The bell sits beside the title, not beside the desktop
+                  chip on the right. iOS draws the form sheet's grabber
+                  across the centre of this row and its touch target is
+                  wider than it looks: a control there is visible but
+                  unreachable, and the tap drags the sheet instead. */}
+              <View className="flex-row items-center gap-2">
+                <Text className="text-foreground text-base font-semibold">
+                  Sessions
+                </Text>
                 <Pressable
                   onPress={openNotifications}
                   accessibilityRole="button"
@@ -99,6 +104,8 @@ export function SwitcherSheet({ currentKey }: SwitcherSheetProps) {
                 >
                   <Icon name="bell" size={13} />
                 </Pressable>
+              </View>
+              <View className="flex-row items-center gap-1.5">
                 <Pressable
                   onPress={openDesktops}
                   accessibilityRole="button"

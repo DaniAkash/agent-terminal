@@ -1,4 +1,3 @@
-import * as Device from 'expo-device'
 import * as Notifications from 'expo-notifications'
 import { $push, loadPushPrefs } from './$push'
 import { syncRegistration } from './push.register'
@@ -35,14 +34,16 @@ export async function initPush(): Promise<void> {
   // leave push quietly broken until the next pairing.
   $push.listen(() => syncRegistration())
 
-  if (!Device.isDevice) {
-    // A simulator without Play services cannot register. Say so rather
-    // than letting the settings screen offer a switch that throws.
-    $push.setKey('support', 'unsupported')
-    return
-  }
-
-  // Channels before anything else: a push naming a channel the device
+  // Listeners are installed unconditionally, before anything that could
+  // decide this device is unsupported. An earlier version returned early
+  // on `!Device.isDevice`, which skipped them: any notification that did
+  // arrive was then silently unroutable, and a tap did nothing at all.
+  // That boolean is also wrong on iOS, where a simulator on a recent
+  // Xcode receives push perfectly well. Whether this device can register
+  // is answered by actually asking for a token, not by guessing from the
+  // platform.
+  //
+  // Channels come first regardless: a push naming a channel the device
   // does not have is not displayed at all.
   await createChannels()
   installForegroundHandler()
