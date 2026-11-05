@@ -128,25 +128,6 @@ export interface ProjectSummary {
   tabs: TabSummary[]
 }
 
-export interface PushStatusBody {
-  /**
-   * Always true from a desktop that has this frame at all. Reserved
-   * for a build that ships the protocol but cannot send.
-   */
-  supported: boolean
-  /** Whether a push token is currently stored for THIS device. */
-  registered: boolean
-  delay_seconds: number
-  redact_names: boolean
-  /**
-   * Last transport failure for this device, so the phone can explain
-   * a credentials problem rather than silently never arriving. The
-   * desktop has no screen for this; the phone is the only place a
-   * human looks.
-   */
-  last_error?: string
-}
-
 export interface RegisterPushBody {
   /**
    * "ExponentPushToken[...]". A send capability for this device, so
@@ -577,6 +558,21 @@ export type ServerFrame =
   | {
       op: 'push_status'
       body: {
-        body: PushStatusBody
+        /**
+         * Always true from a desktop that has this frame at all.
+         * Reserved for a build that ships the protocol but cannot send.
+         */
+        supported: boolean
+        /** Whether a push token is currently stored for THIS device. */
+        registered: boolean
+        delay_seconds: number
+        redact_names: boolean
+        /**
+         * Last transport failure for this device, so the phone can
+         * explain a credentials problem rather than silently never
+         * arriving. The desktop has no screen for this; the phone is
+         * the only place a human looks.
+         */
+        last_error?: string
       }
     }

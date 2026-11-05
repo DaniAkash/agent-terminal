@@ -1,3 +1,4 @@
+import { noteDesktopPushStatus } from '@/modules/push/push.status'
 import { $activeDevice } from '@/modules/stores/$devices'
 import { $session, resetSession } from '@/modules/stores/$session'
 import { clearTabStates, noteTabState } from '@/modules/stores/$tabState'
@@ -9,6 +10,7 @@ import type {
   RemoveProjectBody,
   RemoveTabBody,
   RenameProjectBody,
+  RegisterPushBody,
   RenameTabBody,
   ReorderTabsBody,
   ServerFrame,
@@ -444,6 +446,27 @@ export function sendReorderTabs(body: ReorderTabsBody): Promise<void> {
   return sendPending(op_id, frame)
 }
 
+/**
+ * Register this device's push token and preferences.
+ *
+ * Do not call this directly: go through `syncRegistration`, which gates
+ * on the desktop having advertised push support. A desktop older than
+ * this feature cannot deserialise the frame and closes the whole
+ * session on it, so an ungated send disconnects the terminal stream
+ * rather than merely failing.
+ */
+export function sendRegisterPush(body: RegisterPushBody): Promise<void> {
+  const op_id = nextOpId++
+  const frame: ClientFrame = { op: 'register_push', body: { op_id, body } }
+  return sendPending(op_id, frame)
+}
+
+export function sendUnregisterPush(): Promise<void> {
+  const op_id = nextOpId++
+  const frame: ClientFrame = { op: 'unregister_push', body: { op_id } }
+  return sendPending(op_id, frame)
+}
+
 function sendSubscribeOrResume(tabId: string, sub: TabSubscription): void {
   if (sub.lastSeq !== null) {
     console.log('[wss.client] resume', { tabId, lastSeq: sub.lastSeq })
@@ -639,6 +662,18 @@ function dispatchFrame(frame: ServerFrame): void {
       pendingOps.delete(frame.body.op_id)
       pending.reject(new Error(frame.body.reason))
     }
+    return
+  }
+  if (frame.op === 'push_status') {
+    // Capability advertisement plus the stored preferences. Its arrival
+    // is what unblocks registration; see push.register.ts.
+    noteDesktopPushStatus({
+      supported: frame.body.supported,
+      registered: frame.body.registered,
+      delaySeconds: frame.body.delay_seconds,
+      redactNames: frame.body.redact_names,
+      lastError: frame.body.last_error ?? null,
+    })
     return
   }
   if (frame.op === 'op_ok') {

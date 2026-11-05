@@ -309,7 +309,22 @@ pub enum ServerFrame {
     /// The echoed preferences let the settings screen render what the
     /// desktop actually stored rather than what the phone believes it
     /// sent.
-    PushStatus { body: PushStatusBody },
+    PushStatus {
+        /// Always true from a desktop that has this frame at all.
+        /// Reserved for a build that ships the protocol but cannot send.
+        supported: bool,
+        /// Whether a push token is currently stored for THIS device.
+        registered: bool,
+        #[typeshare(serialized_as = "u32")]
+        delay_seconds: u32,
+        redact_names: bool,
+        /// Last transport failure for this device, so the phone can
+        /// explain a credentials problem rather than silently never
+        /// arriving. The desktop has no screen for this; the phone is
+        /// the only place a human looks.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        last_error: Option<String>,
+    },
 }
 
 // -------- Phase B body structs --------
@@ -432,24 +447,6 @@ pub struct RegisterPushBody {
     pub redact_names: bool,
 }
 
-#[typeshare]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PushStatusBody {
-    /// Always true from a desktop that has this frame at all. Reserved
-    /// for a build that ships the protocol but cannot send.
-    pub supported: bool,
-    /// Whether a push token is currently stored for THIS device.
-    pub registered: bool,
-    #[typeshare(serialized_as = "u32")]
-    pub delay_seconds: u32,
-    pub redact_names: bool,
-    /// Last transport failure for this device, so the phone can explain
-    /// a credentials problem rather than silently never arriving. The
-    /// desktop has no screen for this; the phone is the only place a
-    /// human looks.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub last_error: Option<String>,
-}
 
 /// Server reply to `PairingStart`. Carries the freshly-minted
 /// long-lived device token the mobile stashes in secure-store.

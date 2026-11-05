@@ -33,11 +33,22 @@ const config: ExpoConfig = {
       NSAppTransportSecurity: {
         NSAllowsLocalNetworking: true,
       },
+      // Scoped deliberately. Push notifications mean notification text
+      // now leaves the network through Expo and the platform push
+      // service, so the old blanket "no traffic leaves your network"
+      // became untrue the moment this feature shipped. Terminal output
+      // and keystrokes still never leave.
       NSLocalNetworkUsageDescription:
-        'Agent Terminal connects to your desktop over your local Wi-Fi to stream terminal output. No traffic leaves your network.',
+        'Agent Terminal connects to your desktop over your local Wi-Fi to stream terminal output. Your terminal output and keystrokes never leave your network.',
     },
   },
   android: {
+    // Client config for FCM registration. Never committed: it carries a
+    // Google cloud project identifier, so CI writes it from a secret
+    // and the Android build fails loudly when it is missing rather than
+    // producing a build where push silently never registers.
+    googleServicesFile:
+      process.env.GOOGLE_SERVICES_JSON ?? './google-services.json',
     // No `.companion` here, and not an oversight: hyphens are illegal in
     // Android package names, so this is the direct translation of the
     // desktop's `com.daniakash.agent-terminal`. The desktop never ships to
@@ -56,6 +67,8 @@ const config: ExpoConfig = {
     // question on the Play Data Safety form that we would have to answer
     // about behaviour we do not have. Removing them keeps the declared
     // surface equal to the real one.
+    // POST_NOTIFICATIONS is deliberately absent from this list: it is
+    // the one permission push actually needs on Android 13+.
     blockedPermissions: [
       'android.permission.SYSTEM_ALERT_WINDOW',
       'android.permission.READ_EXTERNAL_STORAGE',
@@ -64,6 +77,16 @@ const config: ExpoConfig = {
   },
   plugins: [
     'expo-router',
+    [
+      'expo-notifications',
+      {
+        // Android draws the status-bar icon as a silhouette, so it has
+        // to be the monochrome mark. Reusing the adaptive icon's
+        // monochrome layer rather than adding a near-identical asset.
+        icon: './assets/android-icon-monochrome.png',
+        color: '#0e0f10',
+      },
+    ],
     'expo-secure-store',
     'expo-font',
     // Bundles the Lucide font into the binary instead of leaving it to
@@ -91,6 +114,13 @@ const config: ExpoConfig = {
     './plugins/withGradleWrapperVersion',
     './plugins/withAndroidRelease',
   ],
+  extra: {
+    // Required by getExpoPushTokenAsync, which rejects without it. Read
+    // from the environment rather than committed: it is bound to an
+    // Expo account, and a build without it reports push as unsupported
+    // instead of crashing.
+    eas: { projectId: process.env.EAS_PROJECT_ID },
+  },
 }
 
 export default config

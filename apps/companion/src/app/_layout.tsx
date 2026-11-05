@@ -11,6 +11,7 @@ import {
   navigationDarkTheme,
   navigationLightTheme,
 } from '@/modules/theme/navigation'
+import { initPush } from '@/modules/push'
 import { initWssBootstrap } from '@/modules/wss/bootstrap'
 
 // Follow the OS light/dark preference. Uniwind ignores
@@ -48,6 +49,12 @@ export default function RootLayout() {
   // CLAUDE.md's explicit "legitimate useEffect" cases.
   useEffect(() => {
     void initWssBootstrap()
+    // Push listeners and the cold-start tap, for the same reason: a
+    // boot-time side effect syncing external state (the OS notification
+    // centre) into the running app. It asks for no permission and
+    // registers nothing; both wait for a user action and for the
+    // desktop's capability frame respectively.
+    void initPush()
   }, [])
   // Reactively pick the react-navigation theme so the header + tab
   // bar chrome shares the same OS-driven light/dark preference the

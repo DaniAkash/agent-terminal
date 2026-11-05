@@ -23,7 +23,6 @@ use crate::projects_cache::ProjectsCache;
 use crate::protocol::{
     ClientFrame,
     PairingCompleteBody,
-    PushStatusBody,
     RegisterPushBody,
     ServerFrame,
 };
@@ -233,16 +232,14 @@ pub fn send_push_status(
 ) {
     let d = state.paired_tokens.get(device_id);
     let _ = outbox_tx.send(ServerFrame::PushStatus {
-        body: PushStatusBody {
-            supported: true,
-            registered: d.as_ref().and_then(|d| d.push_token.as_ref()).is_some(),
-            delay_seconds: d
-                .as_ref()
-                .map(|d| d.push_delay_seconds)
-                .unwrap_or(crate::push::DEFAULT_DELAY_SECONDS),
-            redact_names: d.as_ref().map(|d| d.push_redact_names).unwrap_or(false),
-            last_error: d.and_then(|d| d.push_last_error),
-        },
+        supported: true,
+        registered: d.as_ref().and_then(|d| d.push_token.as_ref()).is_some(),
+        delay_seconds: d
+            .as_ref()
+            .map(|d| d.push_delay_seconds)
+            .unwrap_or(crate::push::DEFAULT_DELAY_SECONDS),
+        redact_names: d.as_ref().map(|d| d.push_redact_names).unwrap_or(false),
+        last_error: d.and_then(|d| d.push_last_error),
     });
 }
 
@@ -565,16 +562,14 @@ async fn connection_task(
     if let Some(id) = device_id.as_deref() {
         let d = state.paired_tokens.get(id);
         let status = ServerFrame::PushStatus {
-            body: PushStatusBody {
-                supported: true,
-                registered: d.as_ref().and_then(|d| d.push_token.as_ref()).is_some(),
-                delay_seconds: d
-                    .as_ref()
-                    .map(|d| d.push_delay_seconds)
-                    .unwrap_or(crate::push::DEFAULT_DELAY_SECONDS),
-                redact_names: d.as_ref().map(|d| d.push_redact_names).unwrap_or(false),
-                last_error: d.and_then(|d| d.push_last_error),
-            },
+            supported: true,
+            registered: d.as_ref().and_then(|d| d.push_token.as_ref()).is_some(),
+            delay_seconds: d
+                .as_ref()
+                .map(|d| d.push_delay_seconds)
+                .unwrap_or(crate::push::DEFAULT_DELAY_SECONDS),
+            redact_names: d.as_ref().map(|d| d.push_redact_names).unwrap_or(false),
+            last_error: d.and_then(|d| d.push_last_error),
         };
         if send_frame(&mut socket, &status).await.is_err() {
             return;
