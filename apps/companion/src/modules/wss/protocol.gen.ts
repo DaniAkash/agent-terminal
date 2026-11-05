@@ -128,6 +128,49 @@ export interface ProjectSummary {
   tabs: TabSummary[]
 }
 
+export interface PushStatusBody {
+  /**
+   * Always true from a desktop that has this frame at all. Reserved
+   * for a build that ships the protocol but cannot send.
+   */
+  supported: boolean
+  /** Whether a push token is currently stored for THIS device. */
+  registered: boolean
+  delay_seconds: number
+  redact_names: boolean
+  /**
+   * Last transport failure for this device, so the phone can explain
+   * a credentials problem rather than silently never arriving. The
+   * desktop has no screen for this; the phone is the only place a
+   * human looks.
+   */
+  last_error?: string
+}
+
+export interface RegisterPushBody {
+  /**
+   * "ExponentPushToken[...]". A send capability for this device, so
+   * it is stored in the Keychain beside the token hash and never
+   * logged beyond a prefix.
+   */
+  token: string
+  /** "ios" or "android". Chooses channelId vs interruptionLevel. */
+  platform: string
+  /**
+   * Companion version, so a desktop can shape the payload for an
+   * older phone instead of assuming lockstep upgrades.
+   */
+  app_version: string
+  /**
+   * Grace window this device wants, in seconds. 0 escalates at once.
+   * Per device rather than global: two phones paired to one Mac each
+   * get their own answer. Clamped server side rather than rejected.
+   */
+  delay_seconds: number
+  /** Send ids only, with generic notification text. */
+  redact_names: boolean
+}
+
 export interface RemoveProjectBody {
   project_id: string
 }
@@ -299,6 +342,40 @@ export type ClientFrame =
       body: {
         op_id: number
         body: RemoveTabBody
+      }
+    }
+  /**
+   * Register this device's push token AND its push preferences.
+   *
+   * Sent after every successful auth, not only at pairing: Expo
+   * tokens rotate, and one that rotated while the desktop was
+   * offline would otherwise leave push silently broken until the
+   * next pairing. Also re-sent on every preference change, so one
+   * idempotent upsert covers registration and settings both.
+   *
+   * MUST NOT be sent before a `ServerFrame::PushStatus` has been
+   * seen on this connection. An older desktop cannot deserialise
+   * this variant, and a failed deserialise closes the whole session
+   * rather than being ignored, so registering blind against one
+   * disconnects the terminal stream on every connect.
+   */
+  | {
+      op: 'register_push'
+      body: {
+        op_id: number
+        body: RegisterPushBody
+      }
+    }
+  /**
+   * User switched push off on the phone. Clears the stored token so
+   * the desktop stops sending at once rather than waiting for a
+   * DeviceNotRegistered receipt. Token presence is the enabled flag,
+   * so there is no separate toggle to keep in sync.
+   */
+  | {
+      op: 'unregister_push'
+      body: {
+        op_id: number
       }
     }
   /**
@@ -480,5 +557,26 @@ export type ServerFrame =
       body: {
         op_id: number
         body: PairingCompleteBody
+      }
+    }
+  /**
+   * Push capability advertisement, sent unprompted right after
+   * AuthOk and again after every RegisterPush / UnregisterPush.
+   *
+   * Its *presence* is the capability signal. The desktop closes the
+   * whole WebSocket when it cannot deserialise a ClientFrame, so a
+   * newer companion that sent RegisterPush blind would disconnect
+   * the terminal stream against any older Mac app, on every connect.
+   * The phone therefore waits for this frame before registering, and
+   * reports "not supported by your desktop" if it never arrives.
+   *
+   * The echoed preferences let the settings screen render what the
+   * desktop actually stored rather than what the phone believes it
+   * sent.
+   */
+  | {
+      op: 'push_status'
+      body: {
+        body: PushStatusBody
       }
     }

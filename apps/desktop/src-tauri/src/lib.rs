@@ -18,7 +18,7 @@ mod mod_engine;
 #[doc(hidden)]
 pub use mod_engine::{CwdTable, ModEngineHandle};
 mod notifications;
-mod push;
+pub mod push;
 // pub so integration tests can construct a bare PtyMap without a full
 // PtyHandle harness (tests only need the map's shape for ServerState).
 pub mod pty_manager;
@@ -539,6 +539,7 @@ pub fn run() {
                             paired_tokens,
                             pairing_window,
                             paired_conns,
+                            push: Some(push_service),
                         });
                         app.manage(auth);
                         let rustls_cfg = match tls_bundle {

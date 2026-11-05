@@ -75,6 +75,7 @@ async fn spawn_server(token: &str) -> (SocketAddr, Arc<ServerState>) {
         paired_tokens: Arc::new(agent_terminal_lib::pairing::PairedTokens::new_ephemeral()),
         pairing_window: Arc::new(agent_terminal_lib::pairing::PairingWindow::new()),
         paired_conns: Arc::new(wss_server::PairedConnMap::new()),
+        push: None,
     });
 
     let state_for_task = Arc::clone(&state);
