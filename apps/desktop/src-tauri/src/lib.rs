@@ -412,10 +412,8 @@ pub fn run() {
                         // server has somewhere to run. The notification
                         // service holds it behind an Option for exactly
                         // that reason.
-                        let push_service = push::PushService::new(
-                            app.handle().clone(),
-                            paired_tokens.clone(),
-                        );
+                        let push_service =
+                            push::PushService::new(paired_tokens.clone());
                         notification_service.attach_push(push_service.clone());
 
                         // Port trio bind fallback. `bind_addr` from the

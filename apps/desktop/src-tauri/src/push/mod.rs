@@ -45,7 +45,6 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
-use tauri::AppHandle;
 
 use crate::notifications::AgentNotifyState;
 use crate::pairing::PairedTokens;
@@ -148,7 +147,10 @@ struct Inner {
 }
 
 impl PushService {
-    pub fn new(app: AppHandle, tokens: Arc<PairedTokens>) -> Arc<Self> {
+    /// No `AppHandle` here, unlike `NotificationService`: this service
+    /// emits no events and touches no Cocoa, so it needs nothing from
+    /// Tauri but the async runtime it spawns the tick on.
+    pub fn new(tokens: Arc<PairedTokens>) -> Arc<Self> {
         let svc = Arc::new(Self {
             tokens,
             inner: Mutex::new(Inner {
@@ -160,7 +162,6 @@ impl PushService {
             client: reqwest::Client::new(),
         });
         let tick_svc = svc.clone();
-        drop(app);
         tauri::async_runtime::spawn(async move {
             let mut ticker = tokio::time::interval(TICK);
             loop {
