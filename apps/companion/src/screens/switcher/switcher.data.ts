@@ -111,6 +111,10 @@ export function useSwitcherData(currentKey: string | undefined) {
       () => swapSheet(navigation, router, '/desktops'),
       [navigation, router],
     ),
+    openNotifications: useCallback(
+      () => swapSheet(navigation, router, '/notifications'),
+      [navigation, router],
+    ),
     openDetails: useCallback(
       (node: SessionNode) =>
         swapSheet(

@@ -15,7 +15,7 @@
 use agent_terminal_lib::auth_stub::AuthStub;
 use agent_terminal_lib::pairing::{PairedTokens, PairingWindow};
 use agent_terminal_lib::projects_cache::ProjectsCache;
-use agent_terminal_lib::protocol::{ClientFrame, PairingStartBody, ServerFrame};
+use agent_terminal_lib::protocol::{ClientFrame, PairingStartBody, RegisterPushBody, ServerFrame};
 use agent_terminal_lib::pty_manager::PtyMap;
 use agent_terminal_lib::stream_hub::StreamHub;
 use agent_terminal_lib::wss_server::{self, PairedConnMap, ServerState};
@@ -69,6 +69,7 @@ async fn spawn_server() -> (
         paired_tokens: Arc::clone(&paired_tokens),
         pairing_window: Arc::clone(&pairing_window),
         paired_conns: Arc::clone(&paired_conns),
+        push: None,
     });
 
     tokio::spawn(async move {
@@ -202,7 +203,13 @@ async fn pairing_round_trip_mints_device_token_and_reauths() {
         }
         other => panic!("expected paired AuthOk, got {other:?}"),
     }
-    // Projects push follows AuthOk.
+    // Push capability advertisement, then the Projects push. The
+    // capability frame comes first so the phone knows whether it may
+    // send RegisterPush before it sends anything at all.
+    match recv_frame(&mut ws2).await {
+        ServerFrame::PushStatus { .. } => {}
+        other => panic!("expected PushStatus, got {other:?}"),
+    }
     match recv_frame(&mut ws2).await {
         ServerFrame::Projects { .. } => {}
         other => panic!("expected Projects, got {other:?}"),
@@ -303,6 +310,7 @@ async fn revoke_force_closes_active_session_and_blocks_reauth() {
     )
     .await;
     let _ = recv_frame(&mut ws2).await; // AuthOk
+    let _ = recv_frame(&mut ws2).await; // PushStatus (capability advertisement)
     let _ = recv_frame(&mut ws2).await; // Projects
 
     // Small pause so the connection task has enrolled the abort_tx.
@@ -345,4 +353,201 @@ async fn revoke_force_closes_active_session_and_blocks_reauth() {
         }
         other => panic!("expected AuthFail(bad token), got {other:?}"),
     }
+}
+
+/// Pair a device and leave it authenticated, returning the socket plus
+/// the ids. Shared by the push registration tests below.
+async fn pair_and_auth(
+    addr: SocketAddr,
+    window: &Arc<PairingWindow>,
+) -> (
+    tokio_tungstenite::WebSocketStream<
+        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+    >,
+    String,
+) {
+    let pairing_token = window.open();
+    let mut ws = connect(addr).await;
+    send_frame(
+        &mut ws,
+        &ClientFrame::Auth {
+            token: format!("PAIRING:{pairing_token}"),
+        },
+    )
+    .await;
+    let _ = recv_frame(&mut ws).await; // AuthOk (pairing placeholder)
+    send_frame(
+        &mut ws,
+        &ClientFrame::PairingStart {
+            op_id: 1,
+            body: PairingStartBody {
+                device_name: "Push Phone".into(),
+                platform: "ios".into(),
+                model: None,
+            },
+        },
+    )
+    .await;
+    let (device_token, device_id) = match recv_frame(&mut ws).await {
+        ServerFrame::PairingComplete { body, .. } => (body.device_token, body.device_id),
+        other => panic!("expected PairingComplete, got {other:?}"),
+    };
+    drop(ws);
+
+    let mut ws = connect(addr).await;
+    send_frame(&mut ws, &ClientFrame::Auth { token: device_token }).await;
+    let _ = recv_frame(&mut ws).await; // AuthOk
+    (ws, device_id)
+}
+
+fn register_frame(op_id: u64, token: &str) -> ClientFrame {
+    ClientFrame::RegisterPush {
+        op_id,
+        body: RegisterPushBody {
+            token: token.to_string(),
+            platform: "ios".into(),
+            app_version: "1.2.0".into(),
+            delay_seconds: 90,
+            redact_names: false,
+        },
+    }
+}
+
+/// The capability handshake. A paired device must be told push exists
+/// before it dares send RegisterPush: an older desktop closes the whole
+/// session on a variant it cannot deserialise, so the phone gates
+/// registration on seeing this frame.
+#[tokio::test]
+async fn a_paired_device_is_told_about_push_before_anything_else() {
+    let (addr, window, _paired, _conns) = spawn_server().await;
+    let (mut ws, _id) = pair_and_auth(addr, &window).await;
+
+    match recv_frame(&mut ws).await {
+        ServerFrame::PushStatus {
+            supported,
+            registered,
+            delay_seconds,
+            redact_names,
+            last_error,
+        } => {
+            assert!(supported);
+            assert!(!registered, "a fresh device has no token yet");
+            assert_eq!(delay_seconds, agent_terminal_lib::push::DEFAULT_DELAY_SECONDS);
+            assert!(!redact_names);
+            assert!(last_error.is_none());
+        }
+        other => panic!("expected PushStatus right after AuthOk, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn registering_stores_the_token_and_the_preferences_together() {
+    let (addr, window, paired, _conns) = spawn_server().await;
+    let (mut ws, device_id) = pair_and_auth(addr, &window).await;
+    let _ = recv_frame(&mut ws).await; // PushStatus
+    let _ = recv_frame(&mut ws).await; // Projects
+
+    send_frame(&mut ws, &register_frame(2, "ExponentPushToken[abc123]")).await;
+
+    match recv_frame(&mut ws).await {
+        ServerFrame::OpOk { op_id } => assert_eq!(op_id, 2),
+        other => panic!("expected OpOk, got {other:?}"),
+    }
+    match recv_frame(&mut ws).await {
+        ServerFrame::PushStatus {
+            registered,
+            delay_seconds,
+            ..
+        } => {
+            assert!(registered);
+            assert_eq!(delay_seconds, 90);
+        }
+        other => panic!("expected PushStatus echo, got {other:?}"),
+    }
+
+    let stored = paired.get(&device_id).expect("device");
+    assert_eq!(stored.push_token.as_deref(), Some("ExponentPushToken[abc123]"));
+    assert_eq!(stored.push_platform.as_deref(), Some("ios"));
+    assert_eq!(stored.push_delay_seconds, 90);
+    assert!(stored.push_registered_at.is_some());
+}
+
+/// Token presence is the enabled flag, so unregistering is the off
+/// switch and has to take effect immediately rather than waiting for a
+/// DeviceNotRegistered receipt from Expo.
+#[tokio::test]
+async fn unregistering_clears_the_token_at_once() {
+    let (addr, window, paired, _conns) = spawn_server().await;
+    let (mut ws, device_id) = pair_and_auth(addr, &window).await;
+    let _ = recv_frame(&mut ws).await; // PushStatus
+    let _ = recv_frame(&mut ws).await; // Projects
+
+    send_frame(&mut ws, &register_frame(2, "ExponentPushToken[abc123]")).await;
+    let _ = recv_frame(&mut ws).await; // OpOk
+    let _ = recv_frame(&mut ws).await; // PushStatus
+    assert!(paired.get(&device_id).unwrap().push_token.is_some());
+
+    send_frame(&mut ws, &ClientFrame::UnregisterPush { op_id: 3 }).await;
+    match recv_frame(&mut ws).await {
+        ServerFrame::OpOk { op_id } => assert_eq!(op_id, 3),
+        other => panic!("expected OpOk, got {other:?}"),
+    }
+    match recv_frame(&mut ws).await {
+        ServerFrame::PushStatus { registered, .. } => assert!(!registered),
+        other => panic!("expected PushStatus echo, got {other:?}"),
+    }
+    assert!(paired.get(&device_id).unwrap().push_token.is_none());
+}
+
+/// A malformed token is a silent dead end otherwise: every send fails
+/// and the user sees a switch that is on and does nothing.
+#[tokio::test]
+async fn a_token_that_is_not_an_expo_token_is_refused() {
+    let (addr, window, paired, _conns) = spawn_server().await;
+    let (mut ws, device_id) = pair_and_auth(addr, &window).await;
+    let _ = recv_frame(&mut ws).await; // PushStatus
+    let _ = recv_frame(&mut ws).await; // Projects
+
+    send_frame(&mut ws, &register_frame(2, "not-a-push-token")).await;
+    match recv_frame(&mut ws).await {
+        ServerFrame::OpError { op_id, reason } => {
+            assert_eq!(op_id, 2);
+            assert!(reason.contains("malformed"), "got {reason}");
+        }
+        other => panic!("expected OpError, got {other:?}"),
+    }
+    assert!(paired.get(&device_id).unwrap().push_token.is_none());
+}
+
+/// Out of range rather than rejected: a future companion build should
+/// degrade to something sane, not disable the feature with an error the
+/// user cannot act on.
+#[tokio::test]
+async fn an_out_of_range_delay_is_clamped_not_rejected() {
+    let (addr, window, paired, _conns) = spawn_server().await;
+    let (mut ws, device_id) = pair_and_auth(addr, &window).await;
+    let _ = recv_frame(&mut ws).await; // PushStatus
+    let _ = recv_frame(&mut ws).await; // Projects
+
+    send_frame(
+        &mut ws,
+        &ClientFrame::RegisterPush {
+            op_id: 2,
+            body: RegisterPushBody {
+                token: "ExponentPushToken[abc123]".into(),
+                platform: "android".into(),
+                app_version: "9.9.9".into(),
+                delay_seconds: 99_999,
+                redact_names: true,
+            },
+        },
+    )
+    .await;
+    match recv_frame(&mut ws).await {
+        ServerFrame::OpOk { .. } => {}
+        other => panic!("expected OpOk, got {other:?}"),
+    }
+    let stored = paired.get(&device_id).expect("device");
+    assert_eq!(stored.push_delay_seconds, agent_terminal_lib::push::DELAY_MAX_SECONDS);
+    assert!(stored.push_redact_names);
 }

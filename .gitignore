@@ -51,3 +51,7 @@ keystore.properties
 .env
 .env.*
 !.env.example
+
+# Firebase client config for push. Carries a cloud project identifier,
+# so CI writes it from a secret rather than it living in the tree.
+apps/companion/google-services.json
