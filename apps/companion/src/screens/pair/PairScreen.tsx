@@ -79,7 +79,13 @@ export function PairScreen() {
   if (stage.kind === 'done') return <Redirect href="/" />
 
   if (permission && !permission.granted && !permission.canAskAgain) {
-    return <PermissionBlockedStage />
+    return (
+      <PermissionBlockedStage
+        {...(__DEV__
+          ? { onOpenManualConnect: () => router.replace('/connect') }
+          : {})}
+      />
+    )
   }
 
   return (

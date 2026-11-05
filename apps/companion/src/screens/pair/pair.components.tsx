@@ -151,12 +151,32 @@ export function ErrorStage({
   )
 }
 
-export function PermissionBlockedStage() {
+export function PermissionBlockedStage({
+  onOpenManualConnect,
+}: {
+  onOpenManualConnect?: () => void
+}) {
   return (
-    <View className="bg-background flex-1 items-center justify-center p-6">
+    <View className="bg-background flex-1 items-center justify-center gap-4 p-6">
       <Text className="text-foreground text-center text-lg">
         Camera access denied. Enable it in Settings to scan the pairing QR.
       </Text>
+      {/* Without this a simulator cannot pair at all, which is where
+          most development happens: there is no camera to scan with, and
+          the manual-token escape hatch was only offered from the error
+          stage, which you can only reach by scanning something. Dev
+          builds only, like the other entry point. */}
+      {onOpenManualConnect !== undefined && (
+        <Pressable
+          onPress={onOpenManualConnect}
+          accessibilityRole="button"
+          className="border-border items-center rounded-md border px-4 py-3"
+        >
+          <Text className="text-foreground text-base">
+            Use manual token (dev only)
+          </Text>
+        </Pressable>
+      )}
     </View>
   )
 }
