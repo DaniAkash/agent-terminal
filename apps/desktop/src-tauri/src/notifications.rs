@@ -38,6 +38,7 @@ use std::sync::{Arc, Mutex};
 use tauri::AppHandle;
 
 use crate::hook_config::config_for_agent_id;
+use crate::push::PushService;
 
 // ─── Public types ────────────────────────────────────────────────────────────
 
@@ -81,6 +82,11 @@ pub struct ProjectInfo {
 pub struct NotificationService {
     app: AppHandle,
     inner: Mutex<Inner>,
+    /// Set once at startup, after `PushService` exists. `Option` because
+    /// the two are mutually referential at wiring time and the paired
+    /// token store that `PushService` needs is built later in setup than
+    /// this service is.
+    push: Mutex<Option<Arc<PushService>>>,
     /// Release-mode only: handle to the user-notify NotificationManager. Held
     /// for its lifetime so the registered click callback stays alive.
     /// Wrapped in Mutex<Option<...>> so it can be initialized lazily after
@@ -103,6 +109,7 @@ impl NotificationService {
     pub fn new(app: AppHandle) -> Arc<Self> {
         let svc = Arc::new(Self {
             app,
+            push: Mutex::new(None),
             inner: Mutex::new(Inner {
                 projects: HashMap::new(),
                 active_tab: None,
@@ -119,6 +126,16 @@ impl NotificationService {
         svc
     }
 
+    /// Wire the phone-escalation half. Called once during setup, after
+    /// the paired token store is available.
+    pub fn attach_push(&self, push: Arc<PushService>) {
+        *self.push.lock().unwrap() = Some(push);
+    }
+
+    fn push(&self) -> Option<Arc<PushService>> {
+        self.push.lock().unwrap().clone()
+    }
+
     pub fn set_projects(&self, projects: Vec<ProjectInfo>) {
         let mut inner = self.inner.lock().unwrap();
         inner.projects.clear();
@@ -128,11 +145,31 @@ impl NotificationService {
     }
 
     pub fn set_active_tab(&self, composite_tab_id: Option<String>) {
-        self.inner.lock().unwrap().active_tab = composite_tab_id;
+        // The seen oracle, half one. Compute under the lock, dispatch
+        // after it drops: PushService takes its own mutex and the tick
+        // loop would invert the order.
+        let seen_tab = {
+            let mut inner = self.inner.lock().unwrap();
+            inner.active_tab = composite_tab_id.clone();
+            if inner.app_foreground { composite_tab_id } else { None }
+        };
+        if let (Some(tab), Some(push)) = (seen_tab, self.push()) {
+            push.mark_seen(&tab);
+        }
     }
 
     pub fn set_app_focus(&self, focused: bool) {
-        self.inner.lock().unwrap().app_foreground = focused;
+        // The seen oracle, half two. Returning to the window with the
+        // notifying tab already active is the user demonstrating they
+        // read it.
+        let seen_tab = {
+            let mut inner = self.inner.lock().unwrap();
+            inner.app_foreground = focused;
+            if focused { inner.active_tab.clone() } else { None }
+        };
+        if let (Some(tab), Some(push)) = (seen_tab, self.push()) {
+            push.mark_seen(&tab);
+        }
     }
 
     pub fn set_enabled(&self, enabled: bool) {
@@ -145,6 +182,9 @@ impl NotificationService {
             .unwrap()
             .last_state
             .remove(composite_tab_id);
+        if let Some(push) = self.push() {
+            push.forget_tab(composite_tab_id);
+        }
         backend::cancel(self, composite_tab_id);
     }
 
@@ -159,6 +199,14 @@ impl NotificationService {
         state: AgentNotifyState,
         message: Option<String>,
     ) {
+        // Feed the push service every transition, firing or not, so its
+        // send-time revalidation has something current to compare
+        // against. Done before taking our own lock, never while holding
+        // it.
+        if let Some(push) = self.push() {
+            push.note_state(&composite_tab_id, state);
+        }
+
         let payload = {
             let mut inner = self.inner.lock().unwrap();
 
@@ -242,6 +290,7 @@ impl NotificationService {
                 composite_tab_id: composite_tab_id.clone(),
                 project_id,
                 tab_id_in_project,
+                agent_id: agent_id.clone(),
                 title,
                 body,
                 state,
@@ -251,6 +300,21 @@ impl NotificationService {
         // Async firing path — backend chooses how to deliver.
         let svc = self;
         tauri::async_runtime::spawn(async move {
+            // Scheduled before the permission check on purpose. A user
+            // who revoked macOS notification permission is exactly the
+            // user who wants their phone to work, so phone escalation
+            // must not be gated on the Mac's own banner succeeding.
+            if let Some(push) = svc.push() {
+                push.schedule(crate::push::ScheduleRequest {
+                    composite_tab_id: &payload.composite_tab_id,
+                    project_id: &payload.project_id,
+                    tab_id_in_project: &payload.tab_id_in_project,
+                    agent_id: &payload.agent_id,
+                    state: payload.state,
+                    title: &payload.title,
+                    body: &payload.body,
+                });
+            }
             if !svc.ensure_permission().await {
                 eprintln!("[notifications] permission denied — skipping");
                 return;
@@ -322,6 +386,9 @@ struct FirePayload {
     composite_tab_id: String,
     project_id: String,
     tab_id_in_project: String,
+    /// Registry id, not the display name. The phone uses it to draw the
+    /// same brand mark the desktop sidebar does.
+    agent_id: String,
     title: String,
     body: String,
     state: AgentNotifyState,
@@ -454,6 +521,7 @@ mod backend {
     //! send the result back, await on the calling task.
 
     use super::{FirePayload, NotificationService};
+    use crate::push::escalation::CancelReason;
     use std::collections::HashMap;
     use std::sync::Arc;
     use tauri::{Emitter, Manager};
@@ -466,6 +534,7 @@ mod backend {
         let bundle_id = svc.app.config().identifier.clone();
         let app_for_callback = svc.app.clone();
         let svc_for_storage = svc.clone();
+        let svc_for_click = svc.clone();
 
         // run_on_main_thread dispatches the closure to the macOS main runloop.
         // The closure runs synchronously THERE; the returned Result tells us
@@ -493,6 +562,12 @@ mod backend {
                         let _ = window.show();
                         let _ = window.unminimize();
                         let _ = window.set_focus();
+                    }
+                    if let Some(push) = svc_for_click.push() {
+                        push.cancel(
+                            &format!("{project_id}:{tab_id}"),
+                            CancelReason::Clicked,
+                        );
                     }
                     let _ = app.emit(
                         "notification:click",
