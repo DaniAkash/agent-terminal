@@ -179,3 +179,46 @@ function describeError(error: PairError): string {
       return error.reason
   }
 }
+
+interface NotifyStageProps {
+  onEnable: () => void
+  onSkip: () => void
+}
+
+/**
+ * The consent gate for notification text leaving the local network.
+ *
+ * Names Expo and the platform push service rather than hiding them,
+ * because that is exactly what the user is agreeing to. Skipping is
+ * not a dead end: the same switch lives in notification settings.
+ */
+export function NotifyStage({ onEnable, onSkip }: NotifyStageProps) {
+  return (
+    <View className="flex-1 items-center justify-center gap-3 px-8">
+      <Text className="text-foreground text-center text-lg font-semibold">
+        Know when an agent needs you
+      </Text>
+      <Text className="text-muted-foreground text-center text-sm">
+        Your desktop will nudge this phone if you miss a notification at your
+        Mac. Notification text is delivered through Expo and your platform's
+        push service. Terminal output never leaves your network.
+      </Text>
+      <Pressable
+        onPress={onEnable}
+        accessibilityRole="button"
+        className="bg-accent mt-2 w-full items-center rounded-md px-4 py-3 active:opacity-80"
+      >
+        <Text className="text-accent-foreground text-sm font-semibold">
+          Turn on notifications
+        </Text>
+      </Pressable>
+      <Pressable
+        onPress={onSkip}
+        accessibilityRole="button"
+        className="border-border active:bg-accent-soft w-full items-center rounded-md border px-4 py-3"
+      >
+        <Text className="text-muted-foreground text-sm">Not now</Text>
+      </Pressable>
+    </View>
+  )
+}

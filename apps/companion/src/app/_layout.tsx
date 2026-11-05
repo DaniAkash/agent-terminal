@@ -120,6 +120,15 @@ export default function RootLayout() {
               }}
             />
             <Stack.Screen
+              name="notifications"
+              options={{
+                presentation: 'formSheet',
+                sheetGrabberVisible: true,
+                sheetCornerRadius: 16,
+                headerShown: false,
+              }}
+            />
+            <Stack.Screen
               name="project/[projectId]/edit"
               options={{
                 presentation: 'formSheet',

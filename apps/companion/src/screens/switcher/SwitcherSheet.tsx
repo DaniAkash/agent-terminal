@@ -37,6 +37,7 @@ export function SwitcherSheet({ currentKey }: SwitcherSheetProps) {
     deviceName,
     open,
     openDesktops,
+    openNotifications,
     openDetails,
     openWorkspace,
   } = useSwitcherData(currentKey)
@@ -89,18 +90,28 @@ export function SwitcherSheet({ currentKey }: SwitcherSheetProps) {
               <Text className="text-foreground text-base font-semibold">
                 Sessions
               </Text>
-              <Pressable
-                onPress={openDesktops}
-                accessibilityRole="button"
-                accessibilityLabel={`Connected to ${deviceName ?? 'a desktop'}. Switch desktop.`}
-                className="bg-muted active:bg-accent-soft flex-row items-center gap-1.5 rounded-full px-3 py-1.5"
-              >
-                <View className="bg-success h-1.5 w-1.5 rounded-full" />
-                <Text numberOfLines={1} className="text-foreground text-xs">
-                  {deviceName ?? 'desktop'}
-                </Text>
-                <Icon name="chevron-down" size={13} />
-              </Pressable>
+              <View className="flex-row items-center gap-1.5">
+                <Pressable
+                  onPress={openNotifications}
+                  accessibilityRole="button"
+                  accessibilityLabel="Notification settings"
+                  className="bg-muted active:bg-accent-soft rounded-full p-1.5"
+                >
+                  <Icon name="bell" size={13} />
+                </Pressable>
+                <Pressable
+                  onPress={openDesktops}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Connected to ${deviceName ?? 'a desktop'}. Switch desktop.`}
+                  className="bg-muted active:bg-accent-soft flex-row items-center gap-1.5 rounded-full px-3 py-1.5"
+                >
+                  <View className="bg-success h-1.5 w-1.5 rounded-full" />
+                  <Text numberOfLines={1} className="text-foreground text-xs">
+                    {deviceName ?? 'desktop'}
+                  </Text>
+                  <Icon name="chevron-down" size={13} />
+                </Pressable>
+              </View>
             </View>
             <SwitcherViewToggle view={view} onChange={setView} />
           </View>

@@ -4,6 +4,7 @@ import {
   formatFingerprintForVisualCompare,
   parsePairingCompleteFrame,
   parsePairingQr,
+  shouldOfferPush,
 } from './pair.helpers'
 
 describe('parsePairingQr', () => {
@@ -151,5 +152,26 @@ describe('formatFingerprintForVisualCompare', () => {
 
   it('returns an empty string for an empty input', () => {
     expect(formatFingerprintForVisualCompare('')).toBe('')
+  })
+})
+
+describe('shouldOfferPush', () => {
+  it('offers once, right after pairing, when nothing is settled yet', () => {
+    expect(shouldOfferPush({ support: 'ok', permission: 'undetermined' })).toBe(
+      true,
+    )
+  })
+
+  it('does not re-ask once the user has answered', () => {
+    expect(shouldOfferPush({ support: 'ok', permission: 'granted' })).toBe(
+      false,
+    )
+    expect(shouldOfferPush({ support: 'ok', permission: 'denied' })).toBe(false)
+  })
+
+  it('does not offer on a device that cannot receive push', () => {
+    expect(
+      shouldOfferPush({ support: 'unsupported', permission: 'undetermined' }),
+    ).toBe(false)
   })
 })
