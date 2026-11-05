@@ -2,7 +2,7 @@ import { useStore } from '@nanostores/react'
 import { Redirect } from 'expo-router'
 import { ActivityIndicator, View } from 'react-native'
 import { $push, takePendingRoute } from '@/modules/push'
-import { applyPending } from '@/modules/push/push.routing'
+import { handlePushData } from '@/modules/push/push.routing'
 import { $activeDevice } from '@/modules/stores/$devices'
 import { $lastSession } from '@/modules/stores/$lastSession'
 import { $session } from '@/modules/stores/$session'
@@ -19,21 +19,24 @@ export function IndexResolver() {
   const push = useStore($push)
   const session = useStore($session)
   const lastSessions = useStore($lastSession)
-  const target = resolveLanding(landingInput(device, session, lastSessions))
 
   // A notification tap that launched the app resolves before
   // SecureStore has hydrated the device store, so it was parked rather
-  // than dropped. Replay it here, once, as soon as the devices are
-  // loaded: it outranks the remembered last session, because the user
-  // just asked for a specific terminal.
+  // than dropped. Replaying it outranks the remembered last session:
+  // the user just asked for a specific terminal.
   if (device.loaded && push.pendingRoute) {
-    const pending = takePendingRoute()
-    if (pending) void applyPending(pending)
+    replayPendingRoute()
     return <Spinner />
   }
 
+  const target = resolveLanding(landingInput(device, session, lastSessions))
   if (!target) return <Spinner />
   return <Redirect href={target} />
+}
+
+function replayPendingRoute(): void {
+  const pending = takePendingRoute()
+  if (pending) void handlePushData(pending)
 }
 
 function Spinner() {

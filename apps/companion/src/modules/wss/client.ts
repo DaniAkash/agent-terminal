@@ -1,4 +1,4 @@
-import { noteDesktopPushStatus } from '@/modules/push/push.status'
+import { noteDesktopPushStatus } from '@/modules/push/$push'
 import { $activeDevice } from '@/modules/stores/$devices'
 import { $session, resetSession } from '@/modules/stores/$session'
 import { clearTabStates, noteTabState } from '@/modules/stores/$tabState'

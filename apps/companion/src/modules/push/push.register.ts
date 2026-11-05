@@ -1,43 +1,40 @@
 import { sendRegisterPush, sendUnregisterPush } from '@/modules/wss/client'
 import { $push } from './$push'
+import { registrationAction } from './push.register.helpers'
 import { appVersion, platformName } from './push.token'
 
 /**
- * The registration gate.
+ * Tell the desktop what this device wants, if anything.
  *
- * Never call `sendRegisterPush` directly. The desktop closes the whole
- * WebSocket when it cannot deserialise a `ClientFrame`, so registering
- * against a Mac app older than this feature does not merely fail to
- * register: it disconnects the terminal stream, on every connect. The
- * `PushStatus` frame the desktop sends right after `AuthOk` is the
- * capability advertisement, and `$push.desktop` is non-null only once
- * it has arrived.
+ * The decision is in `registrationAction`, which is where the gate on
+ * the desktop's capability frame lives and where it is tested. This is
+ * only the dispatch.
  *
- * Idempotent, and called from both the connect path and the settings
- * screen, so preferences are re-asserted on every connect. That doubles
- * as the recovery path when a desktop lost its record, and when an Expo
- * token rotated while the desktop was offline.
+ * Driven by a subscription in `initPush` rather than called from the
+ * socket code, so the dependency arrow points one way: this module
+ * imports the client, and the client imports only the store.
+ *
+ * Re-sent on every connect rather than only on change, because Expo
+ * tokens rotate and one that rotated while the desktop was offline
+ * would otherwise leave push quietly broken until the next pairing.
  */
 export function syncRegistration(): void {
   const { desktop, prefs, token } = $push.get()
-  if (!desktop?.supported) return
+  const action = registrationAction({ desktop, prefs, token })
 
-  if (!prefs.enabled || !token) {
-    if (desktop.registered) {
-      void sendUnregisterPush().catch((err) => {
-        console.warn('[push] unregister failed:', err)
-      })
-    }
+  if (action.kind === 'register') {
+    void sendRegisterPush({
+      token: action.token,
+      platform: platformName(),
+      app_version: appVersion(),
+      delay_seconds: action.delaySeconds,
+      redact_names: action.redactNames,
+    }).catch((err) => console.warn('[push] register failed:', err))
     return
   }
-
-  void sendRegisterPush({
-    token,
-    platform: platformName(),
-    app_version: appVersion(),
-    delay_seconds: prefs.delaySeconds,
-    redact_names: prefs.redactNames,
-  }).catch((err) => {
-    console.warn('[push] register failed:', err)
-  })
+  if (action.kind === 'unregister') {
+    void sendUnregisterPush().catch((err) =>
+      console.warn('[push] unregister failed:', err),
+    )
+  }
 }

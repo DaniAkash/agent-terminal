@@ -423,12 +423,18 @@ async fn a_paired_device_is_told_about_push_before_anything_else() {
     let (mut ws, _id) = pair_and_auth(addr, &window).await;
 
     match recv_frame(&mut ws).await {
-        ServerFrame::PushStatus { body } => {
-            assert!(body.supported);
-            assert!(!body.registered, "a fresh device has no token yet");
-            assert_eq!(body.delay_seconds, agent_terminal_lib::push::DEFAULT_DELAY_SECONDS);
-            assert!(!body.redact_names);
-            assert!(body.last_error.is_none());
+        ServerFrame::PushStatus {
+            supported,
+            registered,
+            delay_seconds,
+            redact_names,
+            last_error,
+        } => {
+            assert!(supported);
+            assert!(!registered, "a fresh device has no token yet");
+            assert_eq!(delay_seconds, agent_terminal_lib::push::DEFAULT_DELAY_SECONDS);
+            assert!(!redact_names);
+            assert!(last_error.is_none());
         }
         other => panic!("expected PushStatus right after AuthOk, got {other:?}"),
     }
@@ -448,9 +454,13 @@ async fn registering_stores_the_token_and_the_preferences_together() {
         other => panic!("expected OpOk, got {other:?}"),
     }
     match recv_frame(&mut ws).await {
-        ServerFrame::PushStatus { body } => {
-            assert!(body.registered);
-            assert_eq!(body.delay_seconds, 90);
+        ServerFrame::PushStatus {
+            registered,
+            delay_seconds,
+            ..
+        } => {
+            assert!(registered);
+            assert_eq!(delay_seconds, 90);
         }
         other => panic!("expected PushStatus echo, got {other:?}"),
     }
@@ -483,7 +493,7 @@ async fn unregistering_clears_the_token_at_once() {
         other => panic!("expected OpOk, got {other:?}"),
     }
     match recv_frame(&mut ws).await {
-        ServerFrame::PushStatus { body } => assert!(!body.registered),
+        ServerFrame::PushStatus { registered, .. } => assert!(!registered),
         other => panic!("expected PushStatus echo, got {other:?}"),
     }
     assert!(paired.get(&device_id).unwrap().push_token.is_none());

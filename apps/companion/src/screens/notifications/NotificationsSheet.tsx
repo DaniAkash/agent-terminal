@@ -1,12 +1,8 @@
 import { useStore } from '@nanostores/react'
 import { Linking, Pressable, Switch, Text, View } from 'react-native'
-import {
-  $push,
-  enablePush,
-  setPushPrefs,
-  syncRegistration,
-} from '@/modules/push'
+import { $push, enablePush, setPushPrefs } from '@/modules/push'
 import { $session } from '@/modules/stores/$session'
+import type { StatusView } from './notifications.helpers'
 import { formatDelay, nextDelay, statusView } from './notifications.helpers'
 
 /**
@@ -30,25 +26,22 @@ export function NotificationsSheet() {
     enabled: push.prefs.enabled,
   })
 
+  // Neither of these re-registers explicitly. A preference change
+  // writes the push store, `initPush` subscribes to it, and the
+  // RegisterPush upsert that carries the new value to the desktop
+  // follows from that. There is no separate settings frame.
   async function toggle(next: boolean) {
     if (!next) {
       await setPushPrefs({ enabled: false })
-      syncRegistration()
       return
     }
     // Turning it on is the consent to notification text leaving the
     // local network, so this is where the OS prompt belongs if it has
     // not been answered yet.
     await enablePush()
-    syncRegistration()
   }
 
-  async function update(next: Parameters<typeof setPushPrefs>[0]) {
-    await setPushPrefs(next)
-    // Re-registering is how a preference reaches the desktop: there is
-    // no separate settings frame, the upsert carries both.
-    syncRegistration()
-  }
+  const update = setPushPrefs
 
   const canConfigure = push.prefs.enabled && push.support !== 'unsupported'
 
@@ -126,26 +119,29 @@ export function NotificationsSheet() {
   )
 }
 
-function StatusRow({ status }: { status: ReturnType<typeof statusView> }) {
-  const tone =
-    status.tone === 'ok'
-      ? 'text-success'
-      : status.tone === 'bad'
-        ? 'text-destructive'
-        : status.tone === 'warn'
-          ? 'text-warning'
-          : 'text-muted-foreground'
+const TONE_CLASS = {
+  ok: 'text-success',
+  bad: 'text-destructive',
+  warn: 'text-warning',
+  muted: 'text-muted-foreground',
+} as const
 
+function StatusRow({ status }: { status: StatusView }) {
   const body = (
     <View className="flex-row items-center gap-3 rounded-lg px-3 py-3">
       <View className="flex-1">
         <Text className="text-foreground text-sm">Status</Text>
         <Text className="text-muted-foreground text-xs">{status.detail}</Text>
       </View>
-      <Text className={`text-xs ${tone}`}>{status.label}</Text>
+      <Text className={`text-xs ${TONE_CLASS[status.tone]}`}>
+        {status.label}
+      </Text>
     </View>
   )
 
+  // Only the blocked state has somewhere to send the user: once a
+  // permission is denied the OS will not prompt again, so system
+  // settings is the only route forward.
   if (status.action !== 'open-system-settings') return body
   return (
     <Pressable

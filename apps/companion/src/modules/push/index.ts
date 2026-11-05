@@ -1,6 +1,7 @@
 import * as Device from 'expo-device'
 import * as Notifications from 'expo-notifications'
 import { $push, loadPushPrefs } from './$push'
+import { syncRegistration } from './push.register'
 import { createChannels } from './push.channels'
 import { installForegroundHandler } from './push.handler'
 import { handlePushData, installResponseListener } from './push.routing'
@@ -25,6 +26,14 @@ export async function initPush(): Promise<void> {
   started = true
 
   await loadPushPrefs()
+
+  // Re-assert registration whenever anything it depends on moves: the
+  // desktop's capability frame arriving, a token being fetched, the
+  // user flipping a preference. Re-sending on every connect rather
+  // than only on change is deliberate, since Expo tokens rotate and
+  // one that rotated while the desktop was offline would otherwise
+  // leave push quietly broken until the next pairing.
+  $push.listen(() => syncRegistration())
 
   if (!Device.isDevice) {
     // A simulator without Play services cannot register. Say so rather
@@ -52,8 +61,5 @@ export async function initPush(): Promise<void> {
 }
 
 export { $push, setPushPrefs, takePendingRoute } from './$push'
-export { $visibleTab, clearVisibleTab, noteVisibleTab } from './$visibleTab'
-export { applyPending } from './push.routing'
+export { clearVisibleTab, noteVisibleTab } from './$visibleTab'
 export { enablePush } from './push.token'
-export { syncRegistration } from './push.register'
-export { DELAY_CHOICES } from './push.types'

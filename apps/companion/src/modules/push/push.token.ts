@@ -18,7 +18,7 @@ export async function refreshPermission(): Promise<void> {
   $push.setKey('permission', toPermission(status))
 }
 
-export async function requestPermission(): Promise<boolean> {
+async function requestPermission(): Promise<boolean> {
   const { status } = await Notifications.requestPermissionsAsync()
   const permission = toPermission(status)
   $push.setKey('permission', permission)
@@ -39,15 +39,11 @@ function toPermission(status: string) {
  * register. That is reported as unsupported rather than thrown, so the
  * settings screen can say so instead of the app crashing on a tap.
  */
-export async function fetchToken(): Promise<string | null> {
-  if (!Device.isDevice) {
-    $push.setKey('support', 'unsupported')
-    return null
-  }
-  const projectId =
-    Constants.easConfig?.projectId ??
-    Constants.expoConfig?.extra?.eas?.projectId
+async function fetchToken(): Promise<string | null> {
+  const projectId = resolveProjectId()
   if (!projectId) {
+    // Reported rather than thrown: the settings screen says push is
+    // unavailable instead of the app crashing on a tap.
     console.warn('[push] no EAS project id in the app config, cannot register')
     $push.setKey('support', 'unsupported')
     return null
@@ -65,13 +61,28 @@ export async function fetchToken(): Promise<string | null> {
 }
 
 /**
+ * `getExpoPushTokenAsync` rejects without a project id. EAS Build fills
+ * `easConfig`; a local or CI build fills `extra.eas.projectId` from the
+ * environment, so both are checked.
+ */
+function resolveProjectId(): string | undefined {
+  return (
+    Constants.easConfig?.projectId ??
+    Constants.expoConfig?.extra?.eas?.projectId
+  )
+}
+
+/**
  * Turn push on from a user action: permission, then token, then let the
  * registration gate do the rest once the desktop has advertised push.
  */
 export async function enablePush(): Promise<boolean> {
+  if (!Device.isDevice) {
+    $push.setKey('support', 'unsupported')
+    return false
+  }
   if (!(await requestPermission())) return false
-  const token = await fetchToken()
-  if (!token) return false
+  if (!(await fetchToken())) return false
   await setPushPrefs({ enabled: true })
   return true
 }

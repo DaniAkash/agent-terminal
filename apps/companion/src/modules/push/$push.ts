@@ -11,7 +11,7 @@ import {
 
 const PREFS_KEY = 'agent-terminal:push:prefs'
 
-export interface PushState {
+interface PushState {
   /** `unsupported` means a simulator without Play services, or a
    *  platform that cannot register at all. */
   support: PushSupport
@@ -70,6 +70,22 @@ export async function setPushPrefs(next: Partial<PushPrefs>): Promise<void> {
   } catch {
     // Same: the in-memory value still applies to this session.
   }
+}
+
+/**
+ * Record what the desktop said about push.
+ *
+ * Lives here rather than beside the registration it triggers, so that
+ * `wss/client.ts` can import a leaf. Routing it through the register
+ * module instead made a cycle (register imports the client, the client
+ * imports the status handler, the handler imports register), which
+ * fallow flags as an initialisation-order hazard and is one.
+ *
+ * `initPush` subscribes to this store and re-asserts registration when
+ * it changes, which keeps the dependency arrow pointing one way.
+ */
+export function noteDesktopPushStatus(status: DesktopPushStatus): void {
+  $push.setKey('desktop', status)
 }
 
 export function takePendingRoute(): PushData | null {

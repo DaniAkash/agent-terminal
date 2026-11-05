@@ -4,7 +4,7 @@ import { $devices, setActiveDevice } from '@/modules/stores/$devices'
 import { $push } from './$push'
 import { decideRoute } from './push.routing.helpers'
 import { deriveKey, digest } from './push.sign'
-import type { PushData, RouteDecision } from './push.types'
+import type { RouteDecision } from './push.types'
 
 /**
  * Side-effecting shell around `decideRoute`. Every decision lives in
@@ -25,29 +25,20 @@ export async function handlePushData(raw: unknown): Promise<RouteDecision> {
   return decision
 }
 
-export async function applyRoute(decision: RouteDecision): Promise<void> {
-  switch (decision.kind) {
-    case 'park':
-      $push.setKey('pendingRoute', decision.data)
-      return
-    case 'ignore':
-      console.warn(`[push] ignoring a notification tap: ${decision.reason}`)
-      return
-    case 'route': {
-      // Switching first matters: the tab route resolves its ids against
-      // whichever desktop is active, so navigating before the switch
-      // would look up this tab in the wrong desktop's project list.
-      if (decision.switchDesktop) {
-        await setActiveDevice(decision.deviceId)
-      }
-      router.push(decision.href as Parameters<typeof router.push>[0])
-    }
+async function applyRoute(decision: RouteDecision): Promise<void> {
+  if (decision.kind === 'park') {
+    $push.setKey('pendingRoute', decision.data)
+    return
   }
-}
-
-/** Replay a tap that arrived before the device store had hydrated. */
-export async function applyPending(data: PushData): Promise<void> {
-  await handlePushData(data)
+  if (decision.kind === 'ignore') {
+    console.warn(`[push] ignoring a notification tap: ${decision.reason}`)
+    return
+  }
+  // Switching first matters: the tab route resolves its ids against
+  // whichever desktop is active, so navigating before the switch would
+  // look this tab up in the wrong desktop's project list.
+  if (decision.switchDesktop) await setActiveDevice(decision.deviceId)
+  router.push(decision.href as Parameters<typeof router.push>[0])
 }
 
 /**
