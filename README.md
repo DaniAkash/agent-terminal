@@ -46,12 +46,13 @@ Agent Terminal is a terminal that knows the difference between a shell and an ag
 ### Projects and tabs that survive
 Group tabs under projects (`my-app`, `notes`, `infra`). Switch projects without losing your place — every tab remembers its working directory and reopens there.
 
-### Jarvis provider usage
+### Agent Usage limits
 
-Open **Jarvis** in the status bar to enable provider quota tracking, see reset
-windows, and configure usage collection. Hover for compact provider gauges.
-Collection and settings are managed in Rust. See the [Jarvis guide](docs/jarvis.md)
-for supported sources and local session setup.
+Open **Agent Usage limits** in the status bar to enable provider quota tracking,
+see reset windows, and configure usage collection. Hover for compact provider
+gauges. Collection and settings are managed in Rust. See the
+[Agent Usage limits guide](docs/agent-usage.md) for supported sources and local
+session setup.
 
 ### Live status bar
 

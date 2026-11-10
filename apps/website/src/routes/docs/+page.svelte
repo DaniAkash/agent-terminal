@@ -14,7 +14,7 @@ const sections = [
   { label: 'Projects & tabs', id: 'projects' },
   { label: 'Agent integrations', id: 'agents' },
   { label: 'Status bar', id: 'status-bar' },
-  { label: 'Jarvis usage', id: 'jarvis' },
+  { label: 'Agent Usage limits', id: 'agent-usage' },
   { label: 'Mobile companion', id: 'mobile' },
   { label: 'Keyboard shortcuts', id: 'shortcuts' },
   { label: 'Platforms', id: 'platforms' },
@@ -166,7 +166,8 @@ const sections = [
           Amp uses terminal-title signals.
         </p>
         <p>
-          Agent support is independent of provider usage in Jarvis. An installed
+          Agent support is independent of provider usage in Agent Usage limits. An
+          installed
           CLI may still need its own sign-in, and experimental integrations may
           need further testing.
         </p>
@@ -192,26 +193,26 @@ const sections = [
           system appearance for the workspace and terminal.
         </p>
       </section>
-      <section class="docs-section" id="jarvis">
+      <section class="docs-section" id="agent-usage">
         <span class="docs-kicker">05 / PROVIDER USAGE</span>
-        <h2>Jarvis</h2>
+        <h2>Agent Usage limits</h2>
         <p>
-          Jarvis shows provider usage and reset windows. Open
-          <strong>Jarvis</strong>
+          Agent Usage limits shows provider usage and reset windows. Open
+          <strong>Agent Usage limits</strong>
           from the status bar, choose
           <strong>Settings</strong>, enable it, and select the providers you
           want to track. Sources remain off until selected.
         </p>
         <p>
-          Hover or focus the Jarvis button for compact gauges, or open it for
-          details. Usage access depends on the enabled provider and an existing
+          Hover or focus the Agent Usage limits button for compact gauges, or
+          open it for details. Usage access depends on the enabled provider and an existing
           local session or key. Unavailable data is shown as unavailable.
         </p>
         <div class="docs-callout">
           <strong>Provider access stays opt-in</strong>
           <p>
-            Credentials are read for enabled providers; Jarvis does not save
-            them or send them to the frontend. It reports provider quotas, not
+            Credentials are read for enabled providers; Agent Usage limits does
+            not save them or send them to the frontend. It reports provider quotas, not
             estimated model spending.
           </p>
         </div>
@@ -225,25 +226,25 @@ const sections = [
         </p>
         <h3>Refresh and troubleshooting</h3>
         <p>
-          Jarvis refreshes every five minutes by default; manual, one-minute,
-          and fifteen-minute modes are also available. Use
+          Agent Usage limits refreshes every five minutes by default; manual,
+          one-minute, and fifteen-minute modes are also available. Use
           <strong>Refresh</strong>
           after changing credentials. If a provider session has expired, renew
           it in that provider’s CLI. Claude Code may require explicitly
           authorizing Keychain access from its usage card.
         </p>
         <p>
-          Jarvis detects installed executables at startup and periodically
-          thereafter. Use <strong>Rescan</strong> in Settings to check
+          Agent Usage limits detects installed executables at startup and
+          periodically thereafter. Use <strong>Rescan</strong> in Settings to check
           immediately. If an executable is not found, make sure its install
           location is available to the desktop process’s PATH.
         </p>
         <a
           class="docs-link"
-          href="https://github.com/DaniAkash/agent-terminal/blob/main/docs/jarvis.md"
+          href="https://github.com/DaniAkash/agent-terminal/blob/main/docs/agent-usage.md"
           target="_blank"
           rel="noreferrer"
-          >Read the full Jarvis guide <ArrowUpRight size={14} /></a
+          >Read the full Agent Usage limits guide <ArrowUpRight size={14} /></a
         >
       </section>
       <section class="docs-section" id="mobile">

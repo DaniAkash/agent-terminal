@@ -14,7 +14,7 @@ export const pages: Record<string, { title: string; description: string }> = {
   '/docs': {
     title: 'Documentation — Agent Terminal',
     description:
-      'Install Agent Terminal and learn about project workspaces, coding agents, the status bar, Jarvis usage, mobile pairing, and keyboard shortcuts.',
+      'Install Agent Terminal and learn about project workspaces, coding agents, the status bar, Agent Usage limits, mobile pairing, and keyboard shortcuts.',
   },
   '/changelog': {
     title: 'Changelog and Releases — Agent Terminal',
