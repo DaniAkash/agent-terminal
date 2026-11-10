@@ -166,10 +166,9 @@ const sections = [
           Amp uses terminal-title signals.
         </p>
         <p>
-          Agent support is independent of provider usage in Agent Usage limits. An
-          installed
-          CLI may still need its own sign-in, and experimental integrations may
-          need further testing.
+          Agent support is independent of provider usage in Agent Usage limits.
+          An installed CLI may still need its own sign-in, and experimental
+          integrations may need further testing.
         </p>
         <a class="docs-link" href="/agents"
           >See all agent integrations <ArrowUpRight size={14} /></a
@@ -205,15 +204,16 @@ const sections = [
         </p>
         <p>
           Hover or focus the Agent Usage limits button for compact gauges, or
-          open it for details. Usage access depends on the enabled provider and an existing
-          local session or key. Unavailable data is shown as unavailable.
+          open it for details. Usage access depends on the enabled provider and
+          an existing local session or key. Unavailable data is shown as
+          unavailable.
         </p>
         <div class="docs-callout">
           <strong>Provider access stays opt-in</strong>
           <p>
             Credentials are read for enabled providers; Agent Usage limits does
-            not save them or send them to the frontend. It reports provider quotas, not
-            estimated model spending.
+            not save them or send them to the frontend. It reports provider
+            quotas, not estimated model spending.
           </p>
         </div>
         <h3>Reading the gauges</h3>
@@ -235,9 +235,9 @@ const sections = [
         </p>
         <p>
           Agent Usage limits detects installed executables at startup and
-          periodically thereafter. Use <strong>Rescan</strong> in Settings to check
-          immediately. If an executable is not found, make sure its install
-          location is available to the desktop process’s PATH.
+          periodically thereafter. Use <strong>Rescan</strong> in Settings to
+          check immediately. If an executable is not found, make sure its
+          install location is available to the desktop process’s PATH.
         </p>
         <a
           class="docs-link"
