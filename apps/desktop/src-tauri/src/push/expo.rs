@@ -26,6 +26,12 @@ const TTL_SECONDS: u32 = 600;
 pub struct ExpoMessage {
     pub to: String,
     pub title: String,
+    /// iOS only in Expo's message format. Android has no subtitle slot
+    /// and ignores the field, which is why the agent name lives here
+    /// rather than in the title: the title has to carry the tab on every
+    /// platform.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subtitle: Option<String>,
     pub body: String,
     pub data: serde_json::Value,
     pub ttl: u32,
@@ -65,6 +71,7 @@ pub fn build_message(
     pending: &Pending,
     device: &DevicePrefs,
     title: &str,
+    subtitle: Option<&str>,
     body: &str,
     state: &str,
     signature: &str,
@@ -76,6 +83,7 @@ pub fn build_message(
     ExpoMessage {
         to: token.to_string(),
         title: title.to_string(),
+        subtitle: subtitle.filter(|_| ios).map(str::to_string),
         body: body.to_string(),
         // Routing payload: opaque ids only, so it stays safe to send
         // even with redaction on, and the phone never has to parse
@@ -253,8 +261,10 @@ mod tests {
             tab_id_in_project: "tab_04".into(),
             agent_id: "claude-code".into(),
             state: AgentNotifyState::Awaiting,
-            title: "Claude Code · control-center".into(),
+            title: "/control-center · control-center".into(),
+            subtitle: "Claude Code".into(),
             body: "Allow edit?".into(),
+            updates: 1,
             fired_at: Instant::now(),
             fired_at_wall: 1_762_338_240_000,
             wake_grace: Duration::ZERO,
@@ -283,7 +293,8 @@ mod tests {
             "ExponentPushToken[abc]",
             &pending(),
             &device("ios"),
-            "Claude Code · control-center",
+            "/control-center · control-center",
+            Some("Claude Code"),
             "Allow edit?",
             "awaiting",
             "e26e2e3eabfcdba29c4ccd0a344c037c",
@@ -305,7 +316,7 @@ mod tests {
 
     #[test]
     fn android_gets_a_channel_and_a_tag_but_no_ios_fields() {
-        let m = build_message("t", &pending(), &device("android"), "t", "b", "awaiting", "s");
+        let m = build_message("t", &pending(), &device("android"), "t", Some("sub"), "b", "awaiting", "s");
         assert_eq!(m.channel_id.as_deref(), Some("agent-awaiting"));
         assert_eq!(m.tag.as_deref(), Some("tab:proj_01HQ:tab_04"));
         assert!(m.thread_id.is_none());
@@ -314,7 +325,7 @@ mod tests {
 
     #[test]
     fn ios_gets_a_thread_and_time_sensitive_but_no_channel() {
-        let m = build_message("t", &pending(), &device("ios"), "t", "b", "awaiting", "s");
+        let m = build_message("t", &pending(), &device("ios"), "t", Some("sub"), "b", "awaiting", "s");
         assert!(m.channel_id.is_none());
         assert!(m.tag.is_none());
         assert_eq!(m.thread_id.as_deref(), Some("tab:proj_01HQ:tab_04"));
@@ -323,7 +334,7 @@ mod tests {
 
     #[test]
     fn only_awaiting_is_time_sensitive() {
-        let m = build_message("t", &pending(), &device("ios"), "t", "b", "completed", "s");
+        let m = build_message("t", &pending(), &device("ios"), "t", Some("sub"), "b", "completed", "s");
         assert!(m.interruption_level.is_none());
         assert_eq!(m.priority, "normal");
     }
@@ -331,14 +342,14 @@ mod tests {
     #[test]
     fn awaiting_and_error_are_high_priority() {
         for s in ["awaiting", "error"] {
-            let m = build_message("t", &pending(), &device("ios"), "t", "b", s, "s");
+            let m = build_message("t", &pending(), &device("ios"), "t", Some("sub"), "b", s, "s");
             assert_eq!(m.priority, "high", "{s}");
         }
     }
 
     #[test]
     fn the_collapse_key_is_the_tab_so_one_tab_never_stacks() {
-        let m = build_message("t", &pending(), &device("ios"), "t", "b", "awaiting", "s");
+        let m = build_message("t", &pending(), &device("ios"), "t", Some("sub"), "b", "awaiting", "s");
         assert_eq!(m.collapse_id, "tab:proj_01HQ:tab_04");
     }
 
@@ -351,7 +362,7 @@ mod tests {
 
     #[test]
     fn ttl_keeps_a_late_push_from_arriving_at_all() {
-        let m = build_message("t", &pending(), &device("ios"), "t", "b", "awaiting", "s");
+        let m = build_message("t", &pending(), &device("ios"), "t", Some("sub"), "b", "awaiting", "s");
         assert_eq!(m.ttl, 600);
     }
 
@@ -439,6 +450,7 @@ mod tests {
             &pending(),
             &device("ios"),
             "t",
+            Some("sub"),
             "b",
             "awaiting",
             "s",
