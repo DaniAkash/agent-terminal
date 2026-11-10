@@ -36,7 +36,7 @@ function snapshot(providers: ProviderUsage[]): UsageSnapshot {
   }
 }
 
-describe('Jarvis usage summaries', () => {
+describe('Agent Usage limits summaries', () => {
   test('maps weekly and hourly layers for Codex, Claude and OpenCode', () => {
     for (const [id, hourly, weekly] of [
       ['codex', 'session', 'weekly'],

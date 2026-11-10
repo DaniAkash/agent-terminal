@@ -1,9 +1,9 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { map } from 'nanostores'
-import { JarvisIPC } from './api'
-import type { JarvisPreferences, UsageSnapshot } from './types'
+import { AgentUsageIPC } from './api'
+import type { AgentUsagePreferences, UsageSnapshot } from './types'
 
-interface JarvisState {
+interface AgentUsageState {
   snapshot: UsageSnapshot | null
   open: boolean
   view: 'usage' | 'settings'
@@ -13,7 +13,7 @@ interface JarvisState {
   error: string | null
 }
 
-export const $jarvis = map<JarvisState>({
+export const $agentUsage = map<AgentUsageState>({
   snapshot: null,
   open: false,
   view: 'usage',
@@ -28,23 +28,23 @@ let initialization: Promise<void> | undefined
 let lifecycle = 0
 
 export function acceptSnapshot(snapshot: UsageSnapshot) {
-  const current = $jarvis.get().snapshot
+  const current = $agentUsage.get().snapshot
   // A snapshot command may finish after a newer push event.
   if (current && snapshot.revision < current.revision) return
-  $jarvis.setKey('snapshot', snapshot)
-  $jarvis.setKey('loading', false)
+  $agentUsage.setKey('snapshot', snapshot)
+  $agentUsage.setKey('loading', false)
 }
 
-export function openJarvis(view?: JarvisState['view']) {
-  $jarvis.setKey(
+export function openAgentUsage(view?: AgentUsageState['view']) {
+  $agentUsage.setKey(
     'view',
     view ??
-      ($jarvis.get().snapshot?.preferences.enabled ? 'usage' : 'settings'),
+      ($agentUsage.get().snapshot?.preferences.enabled ? 'usage' : 'settings'),
   )
-  $jarvis.setKey('open', true)
+  $agentUsage.setKey('open', true)
 }
 
-export function startJarvis(): Promise<void> {
+export function startAgentUsage(): Promise<void> {
   if (initialization) return initialization
   const active = ++lifecycle
   initialization = initialize(active)
@@ -52,8 +52,8 @@ export function startJarvis(): Promise<void> {
 }
 
 async function initialize(active: number) {
-  $jarvis.setKey('loading', true)
-  $jarvis.setKey('error', null)
+  $agentUsage.setKey('loading', true)
+  $agentUsage.setKey('error', null)
   const installed: UnlistenFn[] = []
   try {
     installed.push(
@@ -63,15 +63,15 @@ async function initialize(active: number) {
     )
     if (lifecycle !== active) return
     disposers = installed
-    const snapshot = await JarvisIPC.snapshot()
+    const snapshot = await AgentUsageIPC.snapshot()
     if (lifecycle === active) acceptSnapshot(snapshot)
   } catch {
     if (lifecycle !== active) return
     for (const dispose of installed) dispose()
     disposers = []
     initialization = undefined
-    $jarvis.setKey('error', 'Jarvis could not connect to the usage service.')
-    $jarvis.setKey('loading', false)
+    $agentUsage.setKey('error', 'Agent Usage limits could not connect to the usage service.')
+    $agentUsage.setKey('loading', false)
   } finally {
     if (lifecycle !== active) {
       for (const dispose of installed) dispose()
@@ -79,52 +79,52 @@ async function initialize(active: number) {
   }
 }
 
-export async function saveJarvisPreferences(patch: Partial<JarvisPreferences>) {
-  const state = $jarvis.get()
+export async function saveAgentUsagePreferences(patch: Partial<AgentUsagePreferences>) {
+  const state = $agentUsage.get()
   if (!state.snapshot || state.saving) return
-  $jarvis.setKey('saving', true)
-  $jarvis.setKey('error', null)
+  $agentUsage.setKey('saving', true)
+  $agentUsage.setKey('error', null)
   try {
     acceptSnapshot(
-      await JarvisIPC.setPreferences({
+      await AgentUsageIPC.setPreferences({
         ...state.snapshot.preferences,
         ...patch,
       }),
     )
   } catch (error) {
-    $jarvis.setKey('error', String(error))
+    $agentUsage.setKey('error', String(error))
   } finally {
-    $jarvis.setKey('saving', false)
+    $agentUsage.setKey('saving', false)
   }
 }
 
 export async function authorizeClaudeKeychain() {
-  if ($jarvis.get().authorizing) return
-  $jarvis.setKey('authorizing', true)
-  $jarvis.setKey('error', null)
+  if ($agentUsage.get().authorizing) return
+  $agentUsage.setKey('authorizing', true)
+  $agentUsage.setKey('error', null)
   try {
-    await JarvisIPC.authorizeClaudeKeychain()
+    await AgentUsageIPC.authorizeClaudeKeychain()
   } catch (error) {
-    $jarvis.setKey('error', String(error))
+    $agentUsage.setKey('error', String(error))
   } finally {
-    $jarvis.setKey('authorizing', false)
+    $agentUsage.setKey('authorizing', false)
   }
 }
 
-export async function refreshJarvis() {
-  $jarvis.setKey('error', null)
+export async function refreshAgentUsage() {
+  $agentUsage.setKey('error', null)
   try {
-    await JarvisIPC.refresh()
+    await AgentUsageIPC.refresh()
   } catch {
-    $jarvis.setKey('error', 'Could not refresh usage. Try again.')
+    $agentUsage.setKey('error', 'Could not refresh usage. Try again.')
   }
 }
 
-export function stopJarvis() {
+export function stopAgentUsage() {
   lifecycle++
   for (const dispose of disposers) dispose()
   disposers = []
   initialization = undefined
 }
 
-if (import.meta.hot) import.meta.hot.dispose(stopJarvis)
+if (import.meta.hot) import.meta.hot.dispose(stopAgentUsage)

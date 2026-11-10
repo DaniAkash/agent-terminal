@@ -1,7 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { IPC } from '@/modules/ipc/commands'
-import { startJarvis } from '@/modules/jarvis/store'
+import { startAgentUsage } from '@/modules/agent-usage/store'
 import { startCwdPersist } from '@/modules/mods/cwd-persist'
 import { startModListener } from '@/modules/mods/mod-listener'
 import { startNotificationsBridge } from '@/modules/notifications/notificationsBridge'
@@ -35,7 +35,7 @@ if (import.meta.hot) {
 }
 
 async function bootstrap() {
-  void startJarvis()
+  void startAgentUsage()
   await startModListener()
 
   startCwdPersist()

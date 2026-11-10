@@ -8,14 +8,14 @@ import {
   isCurrent,
   mostConstrained,
   STATUS_LABEL,
-} from '@/modules/jarvis/helpers'
-import { $jarvis, openJarvis } from '@/modules/jarvis/store'
-import { $activeUsageProviderId } from '@/modules/jarvis/terminal-context'
+} from '@/modules/agent-usage/helpers'
+import { $agentUsage, openAgentUsage } from '@/modules/agent-usage/store'
+import { $activeUsageProviderId } from '@/modules/agent-usage/terminal-context'
 import { JarvisDialog } from './JarvisDialog'
 import { JarvisHover } from './JarvisHover'
 
 export function JarvisButton() {
-  const { snapshot, open } = useStore($jarvis)
+  const { snapshot, open } = useStore($agentUsage)
   const activeProviderId = useStore($activeUsageProviderId)
   const [hoverOpen, setHoverOpen] = useState(false)
   const metric = mostConstrained(
@@ -49,7 +49,7 @@ export function JarvisButton() {
           closeDelay={200}
           onClick={() => {
             setHoverOpen(false)
-            openJarvis()
+            openAgentUsage()
           }}
           className={cn(
             buttonVariants({ variant: 'ghost', size: 'sm' }),

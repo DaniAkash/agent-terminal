@@ -1,8 +1,8 @@
 import { AlertCircle, ArrowUpRight, Gauge } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { mostConstrained, prioritizeProvider } from '@/modules/jarvis/helpers'
-import { $jarvis } from '@/modules/jarvis/store'
-import type { UsageSnapshot } from '@/modules/jarvis/types'
+import { mostConstrained, prioritizeProvider } from '@/modules/agent-usage/helpers'
+import { $agentUsage } from '@/modules/agent-usage/store'
+import type { UsageSnapshot } from '@/modules/agent-usage/types'
 import { JarvisProvider } from './JarvisProvider'
 
 /** Provider quotas and account status in the usage dialog. */
@@ -37,7 +37,7 @@ export function JarvisUsage({
           variant="secondary"
           size="sm"
           className="gap-1.5 text-[11px]"
-          onClick={() => $jarvis.setKey('view', 'settings')}
+          onClick={() => $agentUsage.setKey('view', 'settings')}
         >
           Open settings <ArrowUpRight size={12} aria-hidden="true" />
         </Button>

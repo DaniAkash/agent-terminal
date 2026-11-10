@@ -10,12 +10,12 @@ import {
   resetLabel,
   STATUS_LABEL,
   usageColor,
-} from '@/modules/jarvis/helpers'
-import { $jarvis, authorizeClaudeKeychain } from '@/modules/jarvis/store'
-import type { ProviderUsage, UsageWindow } from '@/modules/jarvis/types'
+} from '@/modules/agent-usage/helpers'
+import { $agentUsage, authorizeClaudeKeychain } from '@/modules/agent-usage/store'
+import type { ProviderUsage, UsageWindow } from '@/modules/agent-usage/types'
 
 export function JarvisProvider({ provider }: { provider: ProviderUsage }) {
-  const { snapshot, authorizing } = useStore($jarvis)
+  const { snapshot, authorizing } = useStore($agentUsage)
   const stale =
     provider.status === 'stale' ||
     (provider.status === 'available' && !isCurrent(provider))

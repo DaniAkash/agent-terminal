@@ -10,7 +10,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
-import { $jarvis, refreshJarvis, startJarvis } from '@/modules/jarvis/store'
+import { $agentUsage, refreshAgentUsage, startAgentUsage } from '@/modules/agent-usage/store'
 import { JarvisSettings } from './JarvisSettings'
 import { JarvisUsage } from './JarvisUsage'
 
@@ -19,7 +19,7 @@ export function JarvisDialog({
 }: {
   priorityProviderId?: string | null
 }) {
-  const { open, view, snapshot, loading, saving, error } = useStore($jarvis)
+  const { open, view, snapshot, loading, saving, error } = useStore($agentUsage)
   const [, tick] = useReducer((n: number) => n + 1, 0)
   useEffect(() => {
     if (!open) return
@@ -28,7 +28,7 @@ export function JarvisDialog({
   }, [open])
   const problem = error ?? snapshot?.settingsError
   return (
-    <Dialog open={open} onOpenChange={(next) => $jarvis.setKey('open', next)}>
+    <Dialog open={open} onOpenChange={(next) => $agentUsage.setKey('open', next)}>
       <DialogContent
         className="jarvis-surface flex max-h-[min(760px,calc(100dvh-2rem))] w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[480px]"
         style={{ fontFamily: 'var(--font-ui)' }}
@@ -53,7 +53,7 @@ export function JarvisDialog({
                   size="sm"
                   className="h-8 px-3 text-xs capitalize"
                   aria-pressed={view === tab}
-                  onClick={() => $jarvis.setKey('view', tab)}
+                  onClick={() => $agentUsage.setKey('view', tab)}
                 >
                   {tab}
                 </Button>
@@ -70,7 +70,7 @@ export function JarvisDialog({
                 snapshot.refreshing ||
                 snapshot.preferences.providers.length === 0
               }
-              onClick={() => void refreshJarvis()}
+              onClick={() => void refreshAgentUsage()}
             >
               <RefreshCw
                 size={12}
@@ -93,7 +93,7 @@ export function JarvisDialog({
               <button
                 type="button"
                 className="ml-2 underline"
-                onClick={() => void startJarvis()}
+                onClick={() => void startAgentUsage()}
               >
                 Retry
               </button>

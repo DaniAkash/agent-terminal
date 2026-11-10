@@ -4,12 +4,12 @@ import {
   prioritizeProvider,
   quotaRings,
   STATUS_LABEL,
-} from '@/modules/jarvis/helpers'
+} from '@/modules/agent-usage/helpers'
 import type {
   ProviderUsage,
   UsageSnapshot,
   UsageWindow,
-} from '@/modules/jarvis/types'
+} from '@/modules/agent-usage/types'
 
 /** A compact provider strip: outer weekly arc, inner dotted short-term arc. */
 export function JarvisHover({

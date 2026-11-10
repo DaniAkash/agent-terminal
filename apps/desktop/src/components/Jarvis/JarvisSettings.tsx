@@ -11,10 +11,10 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { JarvisIPC } from '@/modules/jarvis/api'
-import { installationLabel, STATUS_LABEL } from '@/modules/jarvis/helpers'
-import { $jarvis, saveJarvisPreferences } from '@/modules/jarvis/store'
-import type { UsageSnapshot } from '@/modules/jarvis/types'
+import { AgentUsageIPC } from '@/modules/agent-usage/api'
+import { installationLabel, STATUS_LABEL } from '@/modules/agent-usage/helpers'
+import { $agentUsage, saveAgentUsagePreferences } from '@/modules/agent-usage/store'
+import type { UsageSnapshot } from '@/modules/agent-usage/types'
 
 const SOURCES: Record<string, string> = {
   codex: 'Account and model limits',
@@ -34,7 +34,7 @@ const INTERVALS = [
 ]
 
 export function JarvisSettings({ snapshot }: { snapshot: UsageSnapshot }) {
-  const { saving } = useStore($jarvis)
+  const { saving } = useStore($agentUsage)
   const [scanning, setScanning] = useState(false)
   const prefs = snapshot.preferences
   const installed = snapshot.providers.filter(
@@ -51,7 +51,7 @@ export function JarvisSettings({ snapshot }: { snapshot: UsageSnapshot }) {
           description="Use selected providers’ existing sessions to read account usage."
           checked={prefs.enabled}
           disabled={saving}
-          onChange={(enabled) => void saveJarvisPreferences({ enabled })}
+          onChange={(enabled) => void saveAgentUsagePreferences({ enabled })}
         />
         <div className="border-border/60 flex flex-wrap items-center justify-between gap-2 border-t pt-3">
           <span className="flex shrink-0 items-center gap-2 text-[12px] whitespace-nowrap">
@@ -83,7 +83,7 @@ export function JarvisSettings({ snapshot }: { snapshot: UsageSnapshot }) {
               <DropdownMenuRadioGroup
                 value={String(prefs.refreshSeconds)}
                 onValueChange={(value) =>
-                  void saveJarvisPreferences({ refreshSeconds: Number(value) })
+                  void saveAgentUsagePreferences({ refreshSeconds: Number(value) })
                 }
               >
                 {INTERVALS.map((interval) => (
@@ -112,9 +112,9 @@ export function JarvisSettings({ snapshot }: { snapshot: UsageSnapshot }) {
             onClick={async () => {
               setScanning(true)
               try {
-                await JarvisIPC.rescanAgents()
+                await AgentUsageIPC.rescanAgents()
               } catch {
-                $jarvis.setKey(
+                $agentUsage.setKey(
                   'error',
                   'Could not scan installed agents. Try again.',
                 )
@@ -155,7 +155,7 @@ export function JarvisSettings({ snapshot }: { snapshot: UsageSnapshot }) {
                   const providers = enabled
                     ? [...prefs.providers, provider.id]
                     : prefs.providers.filter((id) => id !== provider.id)
-                  void saveJarvisPreferences({ providers })
+                  void saveAgentUsagePreferences({ providers })
                 }}
               />
             </div>
