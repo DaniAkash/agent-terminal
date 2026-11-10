@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs'
+import { isAbsolute, join } from 'node:path'
 import type { ExpoConfig } from 'expo/config'
 import { version } from './package.json'
 
@@ -12,6 +14,34 @@ const suffix = isProd ? '' : '.dev'
 // the release tag rather than from anything in the tree. The local fallback
 // is only ever used by builds that never reach a store.
 const buildNumber = process.env.BUILD_NUMBER ?? '1'
+
+/**
+ * Client config for FCM registration, and only when it is really there.
+ *
+ * Never committed: it carries a Google cloud project identifier, so CI
+ * writes it from a secret. Naming it unconditionally made a missing
+ * file a prebuild failure rather than a build without push, because the
+ * Google Services config plugin copies the path during prebuild and
+ * errors when it cannot find it. The Android release workflow still
+ * fails loudly on the missing secret, before prebuild runs, so the loud
+ * failure stays where it belongs and a local build without credentials
+ * prebuilds with push simply unregistered.
+ */
+function resolveGoogleServicesFile(): string | undefined {
+  const path = process.env.GOOGLE_SERVICES_JSON ?? './google-services.json'
+  // Resolved against the project root rather than the working
+  // directory: the path in the config is read relative to the project,
+  // and the config itself is loaded from workspace scripts that run
+  // from the repo root.
+  const resolved = isAbsolute(path) ? path : join(__dirname, path)
+  if (existsSync(resolved)) return path
+  console.warn(
+    `[app.config] no Firebase client config at ${path}, Android push will not register`,
+  )
+  return undefined
+}
+
+const googleServicesFile = resolveGoogleServicesFile()
 
 const config: ExpoConfig = {
   name: 'Agent Terminal',
@@ -43,12 +73,9 @@ const config: ExpoConfig = {
     },
   },
   android: {
-    // Client config for FCM registration. Never committed: it carries a
-    // Google cloud project identifier, so CI writes it from a secret
-    // and the Android build fails loudly when it is missing rather than
-    // producing a build where push silently never registers.
-    googleServicesFile:
-      process.env.GOOGLE_SERVICES_JSON ?? './google-services.json',
+    // Spread rather than assigned: the key has to be absent, not
+    // undefined, when there is no file. See resolveGoogleServicesFile.
+    ...(googleServicesFile ? { googleServicesFile } : {}),
     // No `.companion` here, and not an oversight: hyphens are illegal in
     // Android package names, so this is the direct translation of the
     // desktop's `com.daniakash.agent-terminal`. The desktop never ships to
