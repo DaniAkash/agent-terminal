@@ -321,16 +321,23 @@ impl PairedTokens {
 
     /// The off switch. Called when the user disables push on the phone,
     /// and when Expo reports `DeviceNotRegistered`.
+    ///
+    /// Clears the stored error with the token. The error describes a
+    /// registration that is being taken away, and the phone's settings
+    /// screen reads `last_error` before it reads the off state, so
+    /// leaving it behind shows a device the user deliberately switched
+    /// off as one that is failing.
     pub fn clear_push_token(&self, id: &str) -> Result<bool> {
         let mut map = self.inner.lock().expect("paired_tokens lock poisoned");
         let Some(device) = map.get_mut(id) else {
             return Ok(false);
         };
-        if device.push_token.is_none() {
+        if device.push_token.is_none() && device.push_last_error.is_none() {
             return Ok(false);
         }
         device.push_token = None;
         device.push_registered_at = None;
+        device.push_last_error = None;
         let snapshot = map.clone();
         drop(map);
         self.persist(&snapshot)?;
@@ -530,6 +537,45 @@ mod tests {
         assert!(store.check_and_touch(&token_b, None).is_some());
         // Revoking again is a no-op.
         assert!(!store.revoke(&id_a).unwrap());
+    }
+
+    /// A stored error outliving the registration it describes made an
+    /// intentionally disabled device present as failing: the settings
+    /// screen checks `lastError` before the off state.
+    #[test]
+    fn unregistering_clears_the_stored_push_error_too() {
+        let store = PairedTokens::new_ephemeral();
+        let (id, _token) = store.insert(info("Dani's iPhone", "ios")).unwrap();
+        store
+            .set_push_registration(&id, "ExponentPushToken[abc]", "ios", 90, false)
+            .unwrap();
+        store
+            .set_push_error(&id, Some("push credentials rejected".to_string()))
+            .unwrap();
+        assert!(store.get(&id).unwrap().push_last_error.is_some());
+
+        assert!(store.clear_push_token(&id).unwrap());
+
+        let device = store.get(&id).unwrap();
+        assert!(device.push_token.is_none());
+        assert!(device.push_registered_at.is_none());
+        assert!(device.push_last_error.is_none());
+    }
+
+    /// The error can outlive the token when Expo reports
+    /// `DeviceNotRegistered`, which clears the token on its own.
+    #[test]
+    fn clearing_an_already_cleared_token_still_clears_a_leftover_error() {
+        let store = PairedTokens::new_ephemeral();
+        let (id, _token) = store.insert(info("Dani's iPhone", "ios")).unwrap();
+        store
+            .set_push_error(&id, Some("transport error".to_string()))
+            .unwrap();
+
+        assert!(store.clear_push_token(&id).unwrap());
+        assert!(store.get(&id).unwrap().push_last_error.is_none());
+        // Nothing left to clear.
+        assert!(!store.clear_push_token(&id).unwrap());
     }
 
     #[test]
