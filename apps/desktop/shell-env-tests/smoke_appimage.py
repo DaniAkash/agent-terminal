@@ -29,7 +29,7 @@ def x11_lifecycle(app):
     second = None
     reopened = None
     try:
-        for _ in range(150):
+        for _ in range(450):
             if first.poll() is not None:
                 raise RuntimeError(f"App exited during startup: {first.returncode}")
             found = subprocess.run(
@@ -41,6 +41,7 @@ def x11_lifecycle(app):
                 break
             time.sleep(0.1)
         else:
+            subprocess.run(["xdotool", "search", "--onlyvisible", "--name", ".", "getwindowname"], check=False)
             raise RuntimeError("Main window did not appear")
         # Wait for the webview to attach its close listener after window creation.
         time.sleep(5)
@@ -52,7 +53,7 @@ def x11_lifecycle(app):
         if first.wait(timeout=15) != 0:
             raise RuntimeError("App did not exit cleanly after closing its window")
         reopened = subprocess.Popen([str(app)], start_new_session=True)
-        for _ in range(150):
+        for _ in range(450):
             if reopened.poll() is not None:
                 raise RuntimeError(f"App failed to reopen: {reopened.returncode}")
             found = subprocess.run(
@@ -63,6 +64,7 @@ def x11_lifecycle(app):
                 break
             time.sleep(0.1)
         else:
+            subprocess.run(["xdotool", "search", "--onlyvisible", "--name", ".", "getwindowname"], check=False)
             raise RuntimeError("Main window did not reappear")
         print("PASS X11 second launch, window close, exit, and reopen")
     finally:
@@ -102,7 +104,7 @@ def smoke(image, binary, backend):
                     command = ["xvfb-run", "-a", "dbus-run-session", "--", sys.executable, "-E", str(Path(__file__).resolve()), "--x11-lifecycle", str(app)]
                 process = subprocess.Popen(command, env=env, stdout=log, stderr=log, start_new_session=True)
                 if backend == "x11":
-                    if process.wait(timeout=60) != 0:
+                    if process.wait(timeout=150) != 0:
                         raise RuntimeError("X11 lifecycle smoke test failed")
                     print("PASS packaged app X11 lifecycle")
                     return

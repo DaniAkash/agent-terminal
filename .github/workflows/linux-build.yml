@@ -163,8 +163,16 @@ jobs:
         run: |
           case "$DISTRO_FAMILY" in
             debian)
-              apt-get update
-              DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates git python3 libwebkit2gtk-4.1-0 libayatana-appindicator3-1 xdotool openbox xvfb xauth dbus weston
+              for attempt in 1 2 3; do
+                if apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates git python3 libwebkit2gtk-4.1-0 libayatana-appindicator3-1 xdotool openbox xvfb xauth dbus weston; then
+                  break
+                fi
+                if [ "$attempt" -eq 3 ]; then
+                  echo "Desktop dependency installation failed after $attempt attempts" >&2
+                  exit 1
+                fi
+                echo "Refreshing package indexes before retry $((attempt + 1))"
+              done
               ;;
             fedora)
               dnf install -y ca-certificates git python3 webkit2gtk4.1 libayatana-appindicator-gtk3 xdotool openbox xorg-x11-server-Xvfb xorg-x11-xauth dbus-daemon weston
