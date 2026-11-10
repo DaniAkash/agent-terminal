@@ -91,22 +91,66 @@ jobs:
           toolchain: 1.95.0
           components: clippy
 
-      # tauri-runtime-wry's build script links against WebKitGTK during
-      # dependency compilation — required even for `cargo check`, not just
-      # build. Apt list mirrors Tauri 2's prerequisites doc.
+      # Around 105 packages get pulled from the Ubuntu mirror here, and
+      # measured across a month of runs this one step was the largest
+      # single consumer of job wall clock: a 31s median, but with a tail
+      # where mirror throughput collapsed and a single apt-get ran for
+      # 1191s. The package set only changes when the list file changes,
+      # so the downloaded .debs are cacheable.
+      #
+      # Cache key components, all of them load-bearing:
+      #   - hash of the package list, so an edited list can never be
+      #     served an entry built from the old set.
+      #   - ImageOS, which pins the Ubuntu release the .debs belong to.
+      # There are deliberately no restore-keys. A partial match would
+      # mix .debs from a different package set into the saved entry, and
+      # a stale libwebkit2gtk-4.1-dev would be a silent correctness
+      # problem, which is worse than the slowness being fixed.
+      #
+      # The install below is the real backstop. It always runs apt-get
+      # update and apt-get install, so it falls back to the network on a
+      # miss, and apt only reuses a cached .deb that the freshly fetched
+      # index still vouches for by version, size and hash. Anything the
+      # index no longer recognises is ignored and re-downloaded.
+      #
+      # Restore and save are split so the entry is written immediately
+      # after the install, before the long check step. A single
+      # actions/cache step saves in a post step, which no-ops when the
+      # job fails, so every red run would re-download the whole layer.
+      - name: Restore Tauri Linux dependency packages
+        id: apt-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/apt-tauri
+          key: apt-tauri-${{ runner.os }}-${{ runner.arch }}-${{ env.ImageOS }}-${{ hashFiles('.github/tauri-linux-deps.txt') }}
+
       - name: Install Tauri Linux dependencies
         run: |
+          set -euo pipefail
+          mkdir -p ~/.cache/apt-tauri
+          # Hand apt whatever was restored, then let it decide what is
+          # still valid.
+          sudo cp -f ~/.cache/apt-tauri/*.deb /var/cache/apt/archives/ 2>/dev/null || true
           sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            build-essential \
-            curl \
-            wget \
-            file \
-            libxdo-dev \
-            libssl-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev
+          mapfile -t packages < <(grep -vE '^[[:space:]]*(#|$)' .github/tauri-linux-deps.txt)
+          sudo apt-get install -y -o APT::Keep-Downloaded-Packages=true "${packages[@]}"
+
+      - name: Stage Tauri Linux dependency packages for caching
+        if: steps.apt-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          rm -rf ~/.cache/apt-tauri
+          mkdir -p ~/.cache/apt-tauri
+          sudo find /var/cache/apt/archives -maxdepth 1 -name '*.deb' \
+            -exec cp -f {} ~/.cache/apt-tauri/ \;
+          sudo chown -R "$(id -u):$(id -g)" ~/.cache/apt-tauri
+
+      - name: Save Tauri Linux dependency packages
+        if: steps.apt-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.cache/apt-tauri
+          key: ${{ steps.apt-cache.outputs.cache-primary-key }}
 
       - uses: Swatinem/rust-cache@v2
         with:

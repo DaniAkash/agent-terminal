@@ -1,0 +1,16 @@
+# Apt packages Tauri 2 requires on Linux, mirroring Tauri's prerequisites doc.
+# tauri-runtime-wry's build script links against WebKitGTK during dependency
+# compilation, so these are needed even for `cargo check`, not just for a build.
+#
+# This list lives in its own file so the CI apt cache key can hash it. Editing
+# it invalidates that cache, which is the point: an entry must never outlive the
+# package set it was built from.
+libwebkit2gtk-4.1-dev
+build-essential
+curl
+wget
+file
+libxdo-dev
+libssl-dev
+libayatana-appindicator3-dev
+librsvg2-dev
