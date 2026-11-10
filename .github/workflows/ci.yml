@@ -189,6 +189,32 @@ jobs:
           # warm cache becomes a coin flip. Pinning the toolchain (see the
           # dtolnay/rust-toolchain step above) keeps that set stable.
           #
+          # Only write an entry from main, which includes the weekly
+          # warm run. Every entry is about 1.54 GB, so roughly six fill
+          # GitHub's 10 GB per-repo cap, and once the cap is reached
+          # GitHub evicts the least recently used entry. Per-pull-request
+          # saves were therefore competing with main's entry for the cap,
+          # and main's entry is the one every pull request restores from,
+          # since a run can only restore from its own ref, its base
+          # branch, or the default branch.
+          #
+          # This trims entry count rather than entry size, because the
+          # size turns out not to be trimmable. Measured on this
+          # workspace, what is in the entry is almost entirely dependency
+          # artifacts: rust-cache already drops the incremental directory,
+          # re-extracts the registry sources from the .crate archives
+          # instead of storing them, and prunes the workspace crates' own
+          # outputs. What is left is the dependency graph, and dropping
+          # any of that is what reintroduces cold compiles, which were
+          # measured at roughly 5x what the restore costs. So
+          # cache-all-crates and cache-targets are deliberately untouched.
+          #
+          # The trade: a pull request that changes Cargo.lock no longer
+          # writes its own entry, so each push to that branch recompiles
+          # the changed dependencies rather than restoring them. Bounded
+          # to the dependencies that actually changed, and paid only on
+          # dependency-changing branches.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
           # `add-rust-environment-hash-key: false` looks like the direct
           # fix and is what upstream BrowserOS went with, but on
           # rust-cache@v2 that one flag gates BOTH the environment hash
