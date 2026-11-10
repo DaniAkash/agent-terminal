@@ -23,24 +23,27 @@ const sections = [
   { label: 'Platforms', id: 'platforms' },
   { label: 'Contributing', id: 'contributing' },
 ]
-  onMount(() => {
-    const updateActiveSection = () => {
-      const atBottom = window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 2;
-      let current = sections[0].id;
-      for (const section of sections) {
-        const element = document.getElementById(section.id);
-        if (element && element.getBoundingClientRect().top <= 110) current = section.id;
-      }
-      activeSection = atBottom ? sections[sections.length - 1].id : current;
-    };
-    updateActiveSection();
-    window.addEventListener('scroll', updateActiveSection, { passive: true });
-    window.addEventListener('resize', updateActiveSection);
-    return () => {
-      window.removeEventListener('scroll', updateActiveSection);
-      window.removeEventListener('resize', updateActiveSection);
-    };
-  });
+onMount(() => {
+  const updateActiveSection = () => {
+    const atBottom =
+      window.scrollY + window.innerHeight >=
+      document.documentElement.scrollHeight - 2
+    let current = sections[0].id
+    for (const section of sections) {
+      const element = document.getElementById(section.id)
+      if (element && element.getBoundingClientRect().top <= 110)
+        current = section.id
+    }
+    activeSection = atBottom ? sections[sections.length - 1].id : current
+  }
+  updateActiveSection()
+  window.addEventListener('scroll', updateActiveSection, { passive: true })
+  window.addEventListener('resize', updateActiveSection)
+  return () => {
+    window.removeEventListener('scroll', updateActiveSection)
+    window.removeEventListener('resize', updateActiveSection)
+  }
+})
 </script>
 <main class="docs-page">
   <div class="docs-shell">
@@ -48,7 +51,11 @@ const sections = [
       <div class="docs-sidebar-title"><BookOpen size={16} /> DOCUMENTATION</div>
       <nav aria-label="Documentation sections">
         {#each sections as section}
-          <a href={`#${section.id}`} aria-current={activeSection === section.id ? 'location' : undefined}>{section.label}</a>
+          <a
+            href={`#${section.id}`}
+            aria-current={activeSection === section.id ? 'location' : undefined}
+            >{section.label}</a
+          >
         {/each}
       </nav>
       <a
@@ -88,10 +95,16 @@ const sections = [
         <div class="docs-downloads">
           <a
             href="https://github.com/DaniAkash/agent-terminal/releases/latest/download/agent-terminal-aarch64.dmg"
-            ><span class="simple-icon" aria-hidden="true">{@html siApple.svg}</span> Apple Silicon <ArrowUpRight size={14} /></a
+            ><span class="simple-icon" aria-hidden="true"
+              >{@html siApple.svg}</span
+            >
+            Apple Silicon <ArrowUpRight size={14} /></a
           ><a
             href="https://github.com/DaniAkash/agent-terminal/releases/latest/download/agent-terminal-x64.dmg"
-            ><span class="simple-icon" aria-hidden="true">{@html siIntel.svg}</span> Intel <ArrowUpRight size={14} /></a
+            ><span class="simple-icon" aria-hidden="true"
+              >{@html siIntel.svg}</span
+            >
+            Intel <ArrowUpRight size={14} /></a
           >
         </div>
         <div class="docs-code">
@@ -152,8 +165,9 @@ const sections = [
         <div class="docs-callout">
           <strong>Find a recent session</strong>
           <p>
-            Press <kbd class="command-key">⌘</kbd> <kbd>P</kbd> to open the recent-tabs switcher.
-            Type to filter and press Enter to jump back in.
+            Press <kbd class="command-key">⌘</kbd> <kbd>P</kbd> to open the
+            recent-tabs switcher. Type to filter and press Enter to jump back
+            in.
           </p>
         </div>
       </section>
@@ -307,7 +321,52 @@ const sections = [
         <h2>Keyboard shortcuts</h2>
         <p>Move around your workspace without leaving the keyboard.</p>
         <div class="docs-table-wrap">
-          <table class="docs-table"><thead><tr><th scope="col">ACTION</th><th scope="col">SHORTCUT</th></tr></thead><tbody><tr><td>New tab in the active project</td><td><kbd class="command-key">⌘</kbd> + <kbd>T</kbd></td></tr><tr><td>Close the active tab (unpinned)</td><td><kbd class="command-key">⌘</kbd> + <kbd>W</kbd></td></tr><tr><td>Next tab</td><td><kbd class="command-key">⌘</kbd> + <kbd>Shift</kbd> + <kbd>]</kbd> or <kbd>Ctrl</kbd> + <kbd>Tab</kbd></td></tr><tr><td>Previous tab</td><td><kbd class="command-key">⌘</kbd> + <kbd>Shift</kbd> + <kbd>[</kbd> or <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>Tab</kbd></td></tr><tr><td>Jump to project 1–9</td><td><kbd class="command-key">⌘</kbd> + <kbd>1</kbd> … <kbd>9</kbd></td></tr><tr><td>Open recent-tabs switcher</td><td><kbd class="command-key">⌘</kbd> + <kbd>P</kbd></td></tr></tbody></table>
+          <table class="docs-table">
+            <thead>
+              <tr>
+                <th scope="col">ACTION</th>
+                <th scope="col">SHORTCUT</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>New tab in the active project</td>
+                <td><kbd class="command-key">⌘</kbd> + <kbd>T</kbd></td>
+              </tr>
+              <tr>
+                <td>Close the active tab (unpinned)</td>
+                <td><kbd class="command-key">⌘</kbd> + <kbd>W</kbd></td>
+              </tr>
+              <tr>
+                <td>Next tab</td>
+                <td>
+                  <kbd class="command-key">⌘</kbd>
+                  + <kbd>Shift</kbd> + <kbd>]</kbd> or <kbd>Ctrl</kbd> +
+                  <kbd>Tab</kbd>
+                </td>
+              </tr>
+              <tr>
+                <td>Previous tab</td>
+                <td>
+                  <kbd class="command-key">⌘</kbd>
+                  + <kbd>Shift</kbd> + <kbd>[</kbd> or <kbd>Ctrl</kbd> +
+                  <kbd>Shift</kbd>
+                  + <kbd>Tab</kbd>
+                </td>
+              </tr>
+              <tr>
+                <td>Jump to project 1–9</td>
+                <td>
+                  <kbd class="command-key">⌘</kbd>
+                  + <kbd>1</kbd> … <kbd>9</kbd>
+                </td>
+              </tr>
+              <tr>
+                <td>Open recent-tabs switcher</td>
+                <td><kbd class="command-key">⌘</kbd> + <kbd>P</kbd></td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </section>
       <section class="docs-section" id="platforms">

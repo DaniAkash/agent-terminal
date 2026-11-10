@@ -349,14 +349,73 @@ async function copyInstall() {
     </div>
   </section>
   <section class="faq-section wrap" aria-labelledby="faq-heading">
-    <div class="faq-intro"><div class="section-kicker">GOOD TO KNOW</div><h2 id="faq-heading">A few common<br /><em>questions.</em></h2><p>Everything you need to know before getting started.</p></div>
+    <div class="faq-intro">
+      <div class="section-kicker">GOOD TO KNOW</div>
+      <h2 id="faq-heading">A few common<br><em>questions.</em></h2>
+      <p>Everything you need to know before getting started.</p>
+    </div>
     <div class="faq-list">
-      <details><summary>What is Agent Terminal?<span aria-hidden="true">+</span></summary><p>It’s an open-source terminal workspace that organizes sessions by project and surfaces context about your coding agents, processes, and Git state.</p></details>
-      <details><summary>Which coding agents can I use?<span aria-hidden="true">+</span></summary><p>Claude Code, Codex CLI, and opencode are supported. Amp, Kilo Code, Kimi CLI, and Mastra are experimental. Install each agent separately. <a href="/agents">See all integrations</a>.</p></details>
-      <details><summary>Does it work with my existing shell and tools?<span aria-hidden="true">+</span></summary><p>Yes. Your shell and CLI tools remain available in your terminal sessions. Zsh is the daily-driver shell; Bash has been lightly tested.</p></details>
-      <details><summary>Which platforms are supported?<span aria-hidden="true">+</span></summary><p>Agent Terminal is stable on macOS 13 and later, on both Apple Silicon and Intel. Linux and Windows need more testing and contributions.</p></details>
-      <details><summary>Is Agent Terminal free?<span aria-hidden="true">+</span></summary><p>Yes. Agent Terminal is free and open source under the MIT license. Coding agents and their providers may have their own pricing.</p></details>
-      <details><summary>Can I access my sessions from my phone?<span aria-hidden="true">+</span></summary><p>Yes. The mobile companion pairs with your desktop over your local network so you can access projects and terminal sessions from your phone.</p></details>
+      <details>
+        <summary>
+          What is Agent Terminal?<span aria-hidden="true">+</span>
+        </summary>
+        <p>
+          It’s an open-source terminal workspace that organizes sessions by
+          project and surfaces context about your coding agents, processes, and
+          Git state.
+        </p>
+      </details>
+      <details>
+        <summary>
+          Which coding agents can I use?<span aria-hidden="true">+</span>
+        </summary>
+        <p>
+          Claude Code, Codex CLI, and opencode are supported. Amp, Kilo Code,
+          Kimi CLI, and Mastra are experimental. Install each agent separately.
+          <a href="/agents">See all integrations</a>.
+        </p>
+      </details>
+      <details>
+        <summary>
+          Does it work with my existing shell and tools?<span aria-hidden="true"
+            >+</span
+          >
+        </summary>
+        <p>
+          Yes. Your shell and CLI tools remain available in your terminal
+          sessions. Zsh is the daily-driver shell; Bash has been lightly tested.
+        </p>
+      </details>
+      <details>
+        <summary>
+          Which platforms are supported?<span aria-hidden="true">+</span>
+        </summary>
+        <p>
+          Agent Terminal is stable on macOS 13 and later, on both Apple Silicon
+          and Intel. Linux and Windows need more testing and contributions.
+        </p>
+      </details>
+      <details>
+        <summary>
+          Is Agent Terminal free?<span aria-hidden="true">+</span>
+        </summary>
+        <p>
+          Yes. Agent Terminal is free and open source under the MIT license.
+          Coding agents and their providers may have their own pricing.
+        </p>
+      </details>
+      <details>
+        <summary>
+          Can I access my sessions from my phone?<span aria-hidden="true"
+            >+</span
+          >
+        </summary>
+        <p>
+          Yes. The mobile companion pairs with your desktop over your local
+          network so you can access projects and terminal sessions from your
+          phone.
+        </p>
+      </details>
     </div>
   </section>
   <section class="closing wrap">
