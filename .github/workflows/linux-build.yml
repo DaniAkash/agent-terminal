@@ -8,12 +8,14 @@ on:
     paths:
       - 'apps/desktop/**'
       - 'packages/**'
+      - 'packaging/**'
       - 'bun.lock'
       - '.github/workflows/linux-build.yml'
   pull_request:
     paths:
       - 'apps/desktop/**'
       - 'packages/**'
+      - 'packaging/**'
       - 'bun.lock'
       - '.github/workflows/linux-build.yml'
 
@@ -101,6 +103,8 @@ jobs:
       CARGO_BUILD_BUILD_DIR: ${{ github.workspace }}/apps/desktop/target
     steps:
       - uses: actions/checkout@v4
+      - name: Test Linux release packaging
+        run: python3 -m unittest discover -s packaging -p 'test_*.py'
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version-file: .bun-version

@@ -77,7 +77,7 @@ jobs:
         run: |
           set -euo pipefail
           version=$(node -p "require('./apps/desktop/src-tauri/tauri.conf.json').version")
-          test "$GITHUB_REF_NAME" = "v$version"
+          python3 packaging/validate_release_tag.py "$version" "$GITHUB_REF_NAME"
           mkdir -p linux-assets packaging/snap/snap/gui
           deb=$(find apps/desktop/target/release/bundle/deb -name '*.deb' -print -quit)
           image=$(find apps/desktop/target/release/bundle/appimage -name '*.AppImage' -print -quit)
@@ -404,6 +404,7 @@ jobs:
           # DRAFT — never auto-publish. The user reviews the body, edits
           # if needed, and clicks Publish in the GitHub UI.
           draft: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
           body: ${{ needs.changelog.outputs.content }}
@@ -427,6 +428,7 @@ jobs:
           fail_on_unmatched_files: true
 
       - name: Publish manifest to release-manifest branch
+        if: ${{ !contains(github.ref_name, '-') }}
         # Sidesteps GitHub's /releases/latest/download/ redirect (which
         # excludes pre-releases). The manifest is served at:
         #
