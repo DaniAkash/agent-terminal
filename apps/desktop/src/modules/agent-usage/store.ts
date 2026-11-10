@@ -70,7 +70,10 @@ async function initialize(active: number) {
     for (const dispose of installed) dispose()
     disposers = []
     initialization = undefined
-    $agentUsage.setKey('error', 'Agent Usage limits could not connect to the usage service.')
+    $agentUsage.setKey(
+      'error',
+      'Agent Usage limits could not connect to the usage service.',
+    )
     $agentUsage.setKey('loading', false)
   } finally {
     if (lifecycle !== active) {
@@ -79,7 +82,9 @@ async function initialize(active: number) {
   }
 }
 
-export async function saveAgentUsagePreferences(patch: Partial<AgentUsagePreferences>) {
+export async function saveAgentUsagePreferences(
+  patch: Partial<AgentUsagePreferences>,
+) {
   const state = $agentUsage.get()
   if (!state.snapshot || state.saving) return
   $agentUsage.setKey('saving', true)

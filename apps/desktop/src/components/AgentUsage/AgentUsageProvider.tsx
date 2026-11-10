@@ -11,7 +11,10 @@ import {
   STATUS_LABEL,
   usageColor,
 } from '@/modules/agent-usage/helpers'
-import { $agentUsage, authorizeClaudeKeychain } from '@/modules/agent-usage/store'
+import {
+  $agentUsage,
+  authorizeClaudeKeychain,
+} from '@/modules/agent-usage/store'
 import type { ProviderUsage, UsageWindow } from '@/modules/agent-usage/types'
 
 export function AgentUsageProvider({ provider }: { provider: ProviderUsage }) {

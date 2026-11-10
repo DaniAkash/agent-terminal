@@ -1,7 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import { IPC } from '@/modules/ipc/commands'
 import { startAgentUsage } from '@/modules/agent-usage/store'
+import { IPC } from '@/modules/ipc/commands'
 import { startCwdPersist } from '@/modules/mods/cwd-persist'
 import { startModListener } from '@/modules/mods/mod-listener'
 import { startNotificationsBridge } from '@/modules/notifications/notificationsBridge'

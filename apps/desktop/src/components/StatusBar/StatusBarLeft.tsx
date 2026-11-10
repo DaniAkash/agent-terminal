@@ -1,7 +1,7 @@
 import { useStore } from '@nanostores/react'
 import type React from 'react'
-import { CompanionButton } from '@/components/Companion/CompanionButton'
 import { AgentUsageButton } from '@/components/AgentUsage/AgentUsageButton'
+import { CompanionButton } from '@/components/Companion/CompanionButton'
 import { RunningDot } from '@/components/RunningDot'
 import { ThemeToggle } from '@/components/ThemeToggle/ThemeToggle'
 import { $projects } from '@/modules/stores/$projects'

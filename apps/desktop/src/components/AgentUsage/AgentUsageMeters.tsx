@@ -1,6 +1,9 @@
 import { AlertCircle, ArrowUpRight, Gauge } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { mostConstrained, prioritizeProvider } from '@/modules/agent-usage/helpers'
+import {
+  mostConstrained,
+  prioritizeProvider,
+} from '@/modules/agent-usage/helpers'
 import { $agentUsage } from '@/modules/agent-usage/store'
 import type { UsageSnapshot } from '@/modules/agent-usage/types'
 import { AgentUsageProvider } from './AgentUsageProvider'

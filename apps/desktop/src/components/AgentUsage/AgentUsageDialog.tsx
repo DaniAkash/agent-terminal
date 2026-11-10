@@ -10,9 +10,13 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
-import { $agentUsage, refreshAgentUsage, startAgentUsage } from '@/modules/agent-usage/store'
-import { AgentUsageSettings } from './AgentUsageSettings'
+import {
+  $agentUsage,
+  refreshAgentUsage,
+  startAgentUsage,
+} from '@/modules/agent-usage/store'
 import { AgentUsageMeters } from './AgentUsageMeters'
+import { AgentUsageSettings } from './AgentUsageSettings'
 
 export function AgentUsageDialog({
   priorityProviderId,
@@ -28,7 +32,10 @@ export function AgentUsageDialog({
   }, [open])
   const problem = error ?? snapshot?.settingsError
   return (
-    <Dialog open={open} onOpenChange={(next) => $agentUsage.setKey('open', next)}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => $agentUsage.setKey('open', next)}
+    >
       <DialogContent
         className="agent-usage-surface flex max-h-[min(760px,calc(100dvh-2rem))] w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[480px]"
         style={{ fontFamily: 'var(--font-ui)' }}

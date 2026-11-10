@@ -13,7 +13,10 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { AgentUsageIPC } from '@/modules/agent-usage/api'
 import { installationLabel, STATUS_LABEL } from '@/modules/agent-usage/helpers'
-import { $agentUsage, saveAgentUsagePreferences } from '@/modules/agent-usage/store'
+import {
+  $agentUsage,
+  saveAgentUsagePreferences,
+} from '@/modules/agent-usage/store'
 import type { UsageSnapshot } from '@/modules/agent-usage/types'
 
 const SOURCES: Record<string, string> = {
@@ -83,7 +86,9 @@ export function AgentUsageSettings({ snapshot }: { snapshot: UsageSnapshot }) {
               <DropdownMenuRadioGroup
                 value={String(prefs.refreshSeconds)}
                 onValueChange={(value) =>
-                  void saveAgentUsagePreferences({ refreshSeconds: Number(value) })
+                  void saveAgentUsagePreferences({
+                    refreshSeconds: Number(value),
+                  })
                 }
               >
                 {INTERVALS.map((interval) => (
@@ -165,8 +170,8 @@ export function AgentUsageSettings({ snapshot }: { snapshot: UsageSnapshot }) {
       <p className="agent-usage-settings-note border-border/60 text-muted-foreground border-t pt-3 text-[11px] leading-relaxed">
         Usage is reported by your provider account and may include other
         devices. Credentials stay on this device and are sent only to their own
-        provider. Agent Usage limits does not save credentials, read browser cookies, or
-        collect token history.
+        provider. Agent Usage limits does not save credentials, read browser
+        cookies, or collect token history.
       </p>
     </div>
   )
