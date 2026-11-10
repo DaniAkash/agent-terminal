@@ -35,6 +35,21 @@ on:
     # so re-running the same checks is defensive, not a second gate.
     branches:
       - main
+  schedule:
+    # Cache-warming trigger only, Mondays at 06:00 UTC. GitHub evicts
+    # cache entries that have not been accessed for seven days, and a
+    # PR can only restore from its own ref or its base branch. A quiet
+    # week on main therefore ages out main's rust-cache entry and the
+    # next run, whichever ref it is on, pays the full cold compile:
+    # measured at 219s to 342s of excess over a warm run, and that is
+    # exactly the state the repo was in when this was investigated,
+    # with no rust-cache entry on refs/heads/main at all.
+    #
+    # Scheduled events run on the default branch, so the approval gate
+    # is skipped the same way a push to main skips it, and the run
+    # writes a fresh entry under refs/heads/main for PRs to restore.
+    # Strictly additive: no existing trigger or step changes.
+    - cron: '0 6 * * 1'
   workflow_dispatch:
 
 concurrency:
@@ -91,22 +106,66 @@ jobs:
           toolchain: 1.95.0
           components: clippy
 
-      # tauri-runtime-wry's build script links against WebKitGTK during
-      # dependency compilation — required even for `cargo check`, not just
-      # build. Apt list mirrors Tauri 2's prerequisites doc.
+      # Around 105 packages get pulled from the Ubuntu mirror here, and
+      # measured across a month of runs this one step was the largest
+      # single consumer of job wall clock: a 31s median, but with a tail
+      # where mirror throughput collapsed and a single apt-get ran for
+      # 1191s. The package set only changes when the list file changes,
+      # so the downloaded .debs are cacheable.
+      #
+      # Cache key components, all of them load-bearing:
+      #   - hash of the package list, so an edited list can never be
+      #     served an entry built from the old set.
+      #   - ImageOS, which pins the Ubuntu release the .debs belong to.
+      # There are deliberately no restore-keys. A partial match would
+      # mix .debs from a different package set into the saved entry, and
+      # a stale libwebkit2gtk-4.1-dev would be a silent correctness
+      # problem, which is worse than the slowness being fixed.
+      #
+      # The install below is the real backstop. It always runs apt-get
+      # update and apt-get install, so it falls back to the network on a
+      # miss, and apt only reuses a cached .deb that the freshly fetched
+      # index still vouches for by version, size and hash. Anything the
+      # index no longer recognises is ignored and re-downloaded.
+      #
+      # Restore and save are split so the entry is written immediately
+      # after the install, before the long check step. A single
+      # actions/cache step saves in a post step, which no-ops when the
+      # job fails, so every red run would re-download the whole layer.
+      - name: Restore Tauri Linux dependency packages
+        id: apt-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/apt-tauri
+          key: apt-tauri-${{ runner.os }}-${{ runner.arch }}-${{ env.ImageOS }}-${{ hashFiles('.github/tauri-linux-deps.txt') }}
+
       - name: Install Tauri Linux dependencies
         run: |
+          set -euo pipefail
+          mkdir -p ~/.cache/apt-tauri
+          # Hand apt whatever was restored, then let it decide what is
+          # still valid.
+          sudo cp -f ~/.cache/apt-tauri/*.deb /var/cache/apt/archives/ 2>/dev/null || true
           sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            build-essential \
-            curl \
-            wget \
-            file \
-            libxdo-dev \
-            libssl-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev
+          mapfile -t packages < <(grep -vE '^[[:space:]]*(#|$)' .github/tauri-linux-deps.txt)
+          sudo apt-get install -y -o APT::Keep-Downloaded-Packages=true "${packages[@]}"
+
+      - name: Stage Tauri Linux dependency packages for caching
+        if: steps.apt-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          rm -rf ~/.cache/apt-tauri
+          mkdir -p ~/.cache/apt-tauri
+          sudo find /var/cache/apt/archives -maxdepth 1 -name '*.deb' \
+            -exec cp -f {} ~/.cache/apt-tauri/ \;
+          sudo chown -R "$(id -u):$(id -g)" ~/.cache/apt-tauri
+
+      - name: Save Tauri Linux dependency packages
+        if: steps.apt-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.cache/apt-tauri
+          key: ${{ steps.apt-cache.outputs.cache-primary-key }}
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -130,6 +189,32 @@ jobs:
           # warm cache becomes a coin flip. Pinning the toolchain (see the
           # dtolnay/rust-toolchain step above) keeps that set stable.
           #
+          # Only write an entry from main, which includes the weekly
+          # warm run. Every entry is about 1.54 GB, so roughly six fill
+          # GitHub's 10 GB per-repo cap, and once the cap is reached
+          # GitHub evicts the least recently used entry. Per-pull-request
+          # saves were therefore competing with main's entry for the cap,
+          # and main's entry is the one every pull request restores from,
+          # since a run can only restore from its own ref, its base
+          # branch, or the default branch.
+          #
+          # This trims entry count rather than entry size, because the
+          # size turns out not to be trimmable. Measured on this
+          # workspace, what is in the entry is almost entirely dependency
+          # artifacts: rust-cache already drops the incremental directory,
+          # re-extracts the registry sources from the .crate archives
+          # instead of storing them, and prunes the workspace crates' own
+          # outputs. What is left is the dependency graph, and dropping
+          # any of that is what reintroduces cold compiles, which were
+          # measured at roughly 5x what the restore costs. So
+          # cache-all-crates and cache-targets are deliberately untouched.
+          #
+          # The trade: a pull request that changes Cargo.lock no longer
+          # writes its own entry, so each push to that branch recompiles
+          # the changed dependencies rather than restoring them. Bounded
+          # to the dependencies that actually changed, and paid only on
+          # dependency-changing branches.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
           # `add-rust-environment-hash-key: false` looks like the direct
           # fix and is what upstream BrowserOS went with, but on
           # rust-cache@v2 that one flag gates BOTH the environment hash
@@ -160,10 +245,12 @@ jobs:
         run: bun install --frozen-lockfile
 
       # The single monorepo check. Fans out via concurrently --group:
-      # biome, desktop:tsc, desktop:test, sidecar:test, rust:clippy,
-      # rust:test, companion (which fans out its own 7 sub-checks),
-      # and the protocol drift verifier. Every sub-check runs to
-      # completion regardless of what others do, so one CI run surfaces
-      # every failure at once.
+      # biome, desktop:tsc, desktop:test, sidecar:test, companion (which
+      # fans out its own 7 sub-checks), the website, and the cargo chain,
+      # which is its own nested group running clippy, cargo test, the
+      # tauri build and the protocol drift verifier one at a time. Every
+      # sub-check runs to completion regardless of what others do, and
+      # every exit code is reported, so one CI run surfaces every failure
+      # at once.
       - name: bun run check
         run: bun run check
