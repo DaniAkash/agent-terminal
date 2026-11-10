@@ -167,7 +167,14 @@ impl NotificationService {
         let seen_tab = {
             let mut inner = self.inner.lock().unwrap();
             inner.active_tab = composite_tab_id.clone();
-            if inner.app_foreground { composite_tab_id } else { None }
+            let seen = if inner.app_foreground { composite_tab_id } else { None };
+            // Seeing the tab retires its count with it, so the next
+            // notification counts from zero rather than from what the
+            // user has already read.
+            if let Some(tab) = seen.as_deref() {
+                inner.updates.remove(tab);
+            }
+            seen
         };
         if let (Some(tab), Some(push)) = (seen_tab, self.push()) {
             push.mark_seen(&tab);
@@ -181,7 +188,11 @@ impl NotificationService {
         let seen_tab = {
             let mut inner = self.inner.lock().unwrap();
             inner.app_foreground = focused;
-            if focused { inner.active_tab.clone() } else { None }
+            let seen = if focused { inner.active_tab.clone() } else { None };
+            if let Some(tab) = seen.as_deref() {
+                inner.updates.remove(tab);
+            }
+            seen
         };
         if let (Some(tab), Some(push)) = (seen_tab, self.push()) {
             push.mark_seen(&tab);
