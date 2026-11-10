@@ -3,8 +3,9 @@ import { $push, loadPushPrefs } from './$push'
 import { syncRegistration } from './push.register'
 import { createChannels } from './push.channels'
 import { installForegroundHandler } from './push.handler'
+import { shouldHydrateToken } from './push.register.helpers'
 import { handlePushData, installResponseListener } from './push.routing'
-import { refreshPermission } from './push.token'
+import { fetchToken, refreshPermission } from './push.token'
 
 let started = false
 
@@ -49,6 +50,18 @@ export async function initPush(): Promise<void> {
   installForegroundHandler()
   installResponseListener()
   await refreshPermission()
+
+  // Hydration must not read as an opt-out. The token lives in process
+  // memory only, so a cold start leaves an enabled preference with no
+  // token beside it, and the registration gate reads that pair as the
+  // user having switched push off: it sends UnregisterPush and the
+  // desktop drops the registration, until the switch is toggled by
+  // hand. Fetching one here closes that hole. Still no permission
+  // request: this only uses permission the user has already granted.
+  const { permission, prefs, token } = $push.get()
+  if (shouldHydrateToken({ enabled: prefs.enabled, permission, token })) {
+    await fetchToken()
+  }
 
   // The cold-start tap. Without this, a tap that launches the app from
   // killed lands on the home screen, which is the most likely state

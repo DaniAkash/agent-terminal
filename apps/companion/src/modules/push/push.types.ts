@@ -60,6 +60,25 @@ export interface PushPrefs {
 }
 
 /**
+ * What this phone has told the desktop on the current connection.
+ *
+ * `PushStatus` carries no token, so the desktop's echo cannot say
+ * whether the token it stored is still the one this phone holds. This
+ * does: it is the phone's own record of what it last sent, and
+ * comparing it to what the phone now wants is what tells an identical
+ * echo apart from a rotated token or a changed preference.
+ */
+export type PushAssertion =
+  | {
+      kind: 'registered'
+      token: string
+      delaySeconds: number
+      redactNames: boolean
+    }
+  /** An `UnregisterPush` already went out on this connection. */
+  | { kind: 'cleared' }
+
+/**
  * Three minutes. You can be at your desk and heads-down in another
  * window for a long time, and the grace window exists to let you notice
  * on your own before your pocket buzzes.

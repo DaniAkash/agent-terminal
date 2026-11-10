@@ -38,7 +38,7 @@ function toPermission(status: string) {
  * register. That is reported as unsupported rather than thrown, so the
  * settings screen can say so instead of the app crashing on a tap.
  */
-async function fetchToken(): Promise<string | null> {
+export async function fetchToken(): Promise<string | null> {
   const projectId = resolveProjectId()
   if (!projectId) {
     // Reported rather than thrown: the settings screen says push is

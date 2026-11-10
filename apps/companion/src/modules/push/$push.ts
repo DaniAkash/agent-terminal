@@ -3,6 +3,7 @@ import { map } from 'nanostores'
 import {
   DEFAULT_DELAY_SECONDS,
   type DesktopPushStatus,
+  type PushAssertion,
   type PushData,
   type PushPermission,
   type PushPrefs,
@@ -20,6 +21,11 @@ interface PushState {
   /** From `ServerFrame::PushStatus`. `null` means this desktop never
    *  advertised push, which is how an older Mac app presents. */
   desktop: DesktopPushStatus | null
+  /** What this phone has already told the desktop on the CURRENT
+   *  connection, and the reason an echoed `PushStatus` does not start
+   *  another registration. `null` means nothing has been said yet, so
+   *  the next sync re-asserts. */
+  asserted: PushAssertion | null
   /** Local and user-chosen. Re-asserted on every connect, which doubles
    *  as the recovery path when a desktop lost its record. */
   prefs: PushPrefs
@@ -33,6 +39,7 @@ export const $push = map<PushState>({
   permission: 'undetermined',
   token: null,
   desktop: null,
+  asserted: null,
   prefs: {
     // Off until the user turns it on: doing so is their consent to
     // notification text leaving the local network, asked for once
@@ -86,6 +93,11 @@ export async function setPushPrefs(next: Partial<PushPrefs>): Promise<void> {
  */
 export function noteDesktopPushStatus(status: DesktopPushStatus): void {
   $push.setKey('desktop', status)
+}
+
+/** What this phone has now told the desktop, or `null` to re-assert. */
+export function noteAssertion(asserted: PushAssertion | null): void {
+  $push.setKey('asserted', asserted)
 }
 
 export function takePendingRoute(): PushData | null {

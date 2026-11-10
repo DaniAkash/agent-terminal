@@ -1,5 +1,5 @@
 import { sendRegisterPush, sendUnregisterPush } from '@/modules/wss/client'
-import { $push } from './$push'
+import { $push, noteAssertion } from './$push'
 import { registrationAction } from './push.register.helpers'
 import { appVersion, platformName } from './push.token'
 
@@ -14,27 +14,41 @@ import { appVersion, platformName } from './push.token'
  * socket code, so the dependency arrow points one way: this module
  * imports the client, and the client imports only the store.
  *
- * Re-sent on every connect rather than only on change, because Expo
- * tokens rotate and one that rotated while the desktop was offline
- * would otherwise leave push quietly broken until the next pairing.
+ * The assertion is recorded BEFORE the frame goes out, on purpose. The
+ * write re-enters this function through the same subscription, and the
+ * second pass has to see the assertion already in place or it sends the
+ * frame twice. A send that then fails clears it, so the next trigger
+ * retries rather than treating a dropped frame as something the desktop
+ * has stored.
  */
 export function syncRegistration(): void {
-  const { desktop, prefs, token } = $push.get()
-  const action = registrationAction({ desktop, prefs, token })
+  const { asserted, desktop, prefs, token } = $push.get()
+  const action = registrationAction({ asserted, desktop, prefs, token })
 
   if (action.kind === 'register') {
+    noteAssertion({
+      kind: 'registered',
+      token: action.token,
+      delaySeconds: action.delaySeconds,
+      redactNames: action.redactNames,
+    })
     void sendRegisterPush({
       token: action.token,
       platform: platformName(),
       app_version: appVersion(),
       delay_seconds: action.delaySeconds,
       redact_names: action.redactNames,
-    }).catch((err) => console.warn('[push] register failed:', err))
+    }).catch((err) => {
+      console.warn('[push] register failed:', err)
+      noteAssertion(null)
+    })
     return
   }
   if (action.kind === 'unregister') {
-    void sendUnregisterPush().catch((err) =>
-      console.warn('[push] unregister failed:', err),
-    )
+    noteAssertion({ kind: 'cleared' })
+    void sendUnregisterPush().catch((err) => {
+      console.warn('[push] unregister failed:', err)
+      noteAssertion(null)
+    })
   }
 }
