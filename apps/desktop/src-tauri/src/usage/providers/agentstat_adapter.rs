@@ -1,4 +1,4 @@
-//! Bridge agentstat's provider data into Jarvis's existing quota contract.
+//! Bridge agentstat's provider data into the existing usage quota contract.
 use super::super::credentials::Credential;
 use super::super::types::{CollectedUsage, CollectionError, UsageStatus, UsageWindow};
 use agentstat::{AccountScope, AgentStatError, FetchRequest, ProviderId, QuotaWindow};
@@ -17,7 +17,7 @@ fn client() -> Result<&'static agentstat::Client, CollectionError> {
                 .timeout(Duration::from_secs(15))
                 .max_response_bytes(super::super::http::MAX_BODY)
                 .build()
-                .map_err(|_| "Jarvis could not initialize its usage client.".to_string())
+                .map_err(|_| "Agent Usage limits could not initialize its usage client.".to_string())
         })
         .as_ref()
         .map_err(|message| CollectionError::temporary(message.clone()))
@@ -59,7 +59,7 @@ fn map_error(error: AgentStatError) -> CollectionError {
         | AgentStatError::PermissionDenied
         | AgentStatError::InvalidCredentials(_) => CollectionError::new(
             UsageStatus::NotConfigured,
-            "Usage access was rejected. Sign in again with the provider CLI, then refresh Jarvis.",
+            "Usage access was rejected. Sign in again with the provider CLI, then refresh Agent Usage limits.",
         ),
         AgentStatError::RateLimited { .. } => {
             CollectionError::temporary("The provider is rate limiting usage requests. Retry later.")

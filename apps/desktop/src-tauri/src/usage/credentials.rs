@@ -244,7 +244,7 @@ fn claude_keychain(allow_prompt: bool) -> Result<Value, CollectionError> {
     use security_framework::item::{ItemClass, ItemSearchOptions, SearchResult};
     let results = ItemSearchOptions::new().class(ItemClass::generic_password())
         .service("Claude Code-credentials").load_data(true).skip_authenticated_items(!allow_prompt)
-        .search().map_err(|_| missing("Claude Code's Keychain session is unavailable to Jarvis. Use a readable Claude profile credential file or authorize Keychain access for Agent Terminal."))?;
+        .search().map_err(|_| missing("Claude Code's Keychain session is unavailable to Agent Usage limits. Use a readable Claude profile credential file or authorize Keychain access for Agent Terminal."))?;
     match results.into_iter().next() {
         Some(SearchResult::Data(bytes)) if bytes.len() <= 1024 * 1024 => {
             serde_json::from_slice(&bytes).map_err(|_| {

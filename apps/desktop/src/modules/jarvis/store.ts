@@ -57,7 +57,7 @@ async function initialize(active: number) {
   const installed: UnlistenFn[] = []
   try {
     installed.push(
-      await listen<UsageSnapshot>('jarvis:updated', (event) => {
+      await listen<UsageSnapshot>('usage:updated', (event) => {
         if (lifecycle === active) acceptSnapshot(event.payload)
       }),
     )

@@ -29,7 +29,7 @@ struct State {
 impl UsageService {
     pub fn new(app: tauri::AppHandle) -> Self {
         let loaded = preferences::config_path()
-            .ok_or_else(|| "Jarvis settings location is unavailable.".to_string())
+            .ok_or_else(|| "Agent Usage limits settings location is unavailable.".to_string())
             .and_then(|path| preferences::load(&path));
         let (prefs, error) = match loaded {
             Ok(prefs) => (prefs, None),
@@ -147,11 +147,11 @@ impl UsageService {
     pub async fn set_preferences(&self, prefs: Preferences) -> Result<UsageSnapshot, String> {
         let prefs = preferences::validate(prefs)?;
         let _guard = self.0.save_lock.lock().await;
-        let path = preferences::config_path().ok_or("Jarvis settings location is unavailable.")?;
+        let path = preferences::config_path().ok_or("Agent Usage limits settings location is unavailable.")?;
         let saved = prefs.clone();
         tokio::task::spawn_blocking(move || preferences::save(&path, &saved))
             .await
-            .map_err(|_| "Could not save Jarvis settings.")??;
+            .map_err(|_| "Could not save Agent Usage limits settings.")??;
         {
             let mut state = self.0.state.lock().unwrap();
             if state.snapshot.preferences == prefs && state.snapshot.settings_error.is_none() {
@@ -185,7 +185,7 @@ impl UsageService {
             age_snapshot(&mut snapshot, now());
             snapshot
         };
-        let _ = self.0.app.emit("jarvis:updated", snapshot);
+        let _ = self.0.app.emit("usage:updated", snapshot);
     }
 
     async fn run(&self) {
