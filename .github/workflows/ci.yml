@@ -245,10 +245,12 @@ jobs:
         run: bun install --frozen-lockfile
 
       # The single monorepo check. Fans out via concurrently --group:
-      # biome, desktop:tsc, desktop:test, sidecar:test, rust:clippy,
-      # rust:test, companion (which fans out its own 7 sub-checks),
-      # and the protocol drift verifier. Every sub-check runs to
-      # completion regardless of what others do, so one CI run surfaces
-      # every failure at once.
+      # biome, desktop:tsc, desktop:test, sidecar:test, companion (which
+      # fans out its own 7 sub-checks), the website, and the cargo chain,
+      # which is its own nested group running clippy, cargo test, the
+      # tauri build and the protocol drift verifier one at a time. Every
+      # sub-check runs to completion regardless of what others do, and
+      # every exit code is reported, so one CI run surfaces every failure
+      # at once.
       - name: bun run check
         run: bun run check
