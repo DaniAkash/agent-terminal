@@ -22,7 +22,7 @@ import { WorkspaceLayout } from '@/screens/workspace/WorkspaceLayout'
 import type { Project } from '@/screens/workspace/workspace.types'
 import '@wterm/dom/css'
 import './index.css'
-import '@/components/Jarvis/jarvis.css'
+import '@/components/AgentUsage/agent-usage.css'
 
 // Suppress the webview's Inspect/Reload menu in every app window. Let events
 // propagate so the app's own project and tab context menus still work.

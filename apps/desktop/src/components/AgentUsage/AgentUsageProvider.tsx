@@ -14,17 +14,17 @@ import {
 import { $agentUsage, authorizeClaudeKeychain } from '@/modules/agent-usage/store'
 import type { ProviderUsage, UsageWindow } from '@/modules/agent-usage/types'
 
-export function JarvisProvider({ provider }: { provider: ProviderUsage }) {
+export function AgentUsageProvider({ provider }: { provider: ProviderUsage }) {
   const { snapshot, authorizing } = useStore($agentUsage)
   const stale =
     provider.status === 'stale' ||
     (provider.status === 'available' && !isCurrent(provider))
   return (
     <section
-      className="jarvis-card jarvis-provider"
+      className="agent-usage-card agent-usage-provider"
       data-status={stale ? 'stale' : provider.status}
     >
-      <div className="jarvis-provider-header">
+      <div className="agent-usage-provider-header">
         <div className="flex items-center gap-2">
           <AgentGlyph
             visual={agentBrandVisual(provider.id)}
@@ -38,12 +38,12 @@ export function JarvisProvider({ provider }: { provider: ProviderUsage }) {
             </p>
           </div>
         </div>
-        <span className="jarvis-provider-status">
-          <span aria-hidden="true" className="jarvis-status-dot" />
+        <span className="agent-usage-provider-status">
+          <span aria-hidden="true" className="agent-usage-status-dot" />
           {stale ? 'Last known' : STATUS_LABEL[provider.status]}
         </span>
       </div>
-      <div className="jarvis-windows">
+      <div className="agent-usage-windows">
         {provider.windows.map((window) => (
           <WindowMeter key={window.id} window={window} stale={stale} />
         ))}
@@ -74,7 +74,7 @@ export function JarvisProvider({ provider }: { provider: ProviderUsage }) {
           </Button>
         )}
       {provider.source && (
-        <p className="jarvis-provider-updated" title={provider.source}>
+        <p className="agent-usage-provider-updated" title={provider.source}>
           {capturedLabel(provider.updatedAt)}
         </p>
       )}
@@ -94,10 +94,10 @@ function WindowMeter({
     ? 'var(--muted-foreground)'
     : usageColor(window.usedPercent)
   return (
-    <div className="jarvis-window">
+    <div className="agent-usage-window">
       <div className="mb-2 flex items-center justify-between gap-3">
         <span className="text-xs font-medium">{window.label}</span>
-        <span className="jarvis-reading" style={{ color }}>
+        <span className="agent-usage-reading" style={{ color }}>
           {Math.round(remaining)}
           <span className="text-[13px]">%</span>
           <span className="text-muted-foreground ml-1.5 text-[11px] font-normal">
@@ -114,7 +114,7 @@ function WindowMeter({
       />
       <div
         aria-hidden="true"
-        className="jarvis-meter"
+        className="agent-usage-meter"
         style={{ opacity: stale ? 0.5 : 1 }}
       >
         {Array.from({ length: 20 }, (_, index) => {
@@ -123,9 +123,9 @@ function WindowMeter({
             <span
               // biome-ignore lint/suspicious/noArrayIndexKey: fixed quota dots never reorder
               key={index}
-              className="jarvis-meter-dot"
+              className="agent-usage-meter-dot"
               style={{
-                background: `linear-gradient(90deg, ${color} ${fill}%, var(--jarvis-empty-dot) ${fill}%)`,
+                background: `linear-gradient(90deg, ${color} ${fill}%, var(--agent-usage-empty-dot) ${fill}%)`,
               }}
             />
           )

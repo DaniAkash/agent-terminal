@@ -12,7 +12,7 @@ import type {
 } from '@/modules/agent-usage/types'
 
 /** A compact provider strip: outer weekly arc, inner dotted short-term arc. */
-export function JarvisHover({
+export function AgentUsageHover({
   snapshot,
   priorityProviderId,
 }: {
@@ -33,14 +33,14 @@ export function JarvisHover({
         provider.status === 'available',
     ) ?? []
   return (
-    <div className="jarvis-surface jarvis-hover-strip border-border text-popover-foreground rounded-lg border p-2 shadow-lg">
+    <div className="agent-usage-surface agent-usage-hover-strip border-border text-popover-foreground rounded-lg border p-2 shadow-lg">
       {providers.length ? (
         prioritizeProvider(providers, priorityProviderId).map((provider) => (
           <ProviderGauge key={provider.id} provider={provider} />
         ))
       ) : (
         <p className="text-muted-foreground col-span-full px-3 py-2 text-xs">
-          {snapshot ? 'No providers · Click Jarvis to configure' : 'Loading…'}
+          {snapshot ? 'No providers · Click to configure' : 'Loading…'}
         </p>
       )}
     </div>
@@ -80,7 +80,7 @@ function ProviderGauge({ provider }: { provider: ProviderUsage }) {
           d="M 15.36 69 A 40 40 0 1 1 84.64 69"
           pathLength="100"
           fill="none"
-          stroke="var(--jarvis-empty-dot)"
+          stroke="var(--agent-usage-empty-dot)"
           strokeWidth="3"
           strokeLinecap="round"
         />
@@ -108,7 +108,7 @@ function ProviderGauge({ provider }: { provider: ProviderUsage }) {
                 cx={50 + Math.cos(angle) * 31}
                 cy={49 + Math.sin(angle) * 31}
                 r="1.8"
-                fill="var(--jarvis-empty-dot)"
+                fill="var(--agent-usage-empty-dot)"
               />
               <circle
                 cx={50 + Math.cos(angle) * 31}
