@@ -10,6 +10,30 @@
 //! is the same objection that ruled out shipping an FCM service account
 //! key, so it is unavailable to us.
 //!
+//! ## What this does and does not promise
+//!
+//! It authenticates ROUTING, and only routing. The signature covers the
+//! fields in `canonical` below, which the phone checks before it acts
+//! on a tap, so a forged notification cannot send the user to a tab, a
+//! project or a desktop of the sender's choosing.
+//!
+//! It does NOT authenticate the words on screen. Title and body travel
+//! as Expo's alert fields, and both iOS and Android draw them from the
+//! system's own notification path before any JavaScript in the app
+//! runs: there is no point at which this signature could be consulted
+//! first. Anyone holding a device's Expo push token can therefore
+//! display arbitrary text under this app's name, and can change that
+//! text without invalidating `sig`. The phone suppresses an unparseable
+//! payload while it is in the foreground, which is the one case it
+//! controls, and that is the whole extent of the mitigation.
+//!
+//! Authenticating the text needs the text out of the alert fields and
+//! into an encrypted payload the app decrypts and then presents, which
+//! on iOS means a notification service extension. That is a separate
+//! piece of work, not something this construction can be stretched to
+//! cover. Do not describe this signature as preventing forged
+//! notifications: it prevents forged navigation.
+//!
 //! The pairing already gives both ends a shared secret, so the fix needs
 //! no secret in the binary at all:
 //!
@@ -59,9 +83,12 @@ fn sha256_hex(input: &str) -> String {
 ///
 /// Field order is part of the format. Changing it, or adding a field,
 /// invalidates every signature in flight and needs a `PAYLOAD_VERSION`
-/// bump. Only routing fields are covered, not the display text: the text
-/// is already readable by the relay in this version, and a future
-/// encrypted payload authenticates it with the AEAD tag instead.
+/// bump.
+///
+/// Routing fields only. The display text is deliberately outside this,
+/// and that is a real limit rather than a deferred detail: the text is
+/// readable AND forgeable by anyone with the push token, because the OS
+/// renders it before the app can check anything. See the module docs.
 pub fn canonical(
     version: u32,
     device_id: &str,

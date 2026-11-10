@@ -34,7 +34,9 @@ Notification text does. A phone that is asleep in your pocket cannot be reached 
 
 If you want the nudge without the nouns, turn on **Hide project and tab names**. The notification then says an agent needs you, without saying which one, and tapping it still opens the right terminal.
 
-Every notification is signed with a key your Mac and your phone worked out when you paired them, and neither ever sends it anywhere. A notification that fails the check is dropped without being shown, so nobody who gets hold of your push token can make a fake one appear.
+Every notification carries a signature made with a key your Mac and your phone worked out when you paired them, and neither ever sends it anywhere. The signature covers which desktop a notification claims to come from and which terminal tapping it opens, so one that fails the check takes you nowhere: the tap does nothing.
+
+What it cannot cover is the words. Your phone draws the title and body itself, before the app is allowed to look at them, on both iOS and Android. So someone who got hold of your push token could make text appear under this app's name. They could not make it open one of your terminals, and they could not read anything from your Mac. Putting the text somewhere the app can check it before your phone draws it is a separate piece of work, and is not in this version.
 
 ## Tapping one
 
@@ -45,7 +47,7 @@ A tap opens the terminal that raised it. If it came from a desktop you are not c
 Push needs credentials that cannot live in the repo.
 
 1. **Expo project id.** `getExpoPushTokenAsync` refuses to run without one. Set `EAS_PROJECT_ID` in the environment for local builds and as a repository secret for CI. A build without it still runs; the settings screen reports push as unavailable instead of the app failing.
-2. **Android, FCM.** Upload the Firebase service account key with `eas credentials`, then provide `google-services.json`. It carries a cloud project identifier, so it is gitignored and CI writes it from the `GOOGLE_SERVICES_JSON_BASE64` secret. The Android release build fails loudly when that secret is missing rather than producing a build where push silently never registers.
+2. **Android, FCM.** Upload the Firebase service account key with `eas credentials`, then provide `google-services.json`. It carries a cloud project identifier, so it is gitignored and CI writes it from the `GOOGLE_SERVICES_JSON_BASE64` secret. The Android release build fails loudly when that secret is missing rather than producing a build where push silently never registers. A build without the file leaves the Firebase config out of the Android project altogether, so it still builds and push simply never registers on it.
 3. **iOS, APNs.** A paid Apple Developer account and an APNs key uploaded with `eas credentials`. The blocked-agent notification uses the time-sensitive interruption level so it can break through Focus, which needs the Time Sensitive Notifications capability on the App ID.
 
 None of this is needed to build or run the apps. Without it, push reports itself unavailable and everything else works as before.

@@ -30,6 +30,11 @@ const SIG_HEX_LEN = 32
  * format: the Rust side pins this same string in a test, and the two
  * must agree byte for byte because `data` is free-form JSON that the
  * typeshare drift check cannot see.
+ *
+ * Routing fields only, so what this authenticates is navigation and not
+ * the notification's words. The OS draws the title and body before any
+ * of this code runs, which no check on this side can get in front of.
+ * See the module docs on the desktop's `push/sign.rs`.
  */
 export function canonical(input: {
   v: number
