@@ -1,12 +1,15 @@
 import { AlertCircle, ArrowUpRight, Gauge } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { mostConstrained, prioritizeProvider } from '@/modules/jarvis/helpers'
-import { $jarvis } from '@/modules/jarvis/store'
-import type { UsageSnapshot } from '@/modules/jarvis/types'
-import { JarvisProvider } from './JarvisProvider'
+import {
+  mostConstrained,
+  prioritizeProvider,
+} from '@/modules/agent-usage/helpers'
+import { $agentUsage } from '@/modules/agent-usage/store'
+import type { UsageSnapshot } from '@/modules/agent-usage/types'
+import { AgentUsageProvider } from './AgentUsageProvider'
 
 /** Provider quotas and account status in the usage dialog. */
-export function JarvisUsage({
+export function AgentUsageMeters({
   snapshot,
   priorityProviderId,
 }: {
@@ -28,7 +31,7 @@ export function JarvisUsage({
         <p className="mb-1 text-[13px] font-medium">
           {snapshot.preferences.enabled
             ? 'Choose your providers'
-            : 'Jarvis is paused'}
+            : 'Agent Usage limits is paused'}
         </p>
         <p className="text-muted-foreground mb-4 text-[11px]">
           Select your providers in settings to see their limits.
@@ -37,7 +40,7 @@ export function JarvisUsage({
           variant="secondary"
           size="sm"
           className="gap-1.5 text-[11px]"
-          onClick={() => $jarvis.setKey('view', 'settings')}
+          onClick={() => $agentUsage.setKey('view', 'settings')}
         >
           Open settings <ArrowUpRight size={12} aria-hidden="true" />
         </Button>
@@ -45,9 +48,9 @@ export function JarvisUsage({
     )
   }
   return (
-    <div className="jarvis-usage">
+    <div className="agent-usage-usage">
       {metric && metric.window.usedPercent >= 75 && (
-        <div className="jarvis-quota-notice">
+        <div className="agent-usage-quota-notice">
           <AlertCircle size={15} aria-hidden="true" />
           <p>
             <strong>{metric.provider.name}</strong> · {metric.window.label} has{' '}
@@ -55,9 +58,9 @@ export function JarvisUsage({
           </p>
         </div>
       )}
-      <div className="jarvis-providers">
+      <div className="agent-usage-providers">
         {prioritizeProvider(selected, priorityProviderId).map((provider) => (
-          <JarvisProvider key={provider.id} provider={provider} />
+          <AgentUsageProvider key={provider.id} provider={provider} />
         ))}
       </div>
     </div>

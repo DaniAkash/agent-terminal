@@ -1,5 +1,5 @@
 import { beforeEach, expect, test } from 'bun:test'
-import { $jarvis, acceptSnapshot, openJarvis } from './store'
+import { $agentUsage, acceptSnapshot, openAgentUsage } from './store'
 import type { UsageSnapshot } from './types'
 
 function snapshot(revision: number, enabled = true): UsageSnapshot {
@@ -18,7 +18,7 @@ function snapshot(revision: number, enabled = true): UsageSnapshot {
 }
 
 beforeEach(() => {
-  $jarvis.set({
+  $agentUsage.set({
     snapshot: null,
     loading: true,
     open: false,
@@ -32,19 +32,19 @@ beforeEach(() => {
 test('a late snapshot response cannot overwrite a newer provider event', () => {
   acceptSnapshot(snapshot(4))
   acceptSnapshot(snapshot(2, false))
-  expect($jarvis.get().snapshot?.revision).toBe(4)
-  expect($jarvis.get().snapshot?.preferences.enabled).toBe(true)
-  expect($jarvis.get().loading).toBe(false)
+  expect($agentUsage.get().snapshot?.revision).toBe(4)
+  expect($agentUsage.get().snapshot?.preferences.enabled).toBe(true)
+  expect($agentUsage.get().loading).toBe(false)
 })
 
 test('first-use entry opens settings and explicit settings actions keep their destination', () => {
   acceptSnapshot(snapshot(1, false))
-  openJarvis()
-  expect($jarvis.get().view).toBe('settings')
+  openAgentUsage()
+  expect($agentUsage.get().view).toBe('settings')
   acceptSnapshot(snapshot(2))
-  openJarvis()
-  expect($jarvis.get().view).toBe('usage')
-  openJarvis('settings')
-  expect($jarvis.get().open).toBe(true)
-  expect($jarvis.get().view).toBe('settings')
+  openAgentUsage()
+  expect($agentUsage.get().view).toBe('usage')
+  openAgentUsage('settings')
+  expect($agentUsage.get().open).toBe(true)
+  expect($agentUsage.get().view).toBe('settings')
 })

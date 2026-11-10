@@ -10,16 +10,20 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
-import { $jarvis, refreshJarvis, startJarvis } from '@/modules/jarvis/store'
-import { JarvisSettings } from './JarvisSettings'
-import { JarvisUsage } from './JarvisUsage'
+import {
+  $agentUsage,
+  refreshAgentUsage,
+  startAgentUsage,
+} from '@/modules/agent-usage/store'
+import { AgentUsageMeters } from './AgentUsageMeters'
+import { AgentUsageSettings } from './AgentUsageSettings'
 
-export function JarvisDialog({
+export function AgentUsageDialog({
   priorityProviderId,
 }: {
   priorityProviderId?: string | null
 }) {
-  const { open, view, snapshot, loading, saving, error } = useStore($jarvis)
+  const { open, view, snapshot, loading, saving, error } = useStore($agentUsage)
   const [, tick] = useReducer((n: number) => n + 1, 0)
   useEffect(() => {
     if (!open) return
@@ -28,23 +32,26 @@ export function JarvisDialog({
   }, [open])
   const problem = error ?? snapshot?.settingsError
   return (
-    <Dialog open={open} onOpenChange={(next) => $jarvis.setKey('open', next)}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => $agentUsage.setKey('open', next)}
+    >
       <DialogContent
-        className="jarvis-surface flex max-h-[min(760px,calc(100dvh-2rem))] w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[480px]"
+        className="agent-usage-surface flex max-h-[min(760px,calc(100dvh-2rem))] w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[480px]"
         style={{ fontFamily: 'var(--font-ui)' }}
       >
-        <div className="jarvis-header jarvis-dialog-header">
+        <div className="agent-usage-header agent-usage-dialog-header">
           <DialogHeader className="flex-row items-center gap-3">
             <div>
               <DialogTitle className="text-lg font-semibold tracking-tight">
-                Jarvis
+                Agent Usage limits
               </DialogTitle>
               <DialogDescription className="mt-1 text-xs">
                 {view === 'settings' ? 'Settings' : 'Usage'}
               </DialogDescription>
             </div>
           </DialogHeader>
-          <div className="jarvis-header-actions">
+          <div className="agent-usage-header-actions">
             <div className="flex gap-1">
               {(['usage', 'settings'] as const).map((tab) => (
                 <Button
@@ -53,7 +60,7 @@ export function JarvisDialog({
                   size="sm"
                   className="h-8 px-3 text-xs capitalize"
                   aria-pressed={view === tab}
-                  onClick={() => $jarvis.setKey('view', tab)}
+                  onClick={() => $agentUsage.setKey('view', tab)}
                 >
                   {tab}
                 </Button>
@@ -70,7 +77,7 @@ export function JarvisDialog({
                 snapshot.refreshing ||
                 snapshot.preferences.providers.length === 0
               }
-              onClick={() => void refreshJarvis()}
+              onClick={() => void refreshAgentUsage()}
             >
               <RefreshCw
                 size={12}
@@ -93,7 +100,7 @@ export function JarvisDialog({
               <button
                 type="button"
                 className="ml-2 underline"
-                onClick={() => void startJarvis()}
+                onClick={() => void startAgentUsage()}
               >
                 Retry
               </button>
@@ -106,14 +113,14 @@ export function JarvisDialog({
         >
           {loading && (
             <p className="text-muted-foreground py-8 text-center text-[12px]">
-              Loading Jarvis…
+              Loading Agent Usage limits…
             </p>
           )}
           {snapshot &&
             (view === 'settings' ? (
-              <JarvisSettings snapshot={snapshot} />
+              <AgentUsageSettings snapshot={snapshot} />
             ) : (
-              <JarvisUsage
+              <AgentUsageMeters
                 snapshot={snapshot}
                 priorityProviderId={priorityProviderId}
               />

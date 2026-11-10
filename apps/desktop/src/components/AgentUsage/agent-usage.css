@@ -1,5 +1,5 @@
-.jarvis-surface {
-  --jarvis-empty-dot: color-mix(
+.agent-usage-surface {
+  --agent-usage-empty-dot: color-mix(
     in srgb,
     var(--muted-foreground) 22%,
     var(--popover)
@@ -8,12 +8,12 @@
   background: var(--popover);
 }
 
-.jarvis-hover-popup {
+.agent-usage-hover-popup {
   width: min(340px, calc(100vw - 24px));
   max-height: min(360px, var(--available-height, calc(100dvh - 48px)));
 }
 
-.jarvis-hover-strip {
+.agent-usage-hover-strip {
   display: grid;
   width: 100%;
   min-height: 0;
@@ -23,26 +23,26 @@
   align-content: start;
 }
 
-.jarvis-hover-strip > figure {
+.agent-usage-hover-strip > figure {
   padding-inline: 4px;
 }
 
-.jarvis-hover-strip > figure:not(:nth-of-type(3n + 1)) {
+.agent-usage-hover-strip > figure:not(:nth-of-type(3n + 1)) {
   border-left: 1px solid var(--border);
 }
 
-.jarvis-header {
+.agent-usage-header {
   background: var(--popover);
 }
 
-.jarvis-card {
+.agent-usage-card {
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 14px;
   background: color-mix(in srgb, var(--muted) 28%, var(--popover));
 }
 
-.jarvis-dialog-header {
+.agent-usage-dialog-header {
   display: flex;
   flex-wrap: wrap;
   flex-shrink: 0;
@@ -53,14 +53,14 @@
   border-bottom: 1px solid var(--border);
 }
 
-.jarvis-header-actions {
+.agent-usage-header-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 16px;
 }
 
-.jarvis-quota-notice {
+.agent-usage-quota-notice {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -73,33 +73,33 @@
   line-height: 1.5;
 }
 
-.jarvis-quota-notice > svg {
+.agent-usage-quota-notice > svg {
   flex-shrink: 0;
   color: var(--terminal-yellow);
 }
 
-.jarvis-provider {
-  --jarvis-status-color: var(--muted-foreground);
+.agent-usage-provider {
+  --agent-usage-status-color: var(--muted-foreground);
   position: relative;
   overflow: hidden;
   padding: 0;
   border-radius: 8px;
 }
 
-.jarvis-provider[data-status="available"] {
-  --jarvis-status-color: var(--terminal-green);
+.agent-usage-provider[data-status="available"] {
+  --agent-usage-status-color: var(--terminal-green);
 }
 
-.jarvis-provider[data-status="not_configured"],
-.jarvis-provider[data-status="stale"] {
-  --jarvis-status-color: var(--terminal-yellow);
+.agent-usage-provider[data-status="not_configured"],
+.agent-usage-provider[data-status="stale"] {
+  --agent-usage-status-color: var(--terminal-yellow);
 }
 
-.jarvis-provider[data-status="error"] {
-  --jarvis-status-color: var(--terminal-red);
+.agent-usage-provider[data-status="error"] {
+  --agent-usage-status-color: var(--terminal-red);
 }
 
-.jarvis-provider-header {
+.agent-usage-provider-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -108,7 +108,7 @@
   border-bottom: 1px solid var(--border);
 }
 
-.jarvis-provider-status {
+.agent-usage-provider-status {
   display: flex;
   flex-shrink: 0;
   align-items: center;
@@ -117,27 +117,27 @@
   font-size: 11px;
 }
 
-.jarvis-status-dot {
+.agent-usage-status-dot {
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background: var(--jarvis-status-color);
+  background: var(--agent-usage-status-color);
 }
 
-.jarvis-windows {
+.agent-usage-windows {
   display: grid;
   padding-inline: 16px;
 }
 
-.jarvis-window {
+.agent-usage-window {
   padding-block: 12px;
 }
 
-.jarvis-window + .jarvis-window {
+.agent-usage-window + .agent-usage-window {
   border-top: 1px solid var(--border);
 }
 
-.jarvis-reading {
+.agent-usage-reading {
   font-family: var(--font-mono);
   font-size: 22px;
   font-weight: 500;
@@ -146,15 +146,15 @@
   white-space: nowrap;
 }
 
-.jarvis-provider > p:not(.jarvis-provider-updated) {
+.agent-usage-provider > p:not(.agent-usage-provider-updated) {
   margin: 12px 16px;
 }
 
-.jarvis-provider > button {
+.agent-usage-provider > button {
   margin: 0 16px 14px;
 }
 
-.jarvis-provider-updated {
+.agent-usage-provider-updated {
   padding: 9px 16px;
   border-top: 1px solid var(--border);
   color: var(--muted-foreground);
@@ -162,14 +162,14 @@
 }
 
 /* Usage cards and settings stack vertically in the dialog. */
-.jarvis-usage,
-.jarvis-settings {
+.agent-usage-usage,
+.agent-usage-settings {
   display: grid;
   gap: 16px;
   padding-block: 16px;
 }
 
-.jarvis-providers {
+.agent-usage-providers {
   display: grid;
   gap: 12px;
   align-content: start;
@@ -177,23 +177,23 @@
   min-width: 0;
 }
 
-.jarvis-controls {
+.agent-usage-controls {
   align-self: start;
 }
 
-.jarvis-settings-provider-list {
+.agent-usage-settings-provider-list {
   display: grid;
   gap: 8px;
 }
 
-.jarvis-meter {
+.agent-usage-meter {
   display: grid;
   grid-template-columns: repeat(20, minmax(0, 1fr));
   gap: 4px;
   align-items: center;
 }
 
-.jarvis-meter-dot {
+.agent-usage-meter-dot {
   display: block;
   width: 100%;
   max-width: 8px;
@@ -202,7 +202,7 @@
   justify-self: center;
 }
 
-.jarvis-switch {
+.agent-usage-switch {
   appearance: none;
   position: relative;
   width: 30px;
@@ -214,7 +214,7 @@
   cursor: pointer;
 }
 
-.jarvis-switch::after {
+.agent-usage-switch::after {
   content: "";
   position: absolute;
   top: 3px;
@@ -225,29 +225,29 @@
   background: var(--muted-foreground);
 }
 
-.jarvis-switch:checked {
+.agent-usage-switch:checked {
   background: color-mix(in srgb, var(--foreground) 12%, var(--popover));
   border-color: var(--foreground);
 }
 
-.jarvis-switch:checked::after {
+.agent-usage-switch:checked::after {
   transform: translateX(12px);
   background: var(--foreground);
 }
 
-.jarvis-switch:focus-visible {
+.agent-usage-switch:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 3px;
 }
 
-.jarvis-switch:disabled {
+.agent-usage-switch:disabled {
   cursor: default;
   opacity: 0.4;
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .jarvis-switch,
-  .jarvis-switch::after {
+  .agent-usage-switch,
+  .agent-usage-switch::after {
     transition:
       background 140ms,
       border-color 140ms,

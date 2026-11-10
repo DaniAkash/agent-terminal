@@ -11,7 +11,7 @@ pub async fn collect() -> Outcome {
             owner: None,
             result: Err(CollectionError::new(
                 UsageStatus::NotConfigured,
-                "Install Amp and sign in, then refresh Jarvis.",
+                "Install Amp and sign in, then refresh Agent Usage limits.",
             )),
         };
     };
@@ -27,7 +27,7 @@ pub async fn collect() -> Outcome {
         if bytes.len() > 65_536 { return Err(CollectionError::malformed()); }
         let status = child.wait().await.map_err(|_| CollectionError::temporary("Amp usage did not finish."))?;
         if !status.success() {
-            return Err(CollectionError::new(UsageStatus::NotConfigured, "Amp usage failed. Open amp, sign in, and refresh Jarvis."));
+            return Err(CollectionError::new(UsageStatus::NotConfigured, "Amp usage failed. Open amp, sign in, and refresh Agent Usage limits."));
         }
         let text = String::from_utf8(bytes).map_err(|_| CollectionError::malformed())?;
         let windows = parse(&text);

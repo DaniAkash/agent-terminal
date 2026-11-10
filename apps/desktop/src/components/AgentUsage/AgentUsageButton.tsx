@@ -8,14 +8,14 @@ import {
   isCurrent,
   mostConstrained,
   STATUS_LABEL,
-} from '@/modules/jarvis/helpers'
-import { $jarvis, openJarvis } from '@/modules/jarvis/store'
-import { $activeUsageProviderId } from '@/modules/jarvis/terminal-context'
-import { JarvisDialog } from './JarvisDialog'
-import { JarvisHover } from './JarvisHover'
+} from '@/modules/agent-usage/helpers'
+import { $agentUsage, openAgentUsage } from '@/modules/agent-usage/store'
+import { $activeUsageProviderId } from '@/modules/agent-usage/terminal-context'
+import { AgentUsageDialog } from './AgentUsageDialog'
+import { AgentUsageHover } from './AgentUsageHover'
 
-export function JarvisButton() {
-  const { snapshot, open } = useStore($jarvis)
+export function AgentUsageButton() {
+  const { snapshot, open } = useStore($agentUsage)
   const activeProviderId = useStore($activeUsageProviderId)
   const [hoverOpen, setHoverOpen] = useState(false)
   const metric = mostConstrained(
@@ -36,7 +36,7 @@ export function JarvisButton() {
     ? `${metric.provider.name} · ${Math.round(100 - metric.window.usedPercent)}% left`
     : activeProviderId
       ? `${activeProvider?.name ?? activeProviderId} · ${providerStatus}`
-      : 'Jarvis'
+      : 'Agent Usage limits'
   return (
     <>
       <PreviewCard.Root
@@ -49,14 +49,14 @@ export function JarvisButton() {
           closeDelay={200}
           onClick={() => {
             setHoverOpen(false)
-            openJarvis()
+            openAgentUsage()
           }}
           className={cn(
             buttonVariants({ variant: 'ghost', size: 'sm' }),
             'text-muted-foreground gap-1.5 px-2 text-[11px] font-medium',
           )}
           style={{ fontFamily: 'var(--font-ui)' }}
-          aria-label={`Open Jarvis usage and settings · ${label}`}
+          aria-label={`Open Agent Usage limits · ${label}`}
         >
           <Gauge size={14} aria-hidden="true" className="shrink-0" />
           <span className="max-w-40 truncate tabular-nums">{label}</span>
@@ -69,8 +69,8 @@ export function JarvisButton() {
             collisionPadding={12}
             className="z-50"
           >
-            <PreviewCard.Popup className="jarvis-hover-popup flex outline-none">
-              <JarvisHover
+            <PreviewCard.Popup className="agent-usage-hover-popup flex outline-none">
+              <AgentUsageHover
                 snapshot={snapshot}
                 priorityProviderId={activeProviderId}
               />
@@ -78,7 +78,7 @@ export function JarvisButton() {
           </PreviewCard.Positioner>
         </PreviewCard.Portal>
       </PreviewCard.Root>
-      <JarvisDialog priorityProviderId={activeProviderId} />
+      <AgentUsageDialog priorityProviderId={activeProviderId} />
     </>
   )
 }

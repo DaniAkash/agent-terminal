@@ -12,9 +12,9 @@ pub fn client() -> Result<Client, String> {
         .redirect(reqwest::redirect::Policy::none())
         .connect_timeout(Duration::from_secs(5))
         .timeout(Duration::from_secs(15))
-        .user_agent(concat!("AgentTerminal-Jarvis/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("AgentTerminal-Usage/", env!("CARGO_PKG_VERSION")))
         .build()
-        .map_err(|_| "Jarvis could not initialize its HTTPS client.".into())
+        .map_err(|_| "Agent Usage limits could not initialize its HTTPS client.".into())
 }
 
 pub async fn json(request: RequestBuilder) -> Result<Value, CollectionError> {
@@ -35,7 +35,7 @@ async fn read_json(request: RequestBuilder, opencode: bool) -> Result<Value, Col
         403 if opencode => {} // Classify the bounded structured body below.
         401 | 403 => return Err(CollectionError::new(
             UsageStatus::NotConfigured,
-            "Usage access was rejected. Sign in again with the provider CLI, then refresh Jarvis.",
+            "Usage access was rejected. Sign in again with the provider CLI, then refresh Agent Usage limits.",
         )),
         429 => {
             return Err(CollectionError::temporary(

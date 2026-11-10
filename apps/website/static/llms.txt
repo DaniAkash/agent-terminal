@@ -6,11 +6,11 @@ Agent Terminal is stable on macOS 13 or later with Zsh. Apple Silicon and Intel 
 
 ## Documentation
 
-- [Documentation](https://agent-terminal.org/docs): Installation, projects, agent integrations, status bar, Jarvis provider usage, mobile companion, shortcuts, platforms, and contributing.
+- [Documentation](https://agent-terminal.org/docs): Installation, projects, agent integrations, status bar, Agent Usage limits, mobile companion, shortcuts, platforms, and contributing.
 - [Agent integrations](https://agent-terminal.org/agents): Support status, launch commands, and setup links for coding agents.
 - [Changelog](https://agent-terminal.org/changelog): Published release notes from GitHub.
 - [GitHub repository](https://github.com/DaniAkash/agent-terminal): Source code, README, issues, and releases.
-- [Jarvis provider usage](https://github.com/DaniAkash/agent-terminal/blob/main/docs/jarvis.md): Provider quota sources, settings, and troubleshooting.
+- [Agent Usage limits](https://github.com/DaniAkash/agent-terminal/blob/main/docs/agent-usage.md): Provider quota sources, settings, and troubleshooting.
 - [Contributing](https://github.com/DaniAkash/agent-terminal/blob/main/CONTRIBUTING.md): Development setup and adding agent integrations.
 
 ## Installation

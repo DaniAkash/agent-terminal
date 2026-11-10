@@ -11,10 +11,13 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { JarvisIPC } from '@/modules/jarvis/api'
-import { installationLabel, STATUS_LABEL } from '@/modules/jarvis/helpers'
-import { $jarvis, saveJarvisPreferences } from '@/modules/jarvis/store'
-import type { UsageSnapshot } from '@/modules/jarvis/types'
+import { AgentUsageIPC } from '@/modules/agent-usage/api'
+import { installationLabel, STATUS_LABEL } from '@/modules/agent-usage/helpers'
+import {
+  $agentUsage,
+  saveAgentUsagePreferences,
+} from '@/modules/agent-usage/store'
+import type { UsageSnapshot } from '@/modules/agent-usage/types'
 
 const SOURCES: Record<string, string> = {
   codex: 'Account and model limits',
@@ -33,8 +36,8 @@ const INTERVALS = [
   { value: 900, label: 'Every 15 minutes' },
 ]
 
-export function JarvisSettings({ snapshot }: { snapshot: UsageSnapshot }) {
-  const { saving } = useStore($jarvis)
+export function AgentUsageSettings({ snapshot }: { snapshot: UsageSnapshot }) {
+  const { saving } = useStore($agentUsage)
   const [scanning, setScanning] = useState(false)
   const prefs = snapshot.preferences
   const installed = snapshot.providers.filter(
@@ -44,14 +47,14 @@ export function JarvisSettings({ snapshot }: { snapshot: UsageSnapshot }) {
     (a, b) => Number(b.detected === true) - Number(a.detected === true),
   )
   return (
-    <div className="jarvis-settings">
-      <div className="jarvis-card jarvis-controls space-y-4">
+    <div className="agent-usage-settings">
+      <div className="agent-usage-card agent-usage-controls space-y-4">
         <Toggle
-          label="Enable Jarvis"
+          label="Enable Agent Usage limits"
           description="Use selected providers’ existing sessions to read account usage."
           checked={prefs.enabled}
           disabled={saving}
-          onChange={(enabled) => void saveJarvisPreferences({ enabled })}
+          onChange={(enabled) => void saveAgentUsagePreferences({ enabled })}
         />
         <div className="border-border/60 flex flex-wrap items-center justify-between gap-2 border-t pt-3">
           <span className="flex shrink-0 items-center gap-2 text-[12px] whitespace-nowrap">
@@ -83,7 +86,9 @@ export function JarvisSettings({ snapshot }: { snapshot: UsageSnapshot }) {
               <DropdownMenuRadioGroup
                 value={String(prefs.refreshSeconds)}
                 onValueChange={(value) =>
-                  void saveJarvisPreferences({ refreshSeconds: Number(value) })
+                  void saveAgentUsagePreferences({
+                    refreshSeconds: Number(value),
+                  })
                 }
               >
                 {INTERVALS.map((interval) => (
@@ -101,7 +106,7 @@ export function JarvisSettings({ snapshot }: { snapshot: UsageSnapshot }) {
           </DropdownMenu>
         </div>
       </div>
-      <div className="jarvis-settings-providers">
+      <div className="agent-usage-settings-providers">
         <div className="mb-1 flex items-center justify-between gap-2">
           <h3 className="text-[13px] font-semibold">Providers</h3>
           <Button
@@ -112,9 +117,9 @@ export function JarvisSettings({ snapshot }: { snapshot: UsageSnapshot }) {
             onClick={async () => {
               setScanning(true)
               try {
-                await JarvisIPC.rescanAgents()
+                await AgentUsageIPC.rescanAgents()
               } catch {
-                $jarvis.setKey(
+                $agentUsage.setKey(
                   'error',
                   'Could not scan installed agents. Try again.',
                 )
@@ -130,11 +135,11 @@ export function JarvisSettings({ snapshot }: { snapshot: UsageSnapshot }) {
           {installed} installed · Detected automatically. Enable usage for the
           agents you use.
         </p>
-        <div className="jarvis-settings-provider-list">
+        <div className="agent-usage-settings-provider-list">
           {providers.map((provider) => (
             <div
               key={provider.id}
-              className="jarvis-card flex items-center gap-3"
+              className="agent-usage-card flex items-center gap-3"
             >
               <AgentGlyph
                 visual={agentBrandVisual(provider.id)}
@@ -155,18 +160,18 @@ export function JarvisSettings({ snapshot }: { snapshot: UsageSnapshot }) {
                   const providers = enabled
                     ? [...prefs.providers, provider.id]
                     : prefs.providers.filter((id) => id !== provider.id)
-                  void saveJarvisPreferences({ providers })
+                  void saveAgentUsagePreferences({ providers })
                 }}
               />
             </div>
           ))}
         </div>
       </div>
-      <p className="jarvis-settings-note border-border/60 text-muted-foreground border-t pt-3 text-[11px] leading-relaxed">
+      <p className="agent-usage-settings-note border-border/60 text-muted-foreground border-t pt-3 text-[11px] leading-relaxed">
         Usage is reported by your provider account and may include other
         devices. Credentials stay on this device and are sent only to their own
-        provider. Jarvis does not save credentials, read browser cookies, or
-        collect token history.
+        provider. Agent Usage limits does not save credentials, read browser
+        cookies, or collect token history.
       </p>
     </div>
   )
@@ -208,7 +213,7 @@ function Toggle({
         checked={checked}
         disabled={disabled}
         onChange={(event) => onChange(event.target.checked)}
-        className="jarvis-switch"
+        className="agent-usage-switch"
       />
     </label>
   )

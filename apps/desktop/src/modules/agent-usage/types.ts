@@ -27,7 +27,7 @@ export interface ProviderUsage {
   message: string | null
 }
 
-export interface JarvisPreferences {
+export interface AgentUsagePreferences {
   enabled: boolean
   refreshSeconds: number
   providers: string[]
@@ -35,7 +35,7 @@ export interface JarvisPreferences {
 
 export interface UsageSnapshot {
   revision: number
-  preferences: JarvisPreferences
+  preferences: AgentUsagePreferences
   providers: ProviderUsage[]
   refreshing: boolean
   claudeKeychainSupported: boolean
