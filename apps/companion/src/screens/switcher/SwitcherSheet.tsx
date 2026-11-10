@@ -37,6 +37,7 @@ export function SwitcherSheet({ currentKey }: SwitcherSheetProps) {
     deviceName,
     open,
     openDesktops,
+    openNotifications,
     openDetails,
     openWorkspace,
   } = useSwitcherData(currentKey)
@@ -86,21 +87,38 @@ export function SwitcherSheet({ currentKey }: SwitcherSheetProps) {
         ListHeaderComponent={
           <View className="gap-2 px-2 pt-3 pb-1">
             <View className="flex-row items-center justify-between">
-              <Text className="text-foreground text-base font-semibold">
-                Sessions
-              </Text>
-              <Pressable
-                onPress={openDesktops}
-                accessibilityRole="button"
-                accessibilityLabel={`Connected to ${deviceName ?? 'a desktop'}. Switch desktop.`}
-                className="bg-muted active:bg-accent-soft flex-row items-center gap-1.5 rounded-full px-3 py-1.5"
-              >
-                <View className="bg-success h-1.5 w-1.5 rounded-full" />
-                <Text numberOfLines={1} className="text-foreground text-xs">
-                  {deviceName ?? 'desktop'}
+              {/* The bell sits beside the title, not beside the desktop
+                  chip on the right. iOS draws the form sheet's grabber
+                  across the centre of this row and its touch target is
+                  wider than it looks: a control there is visible but
+                  unreachable, and the tap drags the sheet instead. */}
+              <View className="flex-row items-center gap-2">
+                <Text className="text-foreground text-base font-semibold">
+                  Sessions
                 </Text>
-                <Icon name="chevron-down" size={13} />
-              </Pressable>
+                <Pressable
+                  onPress={openNotifications}
+                  accessibilityRole="button"
+                  accessibilityLabel="Notification settings"
+                  className="bg-muted active:bg-accent-soft rounded-full p-1.5"
+                >
+                  <Icon name="bell" size={13} />
+                </Pressable>
+              </View>
+              <View className="flex-row items-center gap-1.5">
+                <Pressable
+                  onPress={openDesktops}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Connected to ${deviceName ?? 'a desktop'}. Switch desktop.`}
+                  className="bg-muted active:bg-accent-soft flex-row items-center gap-1.5 rounded-full px-3 py-1.5"
+                >
+                  <View className="bg-success h-1.5 w-1.5 rounded-full" />
+                  <Text numberOfLines={1} className="text-foreground text-xs">
+                    {deviceName ?? 'desktop'}
+                  </Text>
+                  <Icon name="chevron-down" size={13} />
+                </Pressable>
+              </View>
             </View>
             <SwitcherViewToggle view={view} onChange={setView} />
           </View>

@@ -20,7 +20,12 @@ use crate::auth_stub::AuthStub;
 use crate::mod_engine::{CwdTable, ModEngineHandle};
 use crate::pairing::{PairedTokens, PairingError, PairingWindow, PAIRING_PREFIX};
 use crate::projects_cache::ProjectsCache;
-use crate::protocol::{ClientFrame, PairingCompleteBody, ServerFrame};
+use crate::protocol::{
+    ClientFrame,
+    PairingCompleteBody,
+    RegisterPushBody,
+    ServerFrame,
+};
 use tauri::Emitter;
 use crate::pty_manager::{spawn_pty_if_absent, PtyMap};
 use crate::stream_hub::{StreamHub, SubscriberId};
@@ -109,6 +114,142 @@ pub struct ServerState {
     /// Live connections tagged by paired-device id. Revoke walks this
     /// map to force-close every active session under a device_id.
     pub paired_conns: Arc<PairedConnMap>,
+    /// Phone escalation. `Option` so integration tests can build a
+    /// ServerState without a Tauri runtime, matching `app_handle`.
+    pub push: Option<Arc<crate::push::PushService>>,
+}
+
+/// Push token registration. One idempotent upsert covering the token
+/// and the per-device preferences, because `RegisterPush` carries both
+/// and the phone re-sends it on every connect as well as every
+/// preference change.
+fn handle_register_push(
+    state: &Arc<ServerState>,
+    outbox_tx: &mpsc::UnboundedSender<ServerFrame>,
+    op_id: u64,
+    device_id: Option<&str>,
+    body: RegisterPushBody,
+) {
+    // The legacy dev bearer token has no paired-device record, so there
+    // is nowhere to hang a push token. Reject rather than silently
+    // succeeding, or the phone shows a toggle that does nothing.
+    let Some(device_id) = device_id else {
+        let _ = outbox_tx.send(ServerFrame::OpError {
+            op_id,
+            reason: "this session is not a paired device".to_string(),
+        });
+        return;
+    };
+
+    // Reject anything that is not an Expo token outright. A malformed
+    // token is a silent dead end otherwise: every send fails and the
+    // user sees a switch that is on and does nothing.
+    if !body.token.starts_with("ExponentPushToken[") && !body.token.starts_with("ExpoPushToken[") {
+        let _ = outbox_tx.send(ServerFrame::OpError {
+            op_id,
+            reason: "malformed push token".to_string(),
+        });
+        return;
+    }
+
+    // Clamp rather than reject. A delay outside the range from a future
+    // companion build should degrade to something sane, not disable the
+    // feature with an error the user cannot act on.
+    match state.paired_tokens.set_push_registration(
+        device_id,
+        &body.token,
+        &body.platform,
+        body.delay_seconds,
+        body.redact_names,
+    ) {
+        Ok(true) => {}
+        Ok(false) => {
+            let _ = outbox_tx.send(ServerFrame::OpError {
+                op_id,
+                reason: "unknown device".to_string(),
+            });
+            return;
+        }
+        Err(e) => {
+            eprintln!("[wss] push registration persist failed: {e}");
+            let _ = outbox_tx.send(ServerFrame::OpError {
+                op_id,
+                reason: "could not store push registration".to_string(),
+            });
+            return;
+        }
+    }
+
+    // Never log the token itself: it is a send capability. The prefix
+    // is enough to tell an Expo token from a malformed one in a log.
+    eprintln!(
+        "[wss] push registered device={device_id} platform={} delay={}s redact={}",
+        body.platform, body.delay_seconds, body.redact_names
+    );
+
+    if let Some(push) = state.push.as_ref() {
+        push.devices_changed(device_id);
+    }
+    let _ = outbox_tx.send(ServerFrame::OpOk { op_id });
+    send_push_status(state, outbox_tx, device_id);
+}
+
+fn handle_unregister_push(
+    state: &Arc<ServerState>,
+    outbox_tx: &mpsc::UnboundedSender<ServerFrame>,
+    op_id: u64,
+    device_id: Option<&str>,
+) {
+    let Some(device_id) = device_id else {
+        let _ = outbox_tx.send(ServerFrame::OpError {
+            op_id,
+            reason: "this session is not a paired device".to_string(),
+        });
+        return;
+    };
+    // A persistence failure cannot be reported as success. The phone
+    // would show push as off while the token is still live on this Mac,
+    // which is the one disagreement the user cannot see and cannot fix:
+    // notifications keep arriving from a switch that reads as off.
+    if let Err(e) = state.paired_tokens.clear_push_token(device_id) {
+        eprintln!("[wss] clearing push token failed: {e}");
+        let _ = outbox_tx.send(ServerFrame::OpError {
+            op_id,
+            reason: "could not clear push registration".to_string(),
+        });
+        return;
+    }
+    if let Some(push) = state.push.as_ref() {
+        push.devices_changed(device_id);
+    }
+    let _ = outbox_tx.send(ServerFrame::OpOk { op_id });
+    send_push_status(state, outbox_tx, device_id);
+}
+
+/// Capability advertisement plus the stored preferences.
+///
+/// Sent unprompted right after AuthOk, and that is not a convenience.
+/// The desktop closes the whole WebSocket when it cannot deserialise a
+/// ClientFrame (`read_frame` maps the serde failure to BadJson and the
+/// read loop breaks), so a newer companion that sent RegisterPush blind
+/// would disconnect the terminal stream against any older Mac app, on
+/// every connect. The phone waits for this frame before registering.
+pub fn send_push_status(
+    state: &Arc<ServerState>,
+    outbox_tx: &mpsc::UnboundedSender<ServerFrame>,
+    device_id: &str,
+) {
+    let d = state.paired_tokens.get(device_id);
+    let _ = outbox_tx.send(ServerFrame::PushStatus {
+        supported: true,
+        registered: d.as_ref().and_then(|d| d.push_token.as_ref()).is_some(),
+        delay_seconds: d
+            .as_ref()
+            .map(|d| d.push_delay_seconds)
+            .unwrap_or(crate::push::DEFAULT_DELAY_SECONDS),
+        redact_names: d.as_ref().map(|d| d.push_redact_names).unwrap_or(false),
+        last_error: d.and_then(|d| d.push_last_error),
+    });
 }
 
 /// Reply-routing table for mobile CRUD ops. See ServerState docs.
@@ -418,6 +559,32 @@ async fn connection_task(
     {
         return;
     }
+    // Push capability advertisement, before anything else the client
+    // might act on. The phone gates RegisterPush on seeing this: an
+    // older desktop cannot deserialise that variant and closes the
+    // whole session on the attempt, so registering blind would break
+    // terminal streaming rather than merely failing to register.
+    //
+    // Only for paired devices. A legacy dev-token session has no
+    // device record to hang a token on, and telling it push is
+    // available would be a lie it could act on.
+    if let Some(id) = device_id.as_deref() {
+        let d = state.paired_tokens.get(id);
+        let status = ServerFrame::PushStatus {
+            supported: true,
+            registered: d.as_ref().and_then(|d| d.push_token.as_ref()).is_some(),
+            delay_seconds: d
+                .as_ref()
+                .map(|d| d.push_delay_seconds)
+                .unwrap_or(crate::push::DEFAULT_DELAY_SECONDS),
+            redact_names: d.as_ref().map(|d| d.push_redact_names).unwrap_or(false),
+            last_error: d.and_then(|d| d.push_last_error),
+        };
+        if send_frame(&mut socket, &status).await.is_err() {
+            return;
+        }
+    }
+
     let projects = state.projects_cache.projects_with_spawn_status(&state.pty_map);
     if send_frame(&mut socket, &ServerFrame::Projects { data: projects })
         .await
@@ -495,6 +662,7 @@ async fn connection_task(
                     &outbox_tx,
                     &mut subscriptions,
                     connection_id,
+                    device_id.as_deref(),
                 )
                 .await;
             }
@@ -756,6 +924,7 @@ async fn dispatch_client_frame(
     outbox_tx: &mpsc::UnboundedSender<ServerFrame>,
     subscriptions: &mut HashMap<String, SubscriberId>,
     connection_id: u64,
+    device_id: Option<&str>,
 ) {
     match frame {
         // The main auth path already handled the first Auth frame. A
@@ -899,6 +1068,14 @@ async fn dispatch_client_frame(
         }
         ClientFrame::ReorderTabs { op_id, body } => {
             dispatch_mobile_op(&state, &outbox_tx, connection_id, op_id, "reorder_tabs", &body);
+        }
+
+        ClientFrame::RegisterPush { op_id, body } => {
+            handle_register_push(state, outbox_tx, op_id, device_id, body);
+        }
+
+        ClientFrame::UnregisterPush { op_id } => {
+            handle_unregister_push(state, outbox_tx, op_id, device_id);
         }
 
         ClientFrame::SetTabPinned { op_id, body } => {
@@ -1047,6 +1224,8 @@ fn first_op_name(frame: &ClientFrame) -> &'static str {
         ClientFrame::SetTabPinned { .. } => "set_tab_pinned",
         ClientFrame::SetProjectPinned { .. } => "set_project_pinned",
         ClientFrame::BumpRecency { .. } => "bump_recency",
+        ClientFrame::RegisterPush { .. } => "register_push",
+        ClientFrame::UnregisterPush { .. } => "unregister_push",
         ClientFrame::PairingStart { .. } => "pairing_start",
     }
 }

@@ -74,6 +74,41 @@ pub struct PairedDevice {
     /// Source address of the most recent successful auth. Cosmetic;
     /// useful when the same device connects from multiple LANs.
     pub last_ip: Option<String>,
+
+    // ── Push registration ────────────────────────────────────────────
+    //
+    // Written only by the device itself, over `ClientFrame::RegisterPush`
+    // on an already-authenticated connection. The desktop has no UI for
+    // any of this: the phone is the only owner, because it is the thing
+    // that buzzes.
+    //
+    // Every field is `serde(default)` so a Keychain blob written before
+    // push existed still deserialises.
+    /// Expo push token. A send capability for this device, so it lives
+    /// beside the token hash and is never logged beyond a prefix.
+    /// `None` is also how "the user switched push off" is represented:
+    /// token presence IS the enabled flag, which removes the state where
+    /// a token exists but must not be used.
+    #[serde(default)]
+    pub push_token: Option<String>,
+    /// "ios" or "android". Chooses channel vs interruption level.
+    #[serde(default)]
+    pub push_platform: Option<String>,
+    #[serde(default)]
+    pub push_registered_at: Option<i64>,
+    /// Grace window this device wants, in seconds.
+    #[serde(default = "default_push_delay")]
+    pub push_delay_seconds: u32,
+    #[serde(default)]
+    pub push_redact_names: bool,
+    /// Last transport failure. Echoed to the phone on `PushStatus`
+    /// rather than shown on the desktop, which has no screen for it.
+    #[serde(default)]
+    pub push_last_error: Option<String>,
+}
+
+fn default_push_delay() -> u32 {
+    crate::push::DEFAULT_DELAY_SECONDS
 }
 
 /// Mobile-supplied metadata at pairing time. Everything user-facing
@@ -211,6 +246,12 @@ impl PairedTokens {
             paired_at,
             last_seen: paired_at,
             last_ip: None,
+            push_token: None,
+            push_platform: None,
+            push_registered_at: None,
+            push_delay_seconds: default_push_delay(),
+            push_redact_names: false,
+            push_last_error: None,
         };
         let mut map = self.inner.lock().expect("paired_tokens lock poisoned");
         map.insert(id.clone(), device);
@@ -233,6 +274,88 @@ impl PairedTokens {
     pub fn list(&self) -> Vec<PairedDevice> {
         let map = self.inner.lock().expect("paired_tokens lock poisoned");
         map.values().cloned().collect()
+    }
+
+    /// One device by id.
+    pub fn get(&self, id: &str) -> Option<PairedDevice> {
+        let map = self.inner.lock().expect("paired_tokens lock poisoned");
+        map.get(id).cloned()
+    }
+
+    /// Only the devices that currently hold a push token, which is the
+    /// same thing as the devices that want push.
+    pub fn with_push_tokens(&self) -> Vec<PairedDevice> {
+        let map = self.inner.lock().expect("paired_tokens lock poisoned");
+        map.values()
+            .filter(|d| d.push_token.is_some())
+            .cloned()
+            .collect()
+    }
+
+    /// One idempotent upsert for the token and the preferences together,
+    /// because `RegisterPush` carries both: the phone re-sends it on
+    /// every connect and on every preference change.
+    pub fn set_push_registration(
+        &self,
+        id: &str,
+        token: &str,
+        platform: &str,
+        delay_seconds: u32,
+        redact_names: bool,
+    ) -> Result<bool> {
+        let mut map = self.inner.lock().expect("paired_tokens lock poisoned");
+        let Some(device) = map.get_mut(id) else {
+            return Ok(false);
+        };
+        device.push_token = Some(token.to_string());
+        device.push_platform = Some(platform.to_string());
+        device.push_registered_at = Some(now_unix());
+        device.push_delay_seconds = crate::push::clamp_delay(delay_seconds);
+        device.push_redact_names = redact_names;
+        device.push_last_error = None;
+        let snapshot = map.clone();
+        drop(map);
+        self.persist(&snapshot)?;
+        Ok(true)
+    }
+
+    /// The off switch. Called when the user disables push on the phone,
+    /// and when Expo reports `DeviceNotRegistered`.
+    ///
+    /// Clears the stored error with the token. The error describes a
+    /// registration that is being taken away, and the phone's settings
+    /// screen reads `last_error` before it reads the off state, so
+    /// leaving it behind shows a device the user deliberately switched
+    /// off as one that is failing.
+    pub fn clear_push_token(&self, id: &str) -> Result<bool> {
+        let mut map = self.inner.lock().expect("paired_tokens lock poisoned");
+        let Some(device) = map.get_mut(id) else {
+            return Ok(false);
+        };
+        if device.push_token.is_none() && device.push_last_error.is_none() {
+            return Ok(false);
+        }
+        device.push_token = None;
+        device.push_registered_at = None;
+        device.push_last_error = None;
+        let snapshot = map.clone();
+        drop(map);
+        self.persist(&snapshot)?;
+        Ok(true)
+    }
+
+    pub fn set_push_error(&self, id: &str, err: Option<String>) -> Result<()> {
+        let mut map = self.inner.lock().expect("paired_tokens lock poisoned");
+        let Some(device) = map.get_mut(id) else {
+            return Ok(());
+        };
+        if device.push_last_error == err {
+            return Ok(());
+        }
+        device.push_last_error = err;
+        let snapshot = map.clone();
+        drop(map);
+        self.persist(&snapshot)
     }
 
     fn persist(&self, map: &HashMap<String, PairedDevice>) -> Result<()> {
@@ -414,6 +537,45 @@ mod tests {
         assert!(store.check_and_touch(&token_b, None).is_some());
         // Revoking again is a no-op.
         assert!(!store.revoke(&id_a).unwrap());
+    }
+
+    /// A stored error outliving the registration it describes made an
+    /// intentionally disabled device present as failing: the settings
+    /// screen checks `lastError` before the off state.
+    #[test]
+    fn unregistering_clears_the_stored_push_error_too() {
+        let store = PairedTokens::new_ephemeral();
+        let (id, _token) = store.insert(info("Dani's iPhone", "ios")).unwrap();
+        store
+            .set_push_registration(&id, "ExponentPushToken[abc]", "ios", 90, false)
+            .unwrap();
+        store
+            .set_push_error(&id, Some("push credentials rejected".to_string()))
+            .unwrap();
+        assert!(store.get(&id).unwrap().push_last_error.is_some());
+
+        assert!(store.clear_push_token(&id).unwrap());
+
+        let device = store.get(&id).unwrap();
+        assert!(device.push_token.is_none());
+        assert!(device.push_registered_at.is_none());
+        assert!(device.push_last_error.is_none());
+    }
+
+    /// The error can outlive the token when Expo reports
+    /// `DeviceNotRegistered`, which clears the token on its own.
+    #[test]
+    fn clearing_an_already_cleared_token_still_clears_a_leftover_error() {
+        let store = PairedTokens::new_ephemeral();
+        let (id, _token) = store.insert(info("Dani's iPhone", "ios")).unwrap();
+        store
+            .set_push_error(&id, Some("transport error".to_string()))
+            .unwrap();
+
+        assert!(store.clear_push_token(&id).unwrap());
+        assert!(store.get(&id).unwrap().push_last_error.is_none());
+        // Nothing left to clear.
+        assert!(!store.clear_push_token(&id).unwrap());
     }
 
     #[test]

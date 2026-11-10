@@ -190,6 +190,22 @@ jobs:
         # the PR runs, so this should never be the step that fails.
         run: bun run --filter companion check
 
+      - name: Write the Firebase client config for push
+        env:
+          GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
+        run: |
+          set -euo pipefail
+          # Never committed: it carries a Google cloud project identifier.
+          # Failing loudly here beats shipping a build where push silently
+          # never registers, which looks identical to a working one until
+          # a user turns the switch on and nothing arrives.
+          if [ -z "$GOOGLE_SERVICES_JSON_BASE64" ]; then
+            echo "::error::GOOGLE_SERVICES_JSON_BASE64 is not set. Push notifications cannot register without it." >&2
+            exit 1
+          fi
+          printf '%s' "$GOOGLE_SERVICES_JSON_BASE64" | base64 --decode \
+            > apps/companion/google-services.json
+
       - name: Decode signing and Play credentials
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -212,6 +228,10 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          # Required by getExpoPushTokenAsync. A build without it still
+          # runs; the settings screen reports push as unavailable rather
+          # than the app crashing on a tap.
+          EAS_PROJECT_ID: ${{ secrets.EAS_PROJECT_ID }}
           # A tag always goes to internal. A manual run picks its own track,
           # and can tick validate_only for a dry run that checks the whole
           # upload path and commits nothing.

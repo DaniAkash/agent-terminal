@@ -103,3 +103,24 @@ export function formatFingerprintForVisualCompare(fp: string): string {
   }
   return chunks.join('  ')
 }
+
+/**
+ * Whether to offer push right after pairing.
+ *
+ * This is the only moment the ask makes sense: the user has just
+ * connected a desktop, so the reason is obvious and the value is
+ * immediate. At boot they have no desktop, cannot tell why the app
+ * wants notifications, and deny, after which
+ * `requestPermissionsAsync` never prompts again.
+ *
+ * Skipped when the device cannot receive push at all, and when the
+ * permission is already settled either way: a second prompt is a
+ * no-op the user still has to dismiss.
+ */
+export function shouldOfferPush(push: {
+  support: 'unknown' | 'unsupported' | 'ok'
+  permission: 'undetermined' | 'granted' | 'denied'
+}): boolean {
+  if (push.support === 'unsupported') return false
+  return push.permission === 'undetermined'
+}

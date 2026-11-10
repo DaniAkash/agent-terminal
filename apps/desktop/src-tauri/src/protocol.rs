@@ -131,6 +131,34 @@ pub enum ClientFrame {
         op_id: u64,
         body: RemoveTabBody,
     },
+    /// Register this device's push token AND its push preferences.
+    ///
+    /// Sent after every successful auth, not only at pairing: Expo
+    /// tokens rotate, and one that rotated while the desktop was
+    /// offline would otherwise leave push silently broken until the
+    /// next pairing. Also re-sent on every preference change, so one
+    /// idempotent upsert covers registration and settings both.
+    ///
+    /// MUST NOT be sent before a `ServerFrame::PushStatus` has been
+    /// seen on this connection. An older desktop cannot deserialise
+    /// this variant, and a failed deserialise closes the whole session
+    /// rather than being ignored, so registering blind against one
+    /// disconnects the terminal stream on every connect.
+    RegisterPush {
+        #[typeshare(serialized_as = "u32")]
+        op_id: u64,
+        body: RegisterPushBody,
+    },
+
+    /// User switched push off on the phone. Clears the stored token so
+    /// the desktop stops sending at once rather than waiting for a
+    /// DeviceNotRegistered receipt. Token presence is the enabled flag,
+    /// so there is no separate toggle to keep in sync.
+    UnregisterPush {
+        #[typeshare(serialized_as = "u32")]
+        op_id: u64,
+    },
+
     /// Reorder a tab within a project by index. Matches the desktop's
     /// existing `$projects.reorderTabs(oldIdx, newIdx)` shape so the
     /// mobile-ops listener maps 1:1.
@@ -267,6 +295,36 @@ pub enum ServerFrame {
         op_id: u64,
         body: PairingCompleteBody,
     },
+
+    /// Push capability advertisement, sent unprompted right after
+    /// AuthOk and again after every RegisterPush / UnregisterPush.
+    ///
+    /// Its *presence* is the capability signal. The desktop closes the
+    /// whole WebSocket when it cannot deserialise a ClientFrame, so a
+    /// newer companion that sent RegisterPush blind would disconnect
+    /// the terminal stream against any older Mac app, on every connect.
+    /// The phone therefore waits for this frame before registering, and
+    /// reports "not supported by your desktop" if it never arrives.
+    ///
+    /// The echoed preferences let the settings screen render what the
+    /// desktop actually stored rather than what the phone believes it
+    /// sent.
+    PushStatus {
+        /// Always true from a desktop that has this frame at all.
+        /// Reserved for a build that ships the protocol but cannot send.
+        supported: bool,
+        /// Whether a push token is currently stored for THIS device.
+        registered: bool,
+        #[typeshare(serialized_as = "u32")]
+        delay_seconds: u32,
+        redact_names: bool,
+        /// Last transport failure for this device, so the phone can
+        /// explain a credentials problem rather than silently never
+        /// arriving. The desktop has no screen for this; the phone is
+        /// the only place a human looks.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        last_error: Option<String>,
+    },
 }
 
 // -------- Phase B body structs --------
@@ -367,6 +425,28 @@ pub struct PairingStartBody {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
 }
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RegisterPushBody {
+    /// "ExponentPushToken[...]". A send capability for this device, so
+    /// it is stored in the Keychain beside the token hash and never
+    /// logged beyond a prefix.
+    pub token: String,
+    /// "ios" or "android". Chooses channelId vs interruptionLevel.
+    pub platform: String,
+    /// Companion version, so a desktop can shape the payload for an
+    /// older phone instead of assuming lockstep upgrades.
+    pub app_version: String,
+    /// Grace window this device wants, in seconds. 0 escalates at once.
+    /// Per device rather than global: two phones paired to one Mac each
+    /// get their own answer. Clamped server side rather than rejected.
+    #[typeshare(serialized_as = "u32")]
+    pub delay_seconds: u32,
+    /// Send ids only, with generic notification text.
+    pub redact_names: bool,
+}
+
 
 /// Server reply to `PairingStart`. Carries the freshly-minted
 /// long-lived device token the mobile stashes in secure-store.

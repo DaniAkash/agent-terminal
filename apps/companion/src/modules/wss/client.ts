@@ -1,3 +1,7 @@
+import {
+  clearDesktopPushStatus,
+  noteDesktopPushStatus,
+} from '@/modules/push/$push'
 import { $activeDevice } from '@/modules/stores/$devices'
 import { $session, resetSession } from '@/modules/stores/$session'
 import { clearTabStates, noteTabState } from '@/modules/stores/$tabState'
@@ -9,6 +13,7 @@ import type {
   RemoveProjectBody,
   RemoveTabBody,
   RenameProjectBody,
+  RegisterPushBody,
   RenameTabBody,
   ReorderTabsBody,
   ServerFrame,
@@ -209,6 +214,9 @@ export function disconnect(): void {
   // refuses to do, so they go with it.
   outbox = []
   resetSession()
+  // Push capability is a property of the connection, not of the app
+  // run. See clearDesktopPushStatus.
+  clearDesktopPushStatus()
 }
 
 /**
@@ -444,6 +452,27 @@ export function sendReorderTabs(body: ReorderTabsBody): Promise<void> {
   return sendPending(op_id, frame)
 }
 
+/**
+ * Register this device's push token and preferences.
+ *
+ * Do not call this directly: go through `syncRegistration`, which gates
+ * on the desktop having advertised push support. A desktop older than
+ * this feature cannot deserialise the frame and closes the whole
+ * session on it, so an ungated send disconnects the terminal stream
+ * rather than merely failing.
+ */
+export function sendRegisterPush(body: RegisterPushBody): Promise<void> {
+  const op_id = nextOpId++
+  const frame: ClientFrame = { op: 'register_push', body: { op_id, body } }
+  return sendPending(op_id, frame)
+}
+
+export function sendUnregisterPush(): Promise<void> {
+  const op_id = nextOpId++
+  const frame: ClientFrame = { op: 'unregister_push', body: { op_id } }
+  return sendPending(op_id, frame)
+}
+
 function sendSubscribeOrResume(tabId: string, sub: TabSubscription): void {
   if (sub.lastSeq !== null) {
     console.log('[wss.client] resume', { tabId, lastSeq: sub.lastSeq })
@@ -476,6 +505,9 @@ function openSocket(): void {
     return
   }
   $session.setKey('status', 'connecting')
+  // Nothing has been advertised on the socket about to open, and the
+  // desktop answering it may not be the one that answered the last.
+  clearDesktopPushStatus()
   console.log('[wss.client] opening WebSocket to', state.url)
   const ws = tryConstructSocket(state.url)
   if (!ws) return
@@ -563,6 +595,11 @@ function forceCloseAndReconnect(reason: string): void {
   state.socket = null
   clearTimers()
   rejectAllPending(new Error(`connection lost: ${reason}`))
+  // Whatever the dead desktop advertised died with it. Keeping it would
+  // let a reconnect to an OLDER paired Mac register against a
+  // capability the previous one had, and that Mac closes the whole
+  // socket on a frame it cannot deserialise.
+  clearDesktopPushStatus()
   if (state.intentionallyDisconnected) return
   if ($session.get().status !== 'auth_failed') {
     $session.setKey('status', 'unreachable')
@@ -639,6 +676,18 @@ function dispatchFrame(frame: ServerFrame): void {
       pendingOps.delete(frame.body.op_id)
       pending.reject(new Error(frame.body.reason))
     }
+    return
+  }
+  if (frame.op === 'push_status') {
+    // Capability advertisement plus the stored preferences. Its arrival
+    // is what unblocks registration; see push.register.ts.
+    noteDesktopPushStatus({
+      supported: frame.body.supported,
+      registered: frame.body.registered,
+      delaySeconds: frame.body.delay_seconds,
+      redactNames: frame.body.redact_names,
+      lastError: frame.body.last_error ?? null,
+    })
     return
   }
   if (frame.op === 'op_ok') {

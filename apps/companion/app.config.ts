@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs'
+import { isAbsolute, join } from 'node:path'
 import type { ExpoConfig } from 'expo/config'
 import { version } from './package.json'
 
@@ -12,6 +14,34 @@ const suffix = isProd ? '' : '.dev'
 // the release tag rather than from anything in the tree. The local fallback
 // is only ever used by builds that never reach a store.
 const buildNumber = process.env.BUILD_NUMBER ?? '1'
+
+/**
+ * Client config for FCM registration, and only when it is really there.
+ *
+ * Never committed: it carries a Google cloud project identifier, so CI
+ * writes it from a secret. Naming it unconditionally made a missing
+ * file a prebuild failure rather than a build without push, because the
+ * Google Services config plugin copies the path during prebuild and
+ * errors when it cannot find it. The Android release workflow still
+ * fails loudly on the missing secret, before prebuild runs, so the loud
+ * failure stays where it belongs and a local build without credentials
+ * prebuilds with push simply unregistered.
+ */
+function resolveGoogleServicesFile(): string | undefined {
+  const path = process.env.GOOGLE_SERVICES_JSON ?? './google-services.json'
+  // Resolved against the project root rather than the working
+  // directory: the path in the config is read relative to the project,
+  // and the config itself is loaded from workspace scripts that run
+  // from the repo root.
+  const resolved = isAbsolute(path) ? path : join(__dirname, path)
+  if (existsSync(resolved)) return path
+  console.warn(
+    `[app.config] no Firebase client config at ${path}, Android push will not register`,
+  )
+  return undefined
+}
+
+const googleServicesFile = resolveGoogleServicesFile()
 
 const config: ExpoConfig = {
   name: 'Agent Terminal',
@@ -33,11 +63,19 @@ const config: ExpoConfig = {
       NSAppTransportSecurity: {
         NSAllowsLocalNetworking: true,
       },
+      // Scoped deliberately. Push notifications mean notification text
+      // now leaves the network through Expo and the platform push
+      // service, so the old blanket "no traffic leaves your network"
+      // became untrue the moment this feature shipped. Terminal output
+      // and keystrokes still never leave.
       NSLocalNetworkUsageDescription:
-        'Agent Terminal connects to your desktop over your local Wi-Fi to stream terminal output. No traffic leaves your network.',
+        'Agent Terminal connects to your desktop over your local Wi-Fi to stream terminal output. Your terminal output and keystrokes never leave your network.',
     },
   },
   android: {
+    // Spread rather than assigned: the key has to be absent, not
+    // undefined, when there is no file. See resolveGoogleServicesFile.
+    ...(googleServicesFile ? { googleServicesFile } : {}),
     // No `.companion` here, and not an oversight: hyphens are illegal in
     // Android package names, so this is the direct translation of the
     // desktop's `com.daniakash.agent-terminal`. The desktop never ships to
@@ -56,6 +94,8 @@ const config: ExpoConfig = {
     // question on the Play Data Safety form that we would have to answer
     // about behaviour we do not have. Removing them keeps the declared
     // surface equal to the real one.
+    // POST_NOTIFICATIONS is deliberately absent from this list: it is
+    // the one permission push actually needs on Android 13+.
     blockedPermissions: [
       'android.permission.SYSTEM_ALERT_WINDOW',
       'android.permission.READ_EXTERNAL_STORAGE',
@@ -64,6 +104,16 @@ const config: ExpoConfig = {
   },
   plugins: [
     'expo-router',
+    [
+      'expo-notifications',
+      {
+        // Android draws the status-bar icon as a silhouette, so it has
+        // to be the monochrome mark. Reusing the adaptive icon's
+        // monochrome layer rather than adding a near-identical asset.
+        icon: './assets/android-icon-monochrome.png',
+        color: '#0e0f10',
+      },
+    ],
     'expo-secure-store',
     'expo-font',
     // Bundles the Lucide font into the binary instead of leaving it to
@@ -91,6 +141,13 @@ const config: ExpoConfig = {
     './plugins/withGradleWrapperVersion',
     './plugins/withAndroidRelease',
   ],
+  extra: {
+    // Required by getExpoPushTokenAsync, which rejects without it. Read
+    // from the environment rather than committed: it is bound to an
+    // Expo account, and a build without it reports push as unsupported
+    // instead of crashing.
+    eas: { projectId: process.env.EAS_PROJECT_ID },
+  },
 }
 
 export default config
