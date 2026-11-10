@@ -95,6 +95,13 @@ pub struct NotificationService {
     /// the service is wrapped in Arc.
     #[cfg(not(debug_assertions))]
     manager: Mutex<Option<std::sync::Arc<dyn user_notify::NotificationManager>>>,
+    /// Release-mode only: the live notification for each tab, so the next
+    /// one for that tab can close it first. In memory only, so a restart
+    /// forgets what is still on screen. The crate generates its own
+    /// identifier per request, which is the reason this map exists at all
+    /// rather than reposting under a stable id.
+    #[cfg(not(debug_assertions))]
+    handles: Mutex<HashMap<String, Box<dyn user_notify::NotificationHandle>>>,
 }
 
 struct Inner {
@@ -128,6 +135,8 @@ impl NotificationService {
             }),
             #[cfg(not(debug_assertions))]
             manager: Mutex::new(None),
+            #[cfg(not(debug_assertions))]
+            handles: Mutex::new(HashMap::new()),
         });
         backend::init(&svc);
         svc
@@ -685,11 +694,26 @@ mod backend {
         let subtitle = payload.subtitle.clone();
         let body = crate::push::with_update_count(payload.body.clone(), payload.updates);
 
+        let tab = payload.composite_tab_id.clone();
+        // Taken before the dispatch so the lock is never held across the
+        // await below.
+        let previous = svc.handles.lock().unwrap().remove(&tab);
+
         // Dispatch send_notification to the main thread to be safe — Cocoa
         // notification posting commonly requires it. Use a oneshot to ferry
         // the Result back to our async caller.
         let (tx, rx) = oneshot::channel();
         let dispatch = svc.app.run_on_main_thread(move || {
+            // Closing the tab's previous notification first is what keeps
+            // one live banner per tab. This is a remove and re-add rather
+            // than an in-place update, so the new banner alerts again; an
+            // identifier the caller could set would avoid that, and the
+            // crate does not expose one.
+            if let Some(previous) = previous {
+                if let Err(e) = previous.close() {
+                    eprintln!("[notifications] closing the previous banner failed: {e}");
+                }
+            }
             let mut builder = NotificationBuilder::new()
                 .title(&title)
                 .body(&body)
@@ -699,26 +723,33 @@ mod backend {
                 builder = builder.subtitle(&subtitle);
             }
             let result = tauri::async_runtime::block_on(manager.send_notification(builder));
-            let _ = tx.send(result.map(|_| ()).map_err(|e| e.to_string()));
+            let _ = tx.send(result.map_err(|e| e.to_string()));
         });
         if let Err(e) = dispatch {
             eprintln!("[notifications] failed to dispatch send to main thread: {e}");
             return;
         }
         match rx.await {
-            Ok(Ok(())) => {}
+            Ok(Ok(handle)) => {
+                svc.handles.lock().unwrap().insert(tab, handle);
+            }
             Ok(Err(e)) => eprintln!("[notifications] user-notify send failed: {e}"),
             Err(_) => eprintln!("[notifications] send dispatch dropped before completion"),
         }
     }
 
     pub fn cancel(svc: &NotificationService, composite_tab_id: &str) {
-        let Some(manager) = svc.manager.lock().unwrap().clone() else { return };
-        let id = format!("agent-terminal:tab:{composite_tab_id}");
-        // remove_delivered_notifications is sync — dispatch to main thread.
-        let id_owned = id;
+        // This used to pass the thread id where an identifier was
+        // expected, which matched nothing: no notification has ever
+        // carried it, so withdrawing a banner the user had already dealt
+        // with silently did nothing. The handle knows its own id.
+        let Some(handle) = svc.handles.lock().unwrap().remove(composite_tab_id) else {
+            return;
+        };
         let _ = svc.app.run_on_main_thread(move || {
-            let _ = manager.remove_delivered_notifications(vec![&id_owned]);
+            if let Err(e) = handle.close() {
+                eprintln!("[notifications] closing a seen banner failed: {e}");
+            }
         });
     }
 
