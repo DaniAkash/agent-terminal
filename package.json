@@ -16,7 +16,7 @@
     "check:desktop:tsc": "bun run --filter @agent-terminal/desktop typecheck",
     "check:desktop:test": "bun test apps/desktop/src",
     "check:sidecar:test": "cd apps/desktop/src-tauri/sidecar && bun test",
-    "check:rust:clippy": "cd apps/desktop && cargo clippy --all-targets",
+    "check:rust:clippy": "cd apps/desktop && cargo clippy --all-targets --no-deps",
     "check:rust:test": "cd apps/desktop && cargo test --all-targets --no-fail-fast -- --test-threads=1",
     "check:tauri:build": "cd apps/desktop && bunx tauri build --no-bundle --debug",
     "check:companion": "bun run --filter companion check",
