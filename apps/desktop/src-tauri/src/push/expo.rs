@@ -110,6 +110,10 @@ pub enum SendError {
     /// surface it to the phone, which is the only place a human looks.
     Credentials(String),
     RateLimited,
+    /// Expo took the connection and then stopped answering. A failed
+    /// send, not something to retry: the tick awaits each delivery in
+    /// turn, and the notification is one the user is already late for.
+    Timeout,
     Transport(String),
     /// Unexpected shape. Logged once so a future Expo error code is
     /// visible rather than swallowed.
@@ -122,6 +126,7 @@ impl fmt::Display for SendError {
             Self::DeviceNotRegistered => write!(f, "device not registered"),
             Self::Credentials(e) => write!(f, "push credentials rejected: {e}"),
             Self::RateLimited => write!(f, "rate limited by Expo"),
+            Self::Timeout => write!(f, "timed out waiting for Expo"),
             Self::Transport(e) => write!(f, "transport error: {e}"),
             Self::Protocol(e) => write!(f, "unexpected response: {e}"),
         }
@@ -160,25 +165,42 @@ struct RequestError {
 }
 
 pub async fn send(client: &reqwest::Client, msg: &ExpoMessage) -> Result<(), SendError> {
+    send_to(client, ENDPOINT, msg).await
+}
+
+/// Split from `send` so the timeout is testable against a peer that
+/// accepts and never answers, without reaching exp.host.
+async fn send_to(
+    client: &reqwest::Client,
+    url: &str,
+    msg: &ExpoMessage,
+) -> Result<(), SendError> {
     let resp = client
-        .post(ENDPOINT)
+        .post(url)
         .header("accept", "application/json")
         .header("content-type", "application/json")
         .json(msg)
         .send()
         .await
-        .map_err(|e| SendError::Transport(e.to_string()))?;
+        .map_err(transport_error)?;
 
     let status = resp.status();
-    let text = resp
-        .text()
-        .await
-        .map_err(|e| SendError::Transport(e.to_string()))?;
+    let text = resp.text().await.map_err(transport_error)?;
 
     if status.as_u16() == 429 {
         return Err(SendError::RateLimited);
     }
     classify(&text)
+}
+
+/// The client's timeout covers the whole request, so it can expire
+/// either while connecting or part way through the body.
+fn transport_error(e: reqwest::Error) -> SendError {
+    if e.is_timeout() {
+        SendError::Timeout
+    } else {
+        SendError::Transport(e.to_string())
+    }
 }
 
 /// Split from `send` so the whole response-handling matrix is testable
@@ -392,5 +414,55 @@ mod tests {
             classify("not json").unwrap_err(),
             SendError::Protocol(_)
         ));
+    }
+
+    /// The stall this guards against: a peer that completes the TCP
+    /// handshake and then never answers. Without a client timeout the
+    /// await never returns, and the single escalation tick awaits each
+    /// delivery in turn, so every later notification queues behind it.
+    #[tokio::test]
+    async fn a_peer_that_never_answers_is_a_timeout_not_a_hang() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind a loopback port");
+        let url = format!("http://{}/", listener.local_addr().unwrap());
+        // Accept and hold, answering nothing.
+        let accepting = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.expect("accept");
+            tokio::time::sleep(Duration::from_secs(30)).await;
+            drop(stream);
+        });
+
+        let client = super::super::expo_client_with_timeout(Duration::from_millis(300));
+        let msg = build_message(
+            "ExponentPushToken[abc]",
+            &pending(),
+            &device("ios"),
+            "t",
+            "b",
+            "awaiting",
+            "s",
+        );
+
+        let started = Instant::now();
+        let err = send_to(&client, &url, &msg).await.unwrap_err();
+        accepting.abort();
+
+        assert!(
+            matches!(err, SendError::Timeout),
+            "expected Timeout, got {err:?}"
+        );
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "the request should have given up long before this"
+        );
+    }
+
+    /// The constant the production client is built with. A zero or
+    /// absent timeout is the bug this replaced.
+    #[test]
+    fn the_production_timeout_is_bounded() {
+        assert!(super::super::EXPO_TIMEOUT > Duration::ZERO);
+        assert!(super::super::EXPO_TIMEOUT <= Duration::from_secs(30));
     }
 }

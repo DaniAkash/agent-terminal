@@ -95,6 +95,41 @@ pub const POST_WAKE_GRACE: Duration = Duration::from_secs(10);
 /// slept: `Instant` does not advance while it does.
 pub const WAKE_JUMP: Duration = Duration::from_secs(3);
 
+/// Ceiling on one Expo request, connect and response together.
+///
+/// The tick awaits each delivery in turn, so without a bound an
+/// `exp.host` that accepts the connection and then stops answering
+/// stalls the single escalation loop and every later notification
+/// behind it. Ten seconds is generous for one small POST and short
+/// enough that the loop is back before the notification it was carrying
+/// would have gone stale anyway.
+pub const EXPO_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Bounded on purpose; see `EXPO_TIMEOUT`.
+///
+/// Installs the rustls provider first, as `usage::http::client` does.
+/// `reqwest`'s builder panics rather than erroring when none is
+/// installed, and this service is constructed at startup, so relying on
+/// another component having got there first makes push a startup crash
+/// waiting on an ordering change. `install_default` is idempotent, so
+/// doing it here costs nothing when it has already happened.
+fn expo_client() -> reqwest::Client {
+    expo_client_with_timeout(EXPO_TIMEOUT)
+}
+
+/// The timeout is a parameter only so the transport test can use one
+/// short enough to assert against.
+fn expo_client_with_timeout(timeout: Duration) -> reqwest::Client {
+    let _ = tokio_rustls::rustls::crypto::ring::default_provider().install_default();
+    reqwest::Client::builder()
+        .timeout(timeout)
+        .build()
+        .unwrap_or_else(|e| {
+            eprintln!("[push] could not build a timed HTTP client: {e}");
+            reqwest::Client::new()
+        })
+}
+
 // ─── Service ─────────────────────────────────────────────────────────────────
 
 /// What the phone needs to know about this desktop's push support.
@@ -159,7 +194,7 @@ impl PushService {
                 budget: RateBudget::default(),
                 last_tick_wall: now_wall(),
             }),
-            client: reqwest::Client::new(),
+            client: expo_client(),
         });
         let tick_svc = svc.clone();
         tauri::async_runtime::spawn(async move {
