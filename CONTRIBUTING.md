@@ -2,6 +2,8 @@
 
 Thank you for your interest in contributing. Agent Terminal is in early active development — contributions, bug reports, and ideas are all welcome.
 
+Please follow our [Code of Conduct](./CODE_OF_CONDUCT.md) in all project spaces.
+
 ## Table of Contents
 
 - [Prerequisites](#prerequisites)
