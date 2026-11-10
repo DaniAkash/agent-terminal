@@ -130,12 +130,26 @@ pub struct RateBudget {
 #[derive(Debug)]
 struct DeviceBudget {
     last_sent: HashMap<String, Instant>,
+    /// Outstanding reservations, with what `last_sent` held before each
+    /// one, so releasing a hold can put the per-tab floor back exactly
+    /// as it was. At most one per tab: the floor refuses a second hold
+    /// on a tab that already has one.
+    holds: HashMap<String, Option<Instant>>,
     tokens: f64,
     last_refill: Instant,
 }
 
 impl RateBudget {
-    pub fn allows(&mut self, device_id: &str, tab: &str, now: Instant) -> bool {
+    /// Take capacity for a send that is about to be dispatched, and
+    /// return whether there was any.
+    ///
+    /// Consuming here rather than after the send is what makes
+    /// `BUCKET_CAPACITY` bound a burst at all. Checking without
+    /// consuming let every tab that came due in the same tick observe
+    /// the same full bucket, so ten tabs finishing together all queued
+    /// and the cap bounded nothing. Each hold is then either made
+    /// permanent with `redeem` or handed back with `release`.
+    pub fn reserve(&mut self, device_id: &str, tab: &str, now: Instant) -> bool {
         let b = self.entry(device_id, now);
         b.refill(now);
         if let Some(prev) = b.last_sent.get(tab) {
@@ -143,16 +157,41 @@ impl RateBudget {
                 return false;
             }
         }
-        b.tokens >= 1.0
+        if b.tokens < 1.0 {
+            return false;
+        }
+        b.tokens -= 1.0;
+        let prev = b.last_sent.insert(tab.to_string(), now);
+        b.holds.insert(tab.to_string(), prev);
+        true
     }
 
-    /// Call only once a send has actually been dispatched. Keeping commit
-    /// separate from `allows` means a dropped or rejected outcome never
-    /// costs budget.
-    pub fn commit(&mut self, device_id: &str, tab: &str, now: Instant) {
-        let b = self.entry(device_id, now);
-        b.tokens = (b.tokens - 1.0).max(0.0);
-        b.last_sent.insert(tab.to_string(), now);
+    /// The send happened. The hold stands.
+    pub fn redeem(&mut self, device_id: &str, tab: &str) {
+        if let Some(b) = self.by_device.get_mut(device_id) {
+            b.holds.remove(tab);
+        }
+    }
+
+    /// The send failed. Hand the capacity back, and put the per-tab
+    /// floor back where it was: a notification that never left must not
+    /// suppress the next one for the same tab for a minute.
+    pub fn release(&mut self, device_id: &str, tab: &str) {
+        let Some(b) = self.by_device.get_mut(device_id) else {
+            return;
+        };
+        let Some(prev) = b.holds.remove(tab) else {
+            return;
+        };
+        b.tokens = (b.tokens + 1.0).min(BUCKET_CAPACITY as f64);
+        match prev {
+            Some(at) => {
+                b.last_sent.insert(tab.to_string(), at);
+            }
+            None => {
+                b.last_sent.remove(tab);
+            }
+        }
     }
 
     #[allow(dead_code)] // called from devices_changed
@@ -165,6 +204,7 @@ impl RateBudget {
             .entry(device_id.to_string())
             .or_insert_with(|| DeviceBudget {
                 last_sent: HashMap::new(),
+                holds: HashMap::new(),
                 tokens: BUCKET_CAPACITY as f64,
                 last_refill: now,
             })
@@ -188,6 +228,10 @@ impl DeviceBudget {
 /// The ordering below is load bearing and is itself a test. Moving `seen`
 /// after the deadline check, for instance, would escalate the common case
 /// where the user reads the banner inside the window.
+///
+/// Not pure in one respect: an `Outcome::Send` has taken a reservation
+/// out of the device's rate budget, which the caller must redeem or
+/// release once the send has been attempted.
 pub fn decide(
     pending: &Pending,
     device: &DevicePrefs,
@@ -221,7 +265,11 @@ pub fn decide(
     if now_wall.saturating_sub(pending.due_wall(device)) > STALE_AFTER_DUE.as_millis() as i64 {
         return Outcome::Dropped(DropReason::Stale);
     }
-    if !budget.allows(&device.device_id, &pending.composite_tab_id, now) {
+    // Last, and it consumes: every earlier rule returns before a hold
+    // is taken, so a dropped or cancelled outcome still costs nothing.
+    // The caller redeems the hold once the send succeeded and releases
+    // it when it did not.
+    if !budget.reserve(&device.device_id, &pending.composite_tab_id, now) {
         return Outcome::Dropped(DropReason::RateLimited);
     }
     Outcome::Send
@@ -422,7 +470,7 @@ mod tests {
         let p = pending_at(now, AgentNotifyState::Awaiting);
         let d = device(0);
         let mut budget = RateBudget::default();
-        budget.commit(&d.device_id, &p.composite_tab_id, now);
+        assert!(budget.reserve(&d.device_id, &p.composite_tab_id, now));
         let out = decide(
             &p,
             &d,
@@ -442,7 +490,7 @@ mod tests {
         let d = device(0);
         let mut budget = RateBudget::default();
         for i in 0..BUCKET_CAPACITY {
-            budget.commit(&d.device_id, &format!("proj:tab{i}"), now);
+            assert!(budget.reserve(&d.device_id, &format!("proj:tab{i}"), now));
         }
         let p = pending_at(now, AgentNotifyState::Awaiting);
         let out = decide(
@@ -463,10 +511,10 @@ mod tests {
         let d = device(0);
         let mut budget = RateBudget::default();
         for i in 0..BUCKET_CAPACITY {
-            budget.commit(&d.device_id, &format!("proj:tab{i}"), now);
+            assert!(budget.reserve(&d.device_id, &format!("proj:tab{i}"), now));
         }
         let later = now + BUCKET_REFILL_PER + Duration::from_secs(1);
-        assert!(budget.allows(&d.device_id, "proj:fresh", later));
+        assert!(budget.reserve(&d.device_id, "proj:fresh", later));
     }
 
     // 10
@@ -665,7 +713,7 @@ mod tests {
         let a = DevicePrefs { device_id: "a".into(), ..device(0) };
         let b = DevicePrefs { device_id: "b".into(), ..device(0) };
         let mut budget = RateBudget::default();
-        budget.commit(&a.device_id, &p.composite_tab_id, now);
+        assert!(budget.reserve(&a.device_id, &p.composite_tab_id, now));
         let t = now + Duration::from_secs(5);
         let w = wall_after(Duration::from_secs(5));
         assert_eq!(
@@ -690,6 +738,86 @@ mod tests {
         for _ in 0..10 {
             decide(&p, &d, Some(AgentNotifyState::Idle), false, t, w, &mut budget);
         }
-        assert!(budget.allows(&d.device_id, &p.composite_tab_id, t));
+        assert!(budget.reserve(&d.device_id, &p.composite_tab_id, t));
+    }
+
+    /// The burst the bucket is supposed to bound. Before the reservation
+    /// the commit happened after the whole tick had finished selecting,
+    /// so every tab that came due together saw the same full bucket and
+    /// all of them were queued.
+    #[test]
+    fn tabs_due_in_one_tick_cannot_exceed_the_bucket() {
+        let now = base();
+        let d = device(0);
+        let mut budget = RateBudget::default();
+        let t = now + Duration::from_secs(1);
+        let w = wall_after(Duration::from_secs(1));
+        let overshoot = 4;
+        let mut sent = 0;
+        let mut limited = 0;
+        for i in 0..(BUCKET_CAPACITY + overshoot) {
+            let mut p = pending_at(now, AgentNotifyState::Awaiting);
+            p.composite_tab_id = format!("proj:tab{i}");
+            match decide(&p, &d, Some(AgentNotifyState::Awaiting), false, t, w, &mut budget) {
+                Outcome::Send => sent += 1,
+                Outcome::Dropped(DropReason::RateLimited) => limited += 1,
+                other => panic!("unexpected outcome {other:?}"),
+            }
+        }
+        assert_eq!(sent, BUCKET_CAPACITY);
+        assert_eq!(limited, overshoot);
+    }
+
+    #[test]
+    fn a_released_reservation_hands_the_capacity_back() {
+        let now = base();
+        let d = device(0);
+        let mut budget = RateBudget::default();
+        for i in 0..BUCKET_CAPACITY {
+            assert!(budget.reserve(&d.device_id, &format!("proj:tab{i}"), now));
+        }
+        assert!(!budget.reserve(&d.device_id, "proj:extra", now));
+        budget.release(&d.device_id, "proj:tab0");
+        assert!(budget.reserve(&d.device_id, "proj:extra", now));
+    }
+
+    /// A send that failed must not hold the next notification for that
+    /// tab behind a floor it never earned.
+    #[test]
+    fn releasing_restores_the_per_tab_floor() {
+        let now = base();
+        let d = device(0);
+        let mut budget = RateBudget::default();
+        assert!(budget.reserve(&d.device_id, "proj:tab0", now));
+        budget.release(&d.device_id, "proj:tab0");
+        assert!(budget.reserve(&d.device_id, "proj:tab0", now + Duration::from_secs(1)));
+    }
+
+    #[test]
+    fn a_redeemed_reservation_keeps_the_per_tab_floor() {
+        let now = base();
+        let d = device(0);
+        let mut budget = RateBudget::default();
+        assert!(budget.reserve(&d.device_id, "proj:tab0", now));
+        budget.redeem(&d.device_id, "proj:tab0");
+        assert!(!budget.reserve(&d.device_id, "proj:tab0", now + Duration::from_secs(1)));
+    }
+
+    /// Releasing a hold that was never taken, which is what a second
+    /// release after a redeem would be.
+    #[test]
+    fn releasing_without_a_hold_does_nothing() {
+        let now = base();
+        let d = device(0);
+        let mut budget = RateBudget::default();
+        budget.release(&d.device_id, "proj:tab0");
+        assert!(budget.reserve(&d.device_id, "proj:tab0", now));
+        budget.redeem(&d.device_id, "proj:tab0");
+        budget.release(&d.device_id, "proj:tab0");
+        // The redeemed hold stood, so the bucket is still down one.
+        for i in 1..BUCKET_CAPACITY {
+            assert!(budget.reserve(&d.device_id, &format!("proj:tab{i}"), now));
+        }
+        assert!(!budget.reserve(&d.device_id, "proj:spare", now));
     }
 }

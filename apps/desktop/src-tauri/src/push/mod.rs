@@ -427,6 +427,9 @@ impl PushService {
 
     async fn deliver(&self, pending: &Pending, device: &DevicePrefs) {
         let Some(token) = device.token.clone() else {
+            // The reservation `decide` took is not spent by a send that
+            // never happens.
+            self.release_budget(pending, device);
             return;
         };
         let (title, body) = render(pending, device);
@@ -451,15 +454,25 @@ impl PushService {
             pending.composite_tab_id, device.device_id
         );
 
-        match expo::send(&self.client, &message).await {
+        let outcome = expo::send(&self.client, &message).await;
+        if outcome.is_ok() {
+            self.inner
+                .lock()
+                .unwrap()
+                .budget
+                .redeem(&device.device_id, &pending.composite_tab_id);
+        } else {
+            // Nothing reached the phone, so nothing was spent. A
+            // timeout lands here with every other failure: this
+            // notification is not retried, and handing the capacity
+            // back is what keeps one hung request from costing the next
+            // notification its budget.
+            self.release_budget(pending, device);
+        }
+
+        match outcome {
             Ok(()) => {
                 let _ = self.tokens.set_push_error(&device.device_id, None);
-                let mut inner = self.inner.lock().unwrap();
-                inner.budget.commit(
-                    &device.device_id,
-                    &pending.composite_tab_id,
-                    Instant::now(),
-                );
             }
             Err(expo::SendError::DeviceNotRegistered) => {
                 eprintln!(
@@ -477,7 +490,16 @@ impl PushService {
             Err(e) => eprintln!("[push] send failed: {e}"),
         }
     }
+
+    fn release_budget(&self, pending: &Pending, device: &DevicePrefs) {
+        self.inner
+            .lock()
+            .unwrap()
+            .budget
+            .release(&device.device_id, &pending.composite_tab_id);
+    }
 }
+
 
 /// Wire name for a state, shared by the signature and the payload so the
 /// two can never disagree.
