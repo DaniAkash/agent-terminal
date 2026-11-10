@@ -207,8 +207,17 @@ fn handle_unregister_push(
         });
         return;
     };
+    // A persistence failure cannot be reported as success. The phone
+    // would show push as off while the token is still live on this Mac,
+    // which is the one disagreement the user cannot see and cannot fix:
+    // notifications keep arriving from a switch that reads as off.
     if let Err(e) = state.paired_tokens.clear_push_token(device_id) {
         eprintln!("[wss] clearing push token failed: {e}");
+        let _ = outbox_tx.send(ServerFrame::OpError {
+            op_id,
+            reason: "could not clear push registration".to_string(),
+        });
+        return;
     }
     if let Some(push) = state.push.as_ref() {
         push.devices_changed(device_id);
