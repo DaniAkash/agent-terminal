@@ -50,6 +50,7 @@ use crate::notifications::AgentNotifyState;
 use crate::pairing::PairedTokens;
 
 use escalation::{CancelReason, DevicePrefs, DropReason, Outcome, Pending, RateBudget, decide, render};
+pub use escalation::with_update_count;
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -160,7 +161,11 @@ pub struct ScheduleRequest<'a> {
     pub agent_id: &'a str,
     pub state: AgentNotifyState,
     pub title: &'a str,
+    pub subtitle: &'a str,
     pub body: &'a str,
+    /// Counted by `NotificationService`, which owns the only reset, so
+    /// the Mac banner and the phone cannot report different numbers.
+    pub updates: u32,
 }
 
 pub struct PushService {
@@ -229,7 +234,9 @@ impl PushService {
             agent_id,
             state,
             title,
+            subtitle,
             body,
+            updates,
         } = req;
         let recipients: HashSet<String> = self
             .tokens
@@ -253,7 +260,9 @@ impl PushService {
                 agent_id: agent_id.to_string(),
                 state,
                 title: title.to_string(),
+                subtitle: subtitle.to_string(),
                 body: body.to_string(),
+                updates,
                 fired_at: Instant::now(),
                 fired_at_wall: now_wall(),
                 wake_grace: Duration::ZERO,
@@ -432,7 +441,7 @@ impl PushService {
             self.release_budget(pending, device);
             return;
         };
-        let (title, body) = render(pending, device);
+        let (title, subtitle, body) = render(pending, device);
         let state = state_slug(pending.state);
         let msg = sign::canonical_for(pending, &device.device_id, state);
         let signature = sign::sign(&device.token_hash, &msg);
@@ -442,6 +451,7 @@ impl PushService {
             pending,
             device,
             &title,
+            subtitle.as_deref(),
             &body,
             state,
             &signature,

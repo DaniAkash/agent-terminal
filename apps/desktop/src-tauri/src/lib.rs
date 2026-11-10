@@ -22,6 +22,7 @@ pub mod push;
 // pub so integration tests can construct a bare PtyMap without a full
 // PtyHandle harness (tests only need the map's shape for ServerState).
 pub mod pty_manager;
+pub mod session_label;
 mod shell_integration;
 // pub so integration tests can drive a SidecarClient instance directly
 // without going through the full Tauri startup path.

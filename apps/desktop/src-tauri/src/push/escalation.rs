@@ -60,7 +60,16 @@ pub struct Pending {
     /// Exactly the strings the desktop banner used. One source of truth
     /// for the copy, so the phone reads identically to the Mac.
     pub title: String,
+    /// Carries the agent name. Rendered on iOS only: Android's message
+    /// format has no subtitle, so it is dropped there rather than folded
+    /// into the body, which would make the two platforms disagree.
+    pub subtitle: String,
     pub body: String,
+    /// How many transitions this pending has stood for, including the
+    /// one that created it. Replacement keeps only the newest, so
+    /// without a count a notification that swallowed five earlier ones
+    /// is indistinguishable from a single event.
+    pub updates: u32,
     /// Monotonic. Each device's deadline is derived as
     /// `fired_at + device.delay + wake_grace`.
     pub fired_at: Instant,
@@ -278,17 +287,42 @@ pub fn decide(
 /// Visible text for the wire, honouring the device's redaction choice.
 /// Separate from `decide` so the redaction tests do not need a full
 /// decision, and so the caller can render once per device.
-pub fn render(pending: &Pending, device: &DevicePrefs) -> (String, String) {
-    if !device.redact_names {
-        return (pending.title.clone(), pending.body.clone());
-    }
-    let title = match pending.state {
-        AgentNotifyState::Awaiting => "An agent needs your attention",
-        AgentNotifyState::Completed => "An agent finished its turn",
-        AgentNotifyState::Error => "An agent exited unexpectedly",
-        _ => "Agent update",
+///
+/// The subtitle is `None` under redaction because it carries the agent
+/// name. The count survives redaction: it is a number of events, not a
+/// name, and it is the only thing telling the user that one notification
+/// stands for several.
+pub fn render(pending: &Pending, device: &DevicePrefs) -> (String, Option<String>, String) {
+    let (title, subtitle, body) = if device.redact_names {
+        let title = match pending.state {
+            AgentNotifyState::Awaiting => "An agent needs your attention",
+            AgentNotifyState::Completed => "An agent finished its turn",
+            AgentNotifyState::Error => "An agent exited unexpectedly",
+            _ => "Agent update",
+        };
+        (
+            title.to_string(),
+            None,
+            "Open Agent Terminal to continue".to_string(),
+        )
+    } else {
+        (
+            pending.title.clone(),
+            Some(pending.subtitle.clone()).filter(|s| !s.is_empty()),
+            pending.body.clone(),
+        )
     };
-    (title.to_string(), "Open Agent Terminal to continue".to_string())
+    (title, subtitle, with_update_count(body, pending.updates))
+}
+
+/// Shared by the Mac banner and the push payload so the two cannot
+/// report different numbers for the same tab.
+pub fn with_update_count(body: String, updates: u32) -> String {
+    if updates > 1 {
+        format!("{body} ({updates} updates)")
+    } else {
+        body
+    }
 }
 
 #[cfg(test)]
@@ -308,8 +342,10 @@ mod tests {
             tab_id_in_project: "tab_04".to_string(),
             agent_id: "claude-code".to_string(),
             state,
-            title: "Claude Code · control-center".to_string(),
+            title: "/control-center · control-center".to_string(),
+            subtitle: "Claude Code".to_string(),
             body: "Allow edit to src/push/mod.rs?".to_string(),
+            updates: 1,
             fired_at: now,
             fired_at_wall: WALL,
             wake_grace: Duration::ZERO,
@@ -566,10 +602,11 @@ mod tests {
         let p = pending_at(now, AgentNotifyState::Awaiting);
         let mut d = device(180);
         d.redact_names = true;
-        let (title, body) = render(&p, &d);
+        let (title, subtitle, body) = render(&p, &d);
         assert!(!title.contains("control-center"));
         assert!(!title.contains("Claude Code"));
         assert!(!body.contains("src/push/mod.rs"));
+        assert_eq!(subtitle, None, "the subtitle carries the agent name");
         assert_eq!(title, "An agent needs your attention");
     }
 
@@ -577,8 +614,9 @@ mod tests {
     fn without_redaction_the_text_is_the_desktop_banner_verbatim() {
         let now = base();
         let p = pending_at(now, AgentNotifyState::Awaiting);
-        let (title, body) = render(&p, &device(180));
+        let (title, subtitle, body) = render(&p, &device(180));
         assert_eq!(title, p.title);
+        assert_eq!(subtitle.as_deref(), Some(p.subtitle.as_str()));
         assert_eq!(body, p.body);
     }
 

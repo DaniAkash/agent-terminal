@@ -35,10 +35,12 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
 use crate::hook_config::config_for_agent_id;
+use crate::projects_cache::ProjectsCache;
 use crate::push::PushService;
+use crate::session_label::session_label;
 
 // ─── Public types ────────────────────────────────────────────────────────────
 
@@ -93,6 +95,13 @@ pub struct NotificationService {
     /// the service is wrapped in Arc.
     #[cfg(not(debug_assertions))]
     manager: Mutex<Option<std::sync::Arc<dyn user_notify::NotificationManager>>>,
+    /// Release-mode only: the live notification for each tab, so the next
+    /// one for that tab can close it first. In memory only, so a restart
+    /// forgets what is still on screen. The crate generates its own
+    /// identifier per request, which is the reason this map exists at all
+    /// rather than reposting under a stable id.
+    #[cfg(not(debug_assertions))]
+    handles: Mutex<HashMap<String, Box<dyn user_notify::NotificationHandle>>>,
 }
 
 struct Inner {
@@ -100,6 +109,10 @@ struct Inner {
     active_tab: Option<String>,
     app_foreground: bool,
     last_state: HashMap<String, AgentNotifyState>,
+    /// Firing transitions per tab since the user last dealt with it.
+    /// Both surfaces replace a tab's previous notification, so this is
+    /// the only thing distinguishing one swallowed event from five.
+    updates: HashMap<String, u32>,
     permission_resolved: bool,
     permission_granted: bool,
     enabled: bool,
@@ -115,12 +128,15 @@ impl NotificationService {
                 active_tab: None,
                 app_foreground: true,
                 last_state: HashMap::new(),
+                updates: HashMap::new(),
                 permission_resolved: false,
                 permission_granted: false,
                 enabled: true,
             }),
             #[cfg(not(debug_assertions))]
             manager: Mutex::new(None),
+            #[cfg(not(debug_assertions))]
+            handles: Mutex::new(HashMap::new()),
         });
         backend::init(&svc);
         svc
@@ -151,7 +167,14 @@ impl NotificationService {
         let seen_tab = {
             let mut inner = self.inner.lock().unwrap();
             inner.active_tab = composite_tab_id.clone();
-            if inner.app_foreground { composite_tab_id } else { None }
+            let seen = if inner.app_foreground { composite_tab_id } else { None };
+            // Seeing the tab retires its count with it, so the next
+            // notification counts from zero rather than from what the
+            // user has already read.
+            if let Some(tab) = seen.as_deref() {
+                inner.updates.remove(tab);
+            }
+            seen
         };
         if let (Some(tab), Some(push)) = (seen_tab, self.push()) {
             push.mark_seen(&tab);
@@ -165,7 +188,11 @@ impl NotificationService {
         let seen_tab = {
             let mut inner = self.inner.lock().unwrap();
             inner.app_foreground = focused;
-            if focused { inner.active_tab.clone() } else { None }
+            let seen = if focused { inner.active_tab.clone() } else { None };
+            if let Some(tab) = seen.as_deref() {
+                inner.updates.remove(tab);
+            }
+            seen
         };
         if let (Some(tab), Some(push)) = (seen_tab, self.push()) {
             push.mark_seen(&tab);
@@ -177,11 +204,11 @@ impl NotificationService {
     }
 
     pub fn cancel(&self, composite_tab_id: &str) {
-        self.inner
-            .lock()
-            .unwrap()
-            .last_state
-            .remove(composite_tab_id);
+        {
+            let mut inner = self.inner.lock().unwrap();
+            inner.last_state.remove(composite_tab_id);
+            inner.updates.remove(composite_tab_id);
+        }
         if let Some(push) = self.push() {
             push.forget_tab(composite_tab_id);
         }
@@ -207,7 +234,7 @@ impl NotificationService {
             push.note_state(&composite_tab_id, state);
         }
 
-        let payload = {
+        let draft = {
             let mut inner = self.inner.lock().unwrap();
 
             if !inner.enabled {
@@ -250,6 +277,11 @@ impl NotificationService {
             // Past suppression — record the state we're about to notify for
             // so a duplicate transition into the same state won't double-fire.
             inner.last_state.insert(composite_tab_id.clone(), state);
+            let updates = {
+                let counter = inner.updates.entry(composite_tab_id.clone()).or_insert(0);
+                *counter = counter.saturating_add(1);
+                *counter
+            };
 
             // Split composite tab id — frontend's navigateToTab expects
             // (project_id, tab_id_within_project). The split must succeed;
@@ -277,7 +309,6 @@ impl NotificationService {
                 .map(|c| c.agent_name.to_string())
                 .unwrap_or_else(|| agent_id.clone());
 
-            let title = format!("{display_name} · {project_name}");
             let body = match (message, state) {
                 (Some(m), _) if !m.trim().is_empty() => m,
                 (_, AgentNotifyState::Awaiting) => "Needs your attention".to_string(),
@@ -286,16 +317,23 @@ impl NotificationService {
                 _ => return,
             };
 
-            FirePayload {
+            Draft {
                 composite_tab_id: composite_tab_id.clone(),
                 project_id,
                 tab_id_in_project,
                 agent_id: agent_id.clone(),
-                title,
+                project_name,
+                display_name,
                 body,
+                updates,
                 state,
             }
         };
+
+        // Deliberately after the `inner` guard is dropped: the projects
+        // cache takes its own lock, and the two nest in the opposite
+        // order elsewhere.
+        let payload = self.compose(draft);
 
         // Async firing path — backend chooses how to deliver.
         let svc = self;
@@ -312,7 +350,9 @@ impl NotificationService {
                     agent_id: &payload.agent_id,
                     state: payload.state,
                     title: &payload.title,
+                    subtitle: &payload.subtitle,
                     body: &payload.body,
+                    updates: payload.updates,
                 });
             }
             if !svc.ensure_permission().await {
@@ -321,6 +361,42 @@ impl NotificationService {
             }
             backend::fire(&svc, payload).await;
         });
+    }
+
+    /// Name the tab in the title, and move the agent to the subtitle.
+    ///
+    /// The tab is what the title was missing: several tabs in one project
+    /// otherwise produce notifications that read identically. The agent
+    /// name keeps its place on the surfaces that render a subtitle, and
+    /// is simply absent on the ones that do not.
+    fn compose(&self, draft: Draft) -> FirePayload {
+        let tab_label = self
+            .app
+            .try_state::<Arc<ProjectsCache>>()
+            .and_then(|cache| cache.find_tab(&draft.composite_tab_id))
+            .map(|tab| session_label(&tab, None));
+
+        let title = match tab_label {
+            // An agent tab sitting at the project root resolves to the
+            // project's own directory, and "/x · x" reads as a bug.
+            Some(label) if label.trim_start_matches('/') == draft.project_name => {
+                draft.project_name.clone()
+            }
+            Some(label) => format!("{label} · {}", draft.project_name),
+            None => draft.project_name.clone(),
+        };
+
+        FirePayload {
+            composite_tab_id: draft.composite_tab_id,
+            project_id: draft.project_id,
+            tab_id_in_project: draft.tab_id_in_project,
+            agent_id: draft.agent_id,
+            title,
+            subtitle: draft.display_name,
+            body: draft.body,
+            updates: draft.updates,
+            state: draft.state,
+        }
     }
 
     async fn ensure_permission(&self) -> bool {
@@ -382,6 +458,20 @@ pub enum PermissionOutcome {
 
 #[derive(Debug)]
 #[allow(dead_code)] // project_id + tab_id_in_project only used by release backend
+/// The text that can be built while holding `inner`, before the projects
+/// cache is consulted for the tab's name.
+struct Draft {
+    composite_tab_id: String,
+    project_id: String,
+    tab_id_in_project: String,
+    agent_id: String,
+    project_name: String,
+    display_name: String,
+    body: String,
+    updates: u32,
+    state: AgentNotifyState,
+}
+
 struct FirePayload {
     composite_tab_id: String,
     project_id: String,
@@ -390,7 +480,11 @@ struct FirePayload {
     /// same brand mark the desktop sidebar does.
     agent_id: String,
     title: String,
+    /// Rendered only where the platform has a slot for it: the macOS
+    /// release backend and iOS. Android has none and drops it.
+    subtitle: String,
     body: String,
+    updates: u32,
     state: AgentNotifyState,
 }
 
@@ -470,12 +564,13 @@ mod backend {
             "[notifications] (dev) firing: tab={} state={:?} title={:?} body={:?}",
             payload.composite_tab_id, payload.state, payload.title, payload.body,
         );
+        let body = crate::push::with_update_count(payload.body.clone(), payload.updates);
         if let Err(e) = svc
             .app
             .notification()
             .builder()
             .title(&payload.title)
-            .body(&payload.body)
+            .body(&body)
             .sound(payload.state.sound())
             .show()
         {
@@ -607,39 +702,65 @@ mod backend {
         let thread_id = format!("agent-terminal:tab:{}", payload.composite_tab_id);
 
         let title = payload.title.clone();
-        let body = payload.body.clone();
+        let subtitle = payload.subtitle.clone();
+        let body = crate::push::with_update_count(payload.body.clone(), payload.updates);
+
+        let tab = payload.composite_tab_id.clone();
+        // Taken before the dispatch so the lock is never held across the
+        // await below.
+        let previous = svc.handles.lock().unwrap().remove(&tab);
 
         // Dispatch send_notification to the main thread to be safe — Cocoa
         // notification posting commonly requires it. Use a oneshot to ferry
         // the Result back to our async caller.
         let (tx, rx) = oneshot::channel();
         let dispatch = svc.app.run_on_main_thread(move || {
-            let builder = NotificationBuilder::new()
+            // Closing the tab's previous notification first is what keeps
+            // one live banner per tab. This is a remove and re-add rather
+            // than an in-place update, so the new banner alerts again; an
+            // identifier the caller could set would avoid that, and the
+            // crate does not expose one.
+            if let Some(previous) = previous {
+                if let Err(e) = previous.close() {
+                    eprintln!("[notifications] closing the previous banner failed: {e}");
+                }
+            }
+            let mut builder = NotificationBuilder::new()
                 .title(&title)
                 .body(&body)
                 .set_thread_id(&thread_id)
                 .set_user_info(user_info);
+            if !subtitle.is_empty() {
+                builder = builder.subtitle(&subtitle);
+            }
             let result = tauri::async_runtime::block_on(manager.send_notification(builder));
-            let _ = tx.send(result.map(|_| ()).map_err(|e| e.to_string()));
+            let _ = tx.send(result.map_err(|e| e.to_string()));
         });
         if let Err(e) = dispatch {
             eprintln!("[notifications] failed to dispatch send to main thread: {e}");
             return;
         }
         match rx.await {
-            Ok(Ok(())) => {}
+            Ok(Ok(handle)) => {
+                svc.handles.lock().unwrap().insert(tab, handle);
+            }
             Ok(Err(e)) => eprintln!("[notifications] user-notify send failed: {e}"),
             Err(_) => eprintln!("[notifications] send dispatch dropped before completion"),
         }
     }
 
     pub fn cancel(svc: &NotificationService, composite_tab_id: &str) {
-        let Some(manager) = svc.manager.lock().unwrap().clone() else { return };
-        let id = format!("agent-terminal:tab:{composite_tab_id}");
-        // remove_delivered_notifications is sync — dispatch to main thread.
-        let id_owned = id;
+        // This used to pass the thread id where an identifier was
+        // expected, which matched nothing: no notification has ever
+        // carried it, so withdrawing a banner the user had already dealt
+        // with silently did nothing. The handle knows its own id.
+        let Some(handle) = svc.handles.lock().unwrap().remove(composite_tab_id) else {
+            return;
+        };
         let _ = svc.app.run_on_main_thread(move || {
-            let _ = manager.remove_delivered_notifications(vec![&id_owned]);
+            if let Err(e) = handle.close() {
+                eprintln!("[notifications] closing a seen banner failed: {e}");
+            }
         });
     }
 
