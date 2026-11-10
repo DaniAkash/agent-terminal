@@ -35,6 +35,21 @@ on:
     # so re-running the same checks is defensive, not a second gate.
     branches:
       - main
+  schedule:
+    # Cache-warming trigger only, Mondays at 06:00 UTC. GitHub evicts
+    # cache entries that have not been accessed for seven days, and a
+    # PR can only restore from its own ref or its base branch. A quiet
+    # week on main therefore ages out main's rust-cache entry and the
+    # next run, whichever ref it is on, pays the full cold compile:
+    # measured at 219s to 342s of excess over a warm run, and that is
+    # exactly the state the repo was in when this was investigated,
+    # with no rust-cache entry on refs/heads/main at all.
+    #
+    # Scheduled events run on the default branch, so the approval gate
+    # is skipped the same way a push to main skips it, and the run
+    # writes a fresh entry under refs/heads/main for PRs to restore.
+    # Strictly additive: no existing trigger or step changes.
+    - cron: '0 6 * * 1'
   workflow_dispatch:
 
 concurrency:
