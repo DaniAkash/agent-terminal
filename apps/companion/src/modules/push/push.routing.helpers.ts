@@ -67,13 +67,20 @@ export async function decideRoute(
 /**
  * Whether a push that arrived while the app is in the foreground should
  * be shown at all. A banner over the very screen it is about is noise.
+ *
+ * `null` is a payload that did not parse, and it is suppressed rather
+ * than shown. Nothing can be done with it: a tap cannot route anywhere,
+ * so presenting it offers the user a banner that does nothing. It is
+ * also the only unsigned shape that reaches this far, and the
+ * foreground is the one place the app, rather than the OS, decides
+ * whether to draw it.
  */
 export function shouldPresentInForeground(
   data: PushData | null,
   activeDeviceId: string | null,
   visibleTabId: string | null,
 ): boolean {
-  if (!data) return true
+  if (!data) return false
   const sameDesktop = data.deviceId === activeDeviceId
   const sameTab = visibleTabId === `${data.projectId}:${data.tabId}`
   return !(sameDesktop && sameTab)

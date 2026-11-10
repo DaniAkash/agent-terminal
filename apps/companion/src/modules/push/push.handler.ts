@@ -15,6 +15,12 @@ import { pushDataSchema } from './push.types'
  * state, and it stays correct while the socket is mid-reconnect. The
  * cost is one wasted send, which is cheap.
  *
+ * A payload that does not parse is swallowed too. It cannot be routed,
+ * so a banner for it is one that does nothing when tapped. This is the
+ * foreground only: a notification that arrives while the app is
+ * backgrounded is drawn by the OS before any of this runs, which is why
+ * the signature can only promise routing and not display text.
+ *
  * The handler must answer within 3 seconds or the notification is
  * presented anyway. This does no I/O, so it is nowhere near that.
  */

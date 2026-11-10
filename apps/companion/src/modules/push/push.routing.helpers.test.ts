@@ -164,4 +164,13 @@ describe('shouldPresentInForeground', () => {
   test('shows when no tab is open', () => {
     expect(shouldPresentInForeground(data, DEVICE_ID, null)).toBe(true)
   })
+
+  // A payload that did not parse cannot be routed, so a banner for it
+  // is a banner that does nothing when tapped.
+  test('suppresses a payload that did not parse', () => {
+    expect(shouldPresentInForeground(null, DEVICE_ID, null)).toBe(false)
+    expect(shouldPresentInForeground(null, DEVICE_ID, 'proj_01HQ:tab_09')).toBe(
+      false,
+    )
+  })
 })
