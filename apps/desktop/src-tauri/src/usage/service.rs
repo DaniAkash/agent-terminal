@@ -29,8 +29,9 @@ struct State {
 impl UsageService {
     pub fn new(app: tauri::AppHandle) -> Self {
         let loaded = preferences::config_path()
+            .zip(preferences::legacy_config_path())
             .ok_or_else(|| "Agent Usage limits settings location is unavailable.".to_string())
-            .and_then(|path| preferences::load(&path));
+            .and_then(|(path, legacy)| preferences::load_or_migrate(&path, &legacy));
         let (prefs, error) = match loaded {
             Ok(prefs) => (prefs, None),
             Err(error) => (Preferences::defaults(), Some(error)),

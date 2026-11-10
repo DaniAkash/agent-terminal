@@ -12,12 +12,28 @@ struct SettingsFile {
     preferences: Preferences,
 }
 
+fn settings_dir() -> Option<PathBuf> {
+    dirs::home_dir().map(|h| h.join(".config").join(crate::identity::NAMESPACE))
+}
+
 pub fn config_path() -> Option<PathBuf> {
-    dirs::home_dir().map(|h| {
-        h.join(".config")
-            .join(crate::identity::NAMESPACE)
-            .join("jarvis.json")
-    })
+    settings_dir().map(|d| d.join("agent-usage.json"))
+}
+
+pub fn legacy_config_path() -> Option<PathBuf> {
+    settings_dir().map(|d| d.join("jarvis.json"))
+}
+
+/// Reads the settings file, adopting the pre-rename file when it is the only one present.
+pub fn load_or_migrate(path: &Path, legacy: &Path) -> Result<Preferences, String> {
+    if path.exists() || !legacy.exists() {
+        return load(path);
+    }
+    let prefs = load(legacy)?;
+    // The legacy file is never removed, so an older build still finds its settings.
+    // A failed copy is not fatal: the legacy file stays readable on the next start.
+    let _ = save(path, &prefs);
+    Ok(prefs)
 }
 
 pub fn validate(mut prefs: Preferences) -> Result<Preferences, String> {
@@ -66,7 +82,7 @@ pub fn save(path: &Path, prefs: &Preferences) -> Result<(), String> {
         .parent()
         .ok_or("Agent Usage limits settings location is unavailable.")?;
     fs::create_dir_all(parent).map_err(|_| "Could not create the Agent Usage limits settings folder.")?;
-    let temp = parent.join(format!(".jarvis-{}.tmp", uuid::Uuid::new_v4()));
+    let temp = parent.join(format!(".agent-usage-{}.tmp", uuid::Uuid::new_v4()));
     let result = write_atomic(&temp, path, prefs);
     if result.is_err() {
         let _ = fs::remove_file(&temp);

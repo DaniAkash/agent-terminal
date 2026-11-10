@@ -239,7 +239,7 @@ fn old_and_expired_samples_are_marked_stale() {
 #[test]
 fn preferences_round_trip_and_disabled_collection_are_explicit() {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("jarvis.json");
+    let path = dir.path().join("agent-usage.json");
     assert!(!preferences::load(&path).unwrap().enabled);
     let prefs = preferences::validate(Preferences {
         enabled: true,
@@ -267,9 +267,50 @@ fn preferences_round_trip_and_disabled_collection_are_explicit() {
 }
 
 #[test]
+fn settings_fall_back_to_the_pre_rename_file_without_removing_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("agent-usage.json");
+    let legacy = dir.path().join("jarvis.json");
+
+    let saved = preferences::validate(Preferences {
+        enabled: true,
+        refresh_seconds: 900,
+        providers: vec!["codex".into()],
+    })
+    .unwrap();
+    preferences::save(&legacy, &saved).unwrap();
+
+    assert_eq!(preferences::load_or_migrate(&path, &legacy).unwrap(), saved);
+    assert_eq!(preferences::load(&path).unwrap(), saved);
+    assert!(legacy.exists());
+
+    let moved_on = preferences::validate(Preferences {
+        enabled: false,
+        refresh_seconds: 60,
+        providers: vec!["kimi".into()],
+    })
+    .unwrap();
+    preferences::save(&path, &moved_on).unwrap();
+    assert_eq!(
+        preferences::load_or_migrate(&path, &legacy).unwrap(),
+        moved_on
+    );
+
+    let fresh = tempfile::tempdir().unwrap();
+    assert_eq!(
+        preferences::load_or_migrate(
+            &fresh.path().join("agent-usage.json"),
+            &fresh.path().join("jarvis.json")
+        )
+        .unwrap(),
+        Preferences::defaults()
+    );
+}
+
+#[test]
 fn corrupt_or_newer_settings_fail_closed_without_overwriting_them() {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("jarvis.json");
+    let path = dir.path().join("agent-usage.json");
     for content in ["{", r#"{"version":2,"enabled":true}"#] {
         std::fs::write(&path, content).unwrap();
         assert!(preferences::load(&path).is_err());
