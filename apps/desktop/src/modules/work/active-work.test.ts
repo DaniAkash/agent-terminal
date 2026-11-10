@@ -36,6 +36,23 @@ const project: Project = {
 }
 
 describe('workReason', () => {
+  test('an idle nested shell is not busy, but commands and agents still are', () => {
+    expect(
+      workReason(meta({ status: 'running', nestedShellIdle: true })),
+    ).toBeNull()
+    expect(
+      workReason(
+        meta({
+          status: 'running',
+          nestedShellIdle: false,
+          processes: [proc({ name: 'ping' })],
+        }),
+      ),
+    ).toBe('running')
+    expect(
+      workReason(meta({ nestedShellIdle: true, agentState: 'awaiting' })),
+    ).toBe('awaiting')
+  })
   test('idle, done and error are not work', () => {
     expect(workReason(meta())).toBeNull()
     expect(workReason(meta({ status: 'done' }))).toBeNull()

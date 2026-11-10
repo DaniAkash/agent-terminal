@@ -23,6 +23,7 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/context-menu'
 import { cn } from '@/lib/utils'
+import { isLinux } from '@/modules/platform'
 import {
   $activeTabId,
   navigateToTab,
@@ -192,6 +193,7 @@ export function TabBar({ project }: { project: Project }) {
       data-tauri-drag-region
       className={cn(
         'bg-tab-bar flex h-[38px] shrink-0 items-end border-b border-[var(--tab-border)] pr-2',
+        isLinux && 'pr-12',
         // Reserve the ~78px macOS traffic-light row when the TabBar is
         // the window's top-left component (sidebar hidden). When the
         // sidebar is visible, the sidebar owns that reservation via its

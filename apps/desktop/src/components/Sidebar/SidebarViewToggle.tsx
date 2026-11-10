@@ -24,7 +24,7 @@ const OPTIONS: Array<{ value: SidebarView; label: string }> = [
 export function SidebarViewToggle() {
   const current = useStore($sidebarView)
   return (
-    <div className="border-sidebar-border bg-sidebar-active flex h-[24px] items-center gap-0.5 rounded-md border p-0.5">
+    <div className="border-sidebar-border bg-sidebar-active flex h-[24px] max-w-full items-center gap-0.5 rounded-md border p-0.5">
       {/* No ARIA grouping: each button is self-labelled ("Workspaces" /
           "Recent") and carries its own aria-pressed state, which is what
           a screen reader needs. Adding a group role would just repeat

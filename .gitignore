@@ -55,3 +55,8 @@ keystore.properties
 # Firebase client config for push. Carries a cloud project identifier,
 # so CI writes it from a secret rather than it living in the tree.
 apps/companion/google-services.json
+apps/desktop/src-tauri/sidecar/sidecar-bin
+/packaging/__pycache__/
+/packaging/snap/app/
+/packaging/snap/squashfs-root/
+/packaging/snap/snap/gui/agent-terminal.png

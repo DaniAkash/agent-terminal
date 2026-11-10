@@ -14,6 +14,13 @@ use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Emitter, State};
 use tauri::ipc::Channel;
 
+/// Explicit user-confirmed quit. An async command runs outside the webview's
+/// synchronous IPC handler and supplies an exit code to bypass the quit guard.
+#[tauri::command]
+pub async fn quit_app(app: AppHandle) {
+    app.exit(0);
+}
+
 // Tauri commands take their managed state + frontend args by position.
 // Bundling into a struct would lose the ergonomic state injection.
 #[allow(clippy::too_many_arguments)]

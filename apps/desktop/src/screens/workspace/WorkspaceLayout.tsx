@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useHotkeys } from 'react-hotkeys-hook'
 import { CompanionDialog } from '@/components/Companion/CompanionDialog'
 import { ConfirmInterrupt } from '@/components/ConfirmInterrupt/ConfirmInterrupt'
+import { LinuxCloseButton } from '@/components/LinuxCloseButton'
 import { Sidebar } from '@/components/Sidebar/Sidebar'
 import { StatusBar } from '@/components/StatusBar/StatusBar'
 import { TabSwitcher } from '@/components/TabSwitcher/TabSwitcher'
@@ -272,6 +273,7 @@ export function WorkspaceLayout() {
 
   return (
     <div className="bg-background relative flex h-screen w-screen flex-col overflow-hidden">
+      <LinuxCloseButton />
       <div className="flex min-h-0 flex-1">
         <Sidebar />
         <div className="relative min-w-0 flex-1">

@@ -1,4 +1,6 @@
 import { useStore } from '@nanostores/react'
+import { cn } from '@/lib/utils'
+import { isLinux } from '@/modules/platform'
 import { $sidebarView } from '@/modules/stores/$sidebarView'
 import { $sidebarVisible } from '@/modules/stores/$sidebarVisible'
 import { SidebarRecent } from './SidebarRecent'
@@ -27,13 +29,14 @@ export function Sidebar() {
 
   return (
     <div className="border-sidebar-border bg-sidebar relative flex h-full w-[var(--sidebar-width)] min-w-[var(--sidebar-width)] flex-col border-r">
-      {/* Header — drag region hosting the view toggle. Reserves the
-          macOS traffic-light row (~80px) on the left. Traffic lights
-          keep their default Tauri Overlay placement (looked correct
-          before we started fiddling). */}
+      {/* Center within the resizable Linux sidebar. Other platforms retain
+          the reserved space for their existing title-bar controls. */}
       <div
         data-tauri-drag-region
-        className="border-sidebar-border flex h-[38px] shrink-0 items-center justify-end border-b pr-3 pl-[80px]"
+        className={cn(
+          'border-sidebar-border flex h-[38px] shrink-0 items-center border-b',
+          isLinux ? 'justify-center px-3' : 'justify-end pr-3 pl-[80px]',
+        )}
       >
         <SidebarViewToggle />
       </div>

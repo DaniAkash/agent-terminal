@@ -1,11 +1,10 @@
 import type { TerminalThemeColors } from '@wterm/dom'
 
-// Terminal palettes, carried over from the xterm.js renderer unchanged.
+// Terminal palettes tuned for legible shell output on the pane backgrounds.
 //
-// Sourced from VS Code's terminal defaults
-// (src/vs/workbench/contrib/terminal/browser/terminalConfiguration.ts, MIT),
-// with `background` overridden to match the app's `--terminal-background`
-// so the pane blends with the surrounding chrome.
+// Based on VS Code's terminal defaults, with prompt colors adjusted for
+// contrast against the matching application backgrounds. ANSI black remains
+// black because prompts also use it as text on colored backgrounds.
 //
 // wterm takes opaque integer RGB rather than hex strings, and `palette`
 // must hold exactly 16 entries in ANSI order: black, red, green, yellow,
@@ -18,8 +17,8 @@ export const DARK_THEME: TerminalThemeColors = {
   foreground: 0xcccccc,
   cursor: 0xaeafad,
   palette: [
-    0x000000, 0xcd3131, 0x0dbc79, 0xe5e510, 0x2472c8, 0xbc3fbc, 0x11a8cd,
-    0xe5e5e5, 0x666666, 0xf14c4c, 0x23d18b, 0xf5f543, 0x3b8eea, 0xd670d6,
+    0x000000, 0xed6666, 0x0dbc79, 0xe5e510, 0x4b9af0, 0xe070e0, 0x11a8cd,
+    0xe5e5e5, 0x808080, 0xf14c4c, 0x23d18b, 0xf5f543, 0x3b8eea, 0xd670d6,
     0x29b8db, 0xe5e5e5,
   ],
 }
@@ -29,9 +28,9 @@ export const LIGHT_THEME: TerminalThemeColors = {
   foreground: 0x333333,
   cursor: 0x333333,
   palette: [
-    0x000000, 0xcd3131, 0x00bc00, 0x949800, 0x0451a5, 0xbc05bc, 0x0598bc,
-    0x555555, 0x666666, 0xcd3131, 0x14ce14, 0xb5ba00, 0x0451a5, 0xbc05bc,
-    0x0598bc, 0xa5a5a5,
+    0x000000, 0xcd3131, 0x007a32, 0x777500, 0x0451a5, 0xbc05bc, 0x00718a,
+    0x555555, 0x666666, 0xcd3131, 0x008000, 0x777500, 0x0451a5, 0xbc05bc,
+    0x00718a, 0x595959,
   ],
 }
 

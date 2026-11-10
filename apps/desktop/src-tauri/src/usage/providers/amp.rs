@@ -16,7 +16,7 @@ pub async fn collect() -> Outcome {
         };
     };
     let result = tokio::time::timeout(Duration::from_secs(15), async {
-        let mut child = tokio::process::Command::new(binary).arg("usage")
+        let mut child = tokio::process::Command::from(crate::host_env::command(binary)).arg("usage")
             .current_dir(std::env::temp_dir()).env("NO_COLOR", "1")
             .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).kill_on_drop(true)
             .spawn().map_err(|_| CollectionError::new(UsageStatus::Error, "Could not run amp usage."))?;

@@ -9,8 +9,8 @@
 //!
 //! | Profile | Backend | Banners | Click callbacks |
 //! |---|---|---|---|
-//! | `cfg(debug_assertions)` (`tauri:dev`) | `tauri-plugin-notification` | ✅ visible | ❌ none — banners are debugging-only |
-//! | `cfg(not(debug_assertions))` (`tauri:build`) | `user-notify` (UNUserNotificationCenter on macOS) | ✅ visible | ✅ real per-notification callbacks via UNUserNotificationCenterDelegate |
+//! | Debug builds and non-macOS | `tauri-plugin-notification` | visible | no click callbacks |
+//! | macOS release | `user-notify` | visible | native per-notification click callbacks |
 //!
 //! **Why split:** Tauri's notification plugin has zero click-handling
 //! capability on desktop (verified via plugin source + docs + maintainer
@@ -91,7 +91,7 @@ pub struct NotificationService {
     /// for its lifetime so the registered click callback stays alive.
     /// Wrapped in Mutex<Option<...>> so it can be initialized lazily after
     /// the service is wrapped in Arc.
-    #[cfg(not(debug_assertions))]
+    #[cfg(all(not(debug_assertions), target_os = "macos"))]
     manager: Mutex<Option<std::sync::Arc<dyn user_notify::NotificationManager>>>,
 }
 
@@ -119,7 +119,7 @@ impl NotificationService {
                 permission_granted: false,
                 enabled: true,
             }),
-            #[cfg(not(debug_assertions))]
+            #[cfg(all(not(debug_assertions), target_os = "macos"))]
             manager: Mutex::new(None),
         });
         backend::init(&svc);
@@ -443,7 +443,7 @@ pub async fn notif_cancel(
 
 // ─── Backend selection ───────────────────────────────────────────────────────
 
-#[cfg(debug_assertions)]
+#[cfg(any(debug_assertions, not(target_os = "macos")))]
 mod backend {
     //! Dev backend — `tauri-plugin-notification`.
     //!
@@ -497,7 +497,7 @@ mod backend {
     }
 }
 
-#[cfg(not(debug_assertions))]
+#[cfg(all(not(debug_assertions), target_os = "macos"))]
 mod backend {
     //! Release backend — `user-notify` wrapping native UNUserNotificationCenter.
     //!

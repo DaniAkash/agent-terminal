@@ -45,6 +45,66 @@ permissions:
   contents: write
 
 jobs:
+  linux:
+    name: Build Linux release assets
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    env:
+      CARGO_BUILD_BUILD_DIR: ${{ github.workspace }}/apps/desktop/target
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test AUR metadata generator
+        run: python3 -m unittest discover -s packaging -p 'test_*.py'
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: 1.95.0
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf rpm
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop -> target
+      - run: bun install --frozen-lockfile
+      - run: bun build apps/desktop/src-tauri/sidecar/index.js --compile --outfile apps/desktop/src-tauri/sidecar/sidecar-bin
+      - name: Build AppImage, Debian and RPM packages
+        working-directory: apps/desktop
+        run: bunx tauri build --config src-tauri/tauri.linux-bundle.conf.json
+      - name: Prepare Linux release and Snap project
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('./apps/desktop/src-tauri/tauri.conf.json').version")
+          test "$GITHUB_REF_NAME" = "v$version"
+          mkdir -p linux-assets packaging/snap/snap/gui
+          deb=$(find apps/desktop/target/release/bundle/deb -name '*.deb' -print -quit)
+          image=$(find apps/desktop/target/release/bundle/appimage -name '*.AppImage' -print -quit)
+          test -n "$deb" && test -n "$image"
+          cp "$deb" "linux-assets/agent-terminal_${version}_amd64.deb"
+          cp "$image" linux-assets/
+          cp apps/desktop/target/release/bundle/rpm/*.rpm linux-assets/
+          chmod +x "$image"
+          image=$(realpath "$image")
+          (cd packaging/snap && "$image" --appimage-extract > /dev/null && mv squashfs-root app)
+          cp apps/desktop/src-tauri/icons/128x128.png packaging/snap/snap/gui/agent-terminal.png
+          sed -i "s/^version: '0.0.0'$/version: '$version'/" packaging/snap/snapcraft.yaml
+      - name: Build Snap
+        id: snap
+        uses: snapcore/action-build@v1
+        with:
+          path: packaging/snap
+      - name: Collect Snap
+        env:
+          SNAP_FILE: ${{ steps.snap.outputs.snap }}
+        run: cp "$SNAP_FILE" linux-assets/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bundles-linux-x86_64
+          path: linux-assets/*
+          if-no-files-found: error
+
   # Job 1: figure out the changelog ONCE, on a free Linux runner, and
   # pass it to the macOS build matrix + final release step via job
   # outputs. Doing it in each matrix entry would duplicate the work and
@@ -277,7 +337,7 @@ jobs:
   # Linux runner — this job just downloads artifacts + POSTs to the API.
   release:
     name: Create draft release
-    needs: [changelog, build]
+    needs: [changelog, build, linux]
     runs-on: ubuntu-latest
     steps:
       - name: Download all build artifacts
@@ -360,6 +420,10 @@ jobs:
             artifacts/**/*.app.tar.gz
             artifacts/**/*.app.tar.gz.sig
             manifest/latest.json
+            artifacts/**/*.AppImage
+            artifacts/**/*.deb
+            artifacts/**/*.rpm
+            artifacts/**/*.snap
           fail_on_unmatched_files: true
 
       - name: Publish manifest to release-manifest branch

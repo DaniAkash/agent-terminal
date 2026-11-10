@@ -107,6 +107,8 @@ export type TabMeta = {
    * tab's shell PID are included. Empty for shell-only tabs.
    */
   processes?: ProcessInfo[]
+  /** A nested interactive shell is open with no tracked commands. */
+  nestedShellIdle?: boolean
   /**
    * Convenience: TCP ports across all tracked processes.
    * Derived from `processes` in the mod-listener; kept for backwards compat.

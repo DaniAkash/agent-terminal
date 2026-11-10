@@ -105,7 +105,7 @@ Want support for another agent? [Open an issue](https://github.com/DaniAkash/age
 | macOS 13+ (Apple Silicon / Intel) | ✅ Daily driver |
 | Zsh | ✅ Daily driver |
 | Bash | ⚠️ Should work, lightly tested |
-| Linux | 🚧 Untested — contributors wanted |
+| Linux (x86-64) | 🚧 Experimental — AppImage, Debian and RPM builds |
 | Windows | 🚧 Untested — contributors wanted |
 
 ## 🙏 Looking for contributors

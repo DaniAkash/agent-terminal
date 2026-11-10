@@ -41,21 +41,24 @@ export { hasDangerFlag }
  * ten second timer in mod-listener fired, or the user navigated to the
  * tab and saw it. A dot that outlived its own acknowledgement is noise.
  */
+function agentWireState(meta: TabMeta): WireTabState {
+  const turn: AgentTurnState | undefined = meta.agentState
+  if (turn === 'awaiting') return 'awaiting'
+  if (turn === 'in-progress') return 'running'
+  if (turn === 'completed') return 'done'
+  if (turn === 'idle') return 'idle'
+  if (meta.status === 'done' || meta.status === 'error') return 'done'
+  return 'idle'
+}
+
 export function tabWireState(
   meta: TabMeta | undefined,
 ): WireTabState | undefined {
   if (!meta) return undefined
 
-  if (meta.type === 'agent') {
-    const turn: AgentTurnState | undefined = meta.agentState
-    if (turn === 'awaiting') return 'awaiting'
-    if (turn === 'in-progress') return 'running'
-    if (turn === 'completed') return 'done'
-    if (turn === 'idle') return 'idle'
-    if (meta.status === 'done' || meta.status === 'error') return 'done'
-    return 'idle'
-  }
+  if (meta.type === 'agent') return agentWireState(meta)
 
+  if (meta.nestedShellIdle) return 'idle'
   if (meta.status === 'done' && meta.doneAt === undefined) return 'idle'
   return meta.status
 }
