@@ -105,3 +105,22 @@ export function takePendingRoute(): PushData | null {
   if (pending) $push.setKey('pendingRoute', null)
   return pending
 }
+
+/**
+ * Forget what any desktop said about push.
+ *
+ * Capability is per connection, not per app run. `PushStatus` arriving
+ * at all is the advertisement, and a desktop old enough never to send
+ * one closes the whole WebSocket on a `RegisterPush` it cannot
+ * deserialise. Carrying a previous desktop's `supported: true` into the
+ * next connection is therefore not a stale label, it is a disconnect
+ * loop against the older of two paired Macs.
+ *
+ * The assertion goes with it: what this phone has told one desktop says
+ * nothing about what the next one knows, and clearing it is what makes
+ * the first sync on every connection re-assert.
+ */
+export function clearDesktopPushStatus(): void {
+  $push.setKey('desktop', null)
+  $push.setKey('asserted', null)
+}

@@ -1,4 +1,7 @@
-import { noteDesktopPushStatus } from '@/modules/push/$push'
+import {
+  clearDesktopPushStatus,
+  noteDesktopPushStatus,
+} from '@/modules/push/$push'
 import { $activeDevice } from '@/modules/stores/$devices'
 import { $session, resetSession } from '@/modules/stores/$session'
 import { clearTabStates, noteTabState } from '@/modules/stores/$tabState'
@@ -211,6 +214,9 @@ export function disconnect(): void {
   // refuses to do, so they go with it.
   outbox = []
   resetSession()
+  // Push capability is a property of the connection, not of the app
+  // run. See clearDesktopPushStatus.
+  clearDesktopPushStatus()
 }
 
 /**
@@ -499,6 +505,9 @@ function openSocket(): void {
     return
   }
   $session.setKey('status', 'connecting')
+  // Nothing has been advertised on the socket about to open, and the
+  // desktop answering it may not be the one that answered the last.
+  clearDesktopPushStatus()
   console.log('[wss.client] opening WebSocket to', state.url)
   const ws = tryConstructSocket(state.url)
   if (!ws) return
@@ -586,6 +595,11 @@ function forceCloseAndReconnect(reason: string): void {
   state.socket = null
   clearTimers()
   rejectAllPending(new Error(`connection lost: ${reason}`))
+  // Whatever the dead desktop advertised died with it. Keeping it would
+  // let a reconnect to an OLDER paired Mac register against a
+  // capability the previous one had, and that Mac closes the whole
+  // socket on a frame it cannot deserialise.
+  clearDesktopPushStatus()
   if (state.intentionallyDisconnected) return
   if ($session.get().status !== 'auth_failed') {
     $session.setKey('status', 'unreachable')
