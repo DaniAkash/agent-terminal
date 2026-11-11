@@ -17,28 +17,28 @@
     "check": "concurrently --group --names fmt,lint,typecheck --prefix-colors auto \"bun run fmt\" \"bun run lint\" \"bun run typecheck\""
   },
   "devDependencies": {
-    "@playwright/test": "^1.60.0",
+    "@playwright/test": "^1.65.0",
     "@sveltejs/adapter-auto": "^8.0.0",
     "@sveltejs/enhanced-img": "^1.0.0",
     "@sveltejs/kit": "^3.0.0",
     "@sveltejs/vite-plugin-svelte": "^7.2.0",
     "@tailwindcss/forms": "^0.5.11",
     "@tailwindcss/typography": "^0.5.19",
-    "@tailwindcss/vite": "^4.3.0",
+    "@tailwindcss/vite": "^4.3.5",
     "@types/node": "^24",
     "mdsvex": "^0.12.7",
     "svelte": "^5.57.2",
-    "svelte-check": "^4.6.0",
-    "tailwindcss": "^4.3.0",
+    "svelte-check": "^4.7.8",
+    "tailwindcss": "^4.3.5",
     "typescript": "^6.0.3",
-    "vite": "^8.3.0"
+    "vite": "^8.3.6"
   },
   "imports": {
     "#lib": "./src/lib/index.js",
     "#lib/*": "./src/lib/*"
   },
   "dependencies": {
-    "@lobehub/icons-static-svg": "^1.101.0",
+    "@lobehub/icons-static-svg": "^1.102.0",
     "phosphor-svelte": "^3.1.1",
     "simple-icons": "^16.36.0"
   }
