@@ -31,8 +31,7 @@ const path = require('node:path')
  *
  * Applied via `withDangerousMod` because the generated `ios/` tree is
  * gitignored and rewritten on every prebuild, so a direct Podfile edit
- * would not survive. Mirrors `withGradleWrapperVersion` on the Android
- * side, which exists for the same reason.
+ * would not survive.
  */
 module.exports = function withIosDeploymentTarget(
   config,
