@@ -104,10 +104,6 @@ The Linux bundle includes a standalone terminal sidecar; Linux packages are
 experimental and are not yet part of the signed updater manifest. Notification
 click routing is not available in the Linux notification backend.
 
-For GitHub draft releases and optional Snap Store/AUR publishing, see
-[`packaging/README.md`](packaging/README.md). Store publication requires
-account setup, GitHub Actions secrets, and Snap classic-confinement approval.
-
 ---
 
 ## Development setup
