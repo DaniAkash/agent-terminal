@@ -8,6 +8,7 @@
   [![Latest release](https://img.shields.io/github/v/release/DaniAkash/agent-terminal?include_prereleases&label=latest&color=blue)](https://github.com/DaniAkash/agent-terminal/releases)
   [![Status](https://img.shields.io/badge/status-stable-brightgreen)](#status)
   [![Platform](https://img.shields.io/badge/platform-macOS-lightgrey)](https://github.com/DaniAkash/agent-terminal/releases)
+  [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/DaniAkash/agent-terminal/badge)](https://scorecard.dev/viewer/?uri=github.com/DaniAkash/agent-terminal)
 </div>
 
 <p align="center">
