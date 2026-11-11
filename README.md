@@ -11,7 +11,7 @@
 
   [![macOS](https://img.shields.io/badge/macOS-stable-3fb950?style=flat-square&logo=apple&logoColor=white)](#status)
   [![Linux](https://img.shields.io/badge/Linux-experimental-d29922?style=flat-square&logo=linux&logoColor=white)](#status)
-  [![Shells](https://img.shields.io/badge/shell-zsh%20%7C%20bash-8b949e?style=flat-square&logo=gnubash&logoColor=white)](#status)
+  [![Shells](https://img.shields.io/badge/shell-zsh%20%7C%20bash%20%7C%20fish-8b949e?style=flat-square&logo=gnubash&logoColor=white)](#status)
   [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/DaniAkash/agent-terminal/badge)](https://scorecard.dev/viewer/?uri=github.com/DaniAkash/agent-terminal)
 </div>
 
@@ -116,6 +116,7 @@ Want support for another agent? [Open an issue](https://github.com/DaniAkash/age
 | macOS 13+ (Apple Silicon / Intel) | ✅ Daily driver |
 | Zsh | ✅ Daily driver |
 | Bash | ⚠️ Should work, lightly tested |
+| Fish | ⚠️ Should work, lightly tested |
 | Linux (x86-64) | 🚧 Experimental — AppImage, Debian and RPM builds |
 | Windows | 🚧 Untested — contributors wanted |
 
