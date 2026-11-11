@@ -35,6 +35,8 @@ Replace `OWNER/REPO` with the repository that runs the workflow. Store or delete
 
 ## 3. Set up the AUR account and SSH key
 
+> **AUR registration is closed upstream at the time of writing.** Arch disabled new account creation in June 2026 during an [active malicious packages incident](https://archlinux.org/news/active-aur-malicious-packages-incident/) and has announced no reopening date. Until it reopens, leave `PUBLISH_AUR` unset. The AUR job is skipped and the rest of the Linux release is unaffected, so nothing here blocks shipping. The steps below are what to do once an account can be created. An alternative, if you want AUR sooner, is to ask an existing AUR maintainer to create and co-maintain `agent-terminal-bin`, which needs no new account.
+
 - Create or sign in to an AUR account and confirm it may create or maintain `agent-terminal-bin`. The `-bin` package consumes the published Debian release asset.
 - Generate a dedicated key locally. This writes a private key and a matching `.pub` file, so choose a passphrase policy that still works unattended in CI:
 
