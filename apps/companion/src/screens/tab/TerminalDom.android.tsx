@@ -46,7 +46,14 @@ export default function TerminalDom({
   onOpenUrl,
   ref,
 }: TerminalDomProps) {
-  const webviewRef = useRef<WebView | null>(null)
+  // The explicit generic works around a type regression in
+  // react-native-webview 14: the class is declared
+  // `WebView<P = undefined> extends Component<WebViewProps & P>`, and
+  // `WebViewProps & undefined` reduces to `never`, so every prop is
+  // rejected. 13.x defaulted P to `{}`, which intersects harmlessly.
+  // Supplying `object` restores that behaviour without casting away the
+  // prop types, so a genuinely wrong prop is still caught.
+  const webviewRef = useRef<WebView<object> | null>(null)
   const readyRef = useRef(false)
   const pendingWritesRef = useRef<string[]>([])
 
@@ -129,7 +136,7 @@ export default function TerminalDom({
   }
 
   return (
-    <WebView
+    <WebView<object>
       ref={webviewRef}
       source={{ html: HTML, baseUrl: 'https://unpkg.com/' }}
       originWhitelist={['https://unpkg.com']}

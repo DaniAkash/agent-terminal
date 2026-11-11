@@ -116,6 +116,9 @@ const config: ExpoConfig = {
     ],
     'expo-secure-store',
     'expo-font',
+    // Required from SDK 58 onward. `expo install --fix` could not add it
+    // itself because this config is dynamic, so it is listed by hand.
+    'expo-status-bar',
     // Bundles the Lucide font into the binary instead of leaving it to
     // expo-font's runtime loader. Expo's guidance is to list the icon
     // package itself here and never to point the expo-font plugin at a
