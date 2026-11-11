@@ -274,6 +274,7 @@ jobs:
       pull-requests: read
     outputs:
       native: ${{ steps.scope.outputs.native }}
+      bundle: ${{ steps.scope.outputs.bundle }}
     steps:
       - name: Decide whether the Linux matrix can be affected
         id: scope
@@ -286,25 +287,49 @@ jobs:
           # weekly cache cron, or a manual dispatch, runs the full
           # matrix. Those are the refs releases are cut from and they
           # must never quietly lose Linux coverage.
+          # Anything that is not a pull request, so a push to main, the
+          # weekly cache cron, or a manual dispatch, runs everything.
+          # Those are the refs releases are cut from, and they are also
+          # the net for the narrowing below.
           if [ -z "${PR_NUMBER:-}" ]; then
             echo 'native=true' >> "$GITHUB_OUTPUT"
-            echo 'Not a pull request, running the full matrix.'
+            echo 'bundle=true' >> "$GITHUB_OUTPUT"
+            echo 'Not a pull request, running everything.'
             exit 0
           fi
           files=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" \
             --paginate -q '.[].filename')
-          # Deliberately narrower than the paths filter this replaced,
-          # which also listed apps/desktop/** and packages/**. Shared
-          # TypeScript and the renderer cannot make a package fail to
-          # install on another distro, and `check` already builds and
-          # tests the app on Linux, so those paths bought nothing here
-          # while firing the matrix on nearly every desktop change.
-          if printf '%s\n' "$files" | grep -Eq '^(apps/desktop/src-tauri/|apps/desktop/shell-env-tests/|apps/desktop/Cargo\.lock$|packaging/|bun\.lock$|\.bun-version$|\.github/workflows/ci\.yml$)'; then
+          match() { printf '%s\n' "$files" | grep -Eq "$1"; }
+
+          # Native: anything that can change how the app behaves on a
+          # given distro. Drives the shell matrix and the macOS
+          # regression, which are cheap and catch logic regressions.
+          if match '^(apps/desktop/src-tauri/|apps/desktop/shell-env-tests/|apps/desktop/Cargo\.lock$|bun\.lock$|\.bun-version$|\.github/workflows/ci\.yml$)'; then
             echo 'native=true' >> "$GITHUB_OUTPUT"
-            echo 'Native, packaging or lockfile paths changed, running the full matrix.'
+            echo 'native=true: native or lockfile paths changed.'
           else
             echo 'native=false' >> "$GITHUB_OUTPUT"
-            echo 'No native, packaging or lockfile change, skipping the Linux matrix.'
+            echo 'native=false: nothing native changed.'
+          fi
+
+          # Bundle: only what can change how the app is packaged, or
+          # whether the packaged app starts. Drives the release build
+          # and the smoke matrix, which are 9 of the 15 jobs here.
+          #
+          # Plain Rust sources are deliberately absent. The check job
+          # already runs `tauri build --no-bundle` on Linux for every
+          # pull request, so a compile break is caught there and does
+          # not need a release build and eight containers to prove.
+          # What is listed is what `--no-bundle` skips: the bundler
+          # config, the icons and resources it embeds, the sidecar it
+          # ships, and the dependency manifests that decide which
+          # runtime libraries the packages end up needing.
+          if match '^(packaging/|apps/desktop/src-tauri/tauri[^/]*\.conf\.json$|apps/desktop/src-tauri/icons/|apps/desktop/src-tauri/sidecar/|apps/desktop/src-tauri/capabilities/|apps/desktop/src-tauri/Cargo\.toml$|apps/desktop/Cargo\.lock$|bun\.lock$|\.bun-version$|\.github/workflows/ci\.yml$)'; then
+            echo 'bundle=true' >> "$GITHUB_OUTPUT"
+            echo 'bundle=true: packaging, resources or dependencies changed.'
+          else
+            echo 'bundle=false' >> "$GITHUB_OUTPUT"
+            echo 'bundle=false: nothing that affects packaging changed.'
           fi
 
   # Production PATH and environment helpers, then bash, fish and zsh
@@ -410,7 +435,7 @@ jobs:
     if: >-
       always()
       && (needs.approve.result == 'success' || needs.approve.result == 'skipped')
-      && needs.scope.outputs.native == 'true'
+      && needs.scope.outputs.bundle == 'true'
     runs-on: ubuntu-22.04
     timeout-minutes: 45
     env:
