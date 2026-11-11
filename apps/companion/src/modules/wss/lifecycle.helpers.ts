@@ -14,6 +14,33 @@ import type { AppStateStatus } from 'react-native'
  */
 export const TRUSTED_BACKGROUND_MS = 60_000
 
+/**
+ * Every value the AppState status union admits, keyed by itself so the
+ * lookup narrows without a cast.
+ */
+const APP_STATE_STATUSES: Record<string, AppStateStatus | undefined> = {
+  active: 'active',
+  background: 'background',
+  inactive: 'inactive',
+  extension: 'extension',
+  unknown: 'unknown',
+}
+
+/**
+ * Narrow what `AppState.currentState` now admits.
+ *
+ * React Native 0.88 moved AppState onto generated types, where
+ * `currentState` is declared `null | undefined | string` rather than the
+ * status union. That is the more honest signature, because the value
+ * really is absent before the native module has reported. "unknown" is
+ * the union's own name for that case, so nothing is invented here.
+ */
+export function toAppStateStatus(
+  value: string | null | undefined,
+): AppStateStatus {
+  return (value != null && APP_STATE_STATUSES[value]) || 'unknown'
+}
+
 export type AppStateTransition = 'foreground' | 'background' | 'none'
 
 /** Classify an AppState transition into one of the three we care about. */

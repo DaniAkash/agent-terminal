@@ -14,7 +14,6 @@
     // Config plugins loaded by string reference from the plugins array in
     // app.config.ts (Expo's config-plugins mechanism). Fallow does not
     // follow that indirection, so it flags the files as unreachable.
-    "plugins/withGradleWrapperVersion.js",
     "plugins/withIosDeploymentTarget.js",
     "plugins/withAndroidRelease.js"
   ],

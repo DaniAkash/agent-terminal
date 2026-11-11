@@ -5,6 +5,7 @@ import {
   decideForegroundAction,
   executeForegroundAction,
   executeNetInfoAction,
+  toAppStateStatus,
   TRUSTED_BACKGROUND_MS,
 } from './lifecycle.helpers'
 
@@ -249,5 +250,25 @@ describe('executeNetInfoAction', () => {
     const { deps, calls } = makeDeps()
     executeNetInfoAction('reconnect', null, deps)
     expect(calls).toEqual([])
+  })
+})
+
+describe('toAppStateStatus', () => {
+  test.each(['active', 'background', 'inactive', 'extension', 'unknown'])(
+    'passes %s through unchanged',
+    (value) => {
+      expect(toAppStateStatus(value)).toBe(value)
+    },
+  )
+
+  // React Native 0.88 types currentState as `null | undefined | string`,
+  // so all three of these are reachable at runtime rather than theoretical.
+  test('absent state reads as unknown rather than throwing', () => {
+    expect(toAppStateStatus(null)).toBe('unknown')
+    expect(toAppStateStatus(undefined)).toBe('unknown')
+  })
+
+  test('an unrecognised state reads as unknown', () => {
+    expect(toAppStateStatus('definitely-not-a-state')).toBe('unknown')
   })
 })

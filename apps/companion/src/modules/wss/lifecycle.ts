@@ -14,6 +14,7 @@ import {
   executeNetInfoAction,
   type LifecycleDeps,
   type SessionStatusHint,
+  toAppStateStatus,
 } from './lifecycle.helpers'
 
 /**
@@ -28,7 +29,7 @@ const deps: LifecycleDeps<DeviceRecord> = {
 }
 
 let initialized = false
-let currentAppState: AppStateStatus = AppState.currentState
+let currentAppState: AppStateStatus = toAppStateStatus(AppState.currentState)
 let backgroundedAt: number | null = null
 let appStateSub: { remove: () => void } | null = null
 let netInfoUnsub: (() => void) | null = null
@@ -54,7 +55,7 @@ let netInfoUnsub: (() => void) | null = null
 export function initLifecycleWiring(): void {
   if (initialized) return
   initialized = true
-  currentAppState = AppState.currentState
+  currentAppState = toAppStateStatus(AppState.currentState)
   appStateSub = AppState.addEventListener('change', handleAppStateChange)
   netInfoUnsub = NetInfo.addEventListener(handleNetInfoChange)
 }
