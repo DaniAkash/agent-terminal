@@ -1,7 +1,7 @@
 # Publishing Agent Terminal on Linux
 
-For a step-by-step, browser-readable setup guide, download and open
-[`docs/linux-release-setup.html`](../docs/linux-release-setup.html).
+For the step-by-step setup guide, see
+[`docs/linux-release-setup.md`](../docs/linux-release-setup.md).
 
 The tag-triggered release workflow builds x86-64 AppImage, Debian, RPM and
 Snap artifacts along with the macOS builds and attaches them to the same
