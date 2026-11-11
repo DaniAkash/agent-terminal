@@ -18,8 +18,6 @@
 <p align="center">
   <a href="https://github.com/DaniAkash/agent-terminal/releases/latest/download/agent-terminal-aarch64.dmg"><img src="https://img.shields.io/badge/Download_for-Apple%20Silicon-000?style=for-the-badge&logo=apple&logoColor=white" alt="Download for Apple Silicon"></a>
   &nbsp;
-  <a href="https://github.com/DaniAkash/agent-terminal/releases/latest/download/agent-terminal-x64.dmg"><img src="https://img.shields.io/badge/Download_for-Intel-0071C5?style=for-the-badge&logo=intel&logoColor=white" alt="Download for Intel"></a>
-  &nbsp;
   <a href="https://github.com/DaniAkash/agent-terminal/releases/latest/download/agent-terminal-amd64.AppImage"><img src="https://img.shields.io/badge/Download_for-Linux-333?style=for-the-badge&logo=linux&logoColor=FCC624" alt="Download for Linux"></a>
 </p>
 
@@ -29,7 +27,7 @@
 </p>
 
 <p align="center">
-  <sub>Linux also ships <a href="https://github.com/DaniAkash/agent-terminal/releases/latest/download/agent-terminal-amd64.deb"><code>.deb</code></a> and <a href="https://github.com/DaniAkash/agent-terminal/releases/latest/download/agent-terminal-x86_64.rpm"><code>.rpm</code></a> packages.</sub>
+  <sub>Also available: <a href="https://github.com/DaniAkash/agent-terminal/releases/latest/download/agent-terminal-x64.dmg">Intel Mac</a>, and Linux <a href="https://github.com/DaniAkash/agent-terminal/releases/latest/download/agent-terminal-amd64.deb"><code>.deb</code></a> and <a href="https://github.com/DaniAkash/agent-terminal/releases/latest/download/agent-terminal-x86_64.rpm"><code>.rpm</code></a> packages.</sub>
 </p>
 
 <p align="center">
