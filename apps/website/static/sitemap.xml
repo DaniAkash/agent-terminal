@@ -2,6 +2,7 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url><loc>https://agent-terminal.org/</loc></url>
   <url><loc>https://agent-terminal.org/agents</loc></url>
+  <url><loc>https://agent-terminal.org/downloads</loc></url>
   <url><loc>https://agent-terminal.org/docs</loc></url>
   <url><loc>https://agent-terminal.org/changelog</loc></url>
 </urlset>

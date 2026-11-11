@@ -37,6 +37,7 @@ import { siGithub, siX } from 'simple-icons'
     <div class="footer-links">
       <div>
         <span>PRODUCT</span><a href="/#features">Features</a
+        ><a href="/downloads">Downloads</a
         ><a href="https://github.com/DaniAkash/agent-terminal/releases"
           >Releases</a
         ><a href="/changelog">Changelog</a><a href="/docs">Documentation</a>

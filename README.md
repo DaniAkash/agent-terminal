@@ -12,7 +12,7 @@
   [![macOS](https://img.shields.io/badge/macOS-stable-3fb950?style=flat-square&logo=apple&logoColor=white)](#status)
   [![Linux](https://img.shields.io/badge/Linux-experimental-d29922?style=flat-square&logo=linux&logoColor=white)](#status)
   [![Shells](https://img.shields.io/badge/shell-zsh%20%7C%20bash%20%7C%20fish-8b949e?style=flat-square&logo=gnubash&logoColor=white)](#status)
-  [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/DaniAkash/agent-terminal/badge)](https://scorecard.dev/viewer/?uri=github.com/DaniAkash/agent-terminal)
+  [![OpenSSF Scorecard](https://img.shields.io/ossf-scorecard/github.com/DaniAkash/agent-terminal?label=OpenSSF%20Scorecard&style=flat-square)](https://scorecard.dev/viewer/?uri=github.com/DaniAkash/agent-terminal)
 </div>
 
 <p align="center">

@@ -90,7 +90,9 @@ onMount(() => {
         <p>
           Agent Terminal is stable on macOS 13 and later, with Zsh as its
           daily-driver shell. Download the build for your Mac or install it
-          using Homebrew.
+          using Homebrew. Experimental Linux x86-64 builds are available as
+          AppImage, Debian and RPM packages.
+          <a href="/downloads">See all downloads</a>.
         </p>
         <div class="docs-downloads">
           <a
@@ -399,8 +401,8 @@ onMount(() => {
                 <td>Lightly tested</td>
               </tr>
               <tr>
-                <td>Linux</td>
-                <td>Untested · contributors wanted</td>
+                <td>Linux · x86-64</td>
+                <td>Experimental · AppImage, Debian and RPM</td>
               </tr>
               <tr>
                 <td>Windows</td>
