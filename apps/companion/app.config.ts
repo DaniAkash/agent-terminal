@@ -141,7 +141,6 @@ const config: ExpoConfig = {
       },
     ],
     './plugins/withIosDeploymentTarget',
-    './plugins/withGradleWrapperVersion',
     './plugins/withAndroidRelease',
   ],
   extra: {
