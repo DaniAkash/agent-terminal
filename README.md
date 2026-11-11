@@ -5,21 +5,29 @@
 
   **A terminal workspace built around AI coding agents.**
 
-  [![Latest release](https://img.shields.io/github/v/release/DaniAkash/agent-terminal?include_prereleases&label=latest&color=blue)](https://github.com/DaniAkash/agent-terminal/releases)
-  [![Status](https://img.shields.io/badge/status-stable-brightgreen)](#status)
-  [![Platform](https://img.shields.io/badge/platform-macOS-lightgrey)](https://github.com/DaniAkash/agent-terminal/releases)
+  [![Release](https://img.shields.io/github/v/release/DaniAkash/agent-terminal?include_prereleases&label=release&color=58a6ff&style=flat-square)](https://github.com/DaniAkash/agent-terminal/releases)
+  [![License](https://img.shields.io/badge/license-MIT-8b949e?style=flat-square)](./LICENSE)
+  [![Stars](https://img.shields.io/github/stars/DaniAkash/agent-terminal?style=flat-square&color=d29922)](https://github.com/DaniAkash/agent-terminal/stargazers)
+
+  [![macOS](https://img.shields.io/badge/macOS-stable-3fb950?style=flat-square&logo=apple&logoColor=white)](#status)
+  [![Linux](https://img.shields.io/badge/Linux-experimental-d29922?style=flat-square&logo=linux&logoColor=white)](#status)
+  [![Shells](https://img.shields.io/badge/shell-zsh%20%7C%20bash%20%7C%20fish-8b949e?style=flat-square&logo=gnubash&logoColor=white)](#status)
   [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/DaniAkash/agent-terminal/badge)](https://scorecard.dev/viewer/?uri=github.com/DaniAkash/agent-terminal)
 </div>
 
 <p align="center">
   <a href="https://github.com/DaniAkash/agent-terminal/releases/latest/download/agent-terminal-aarch64.dmg"><img src="https://img.shields.io/badge/Download_for-Apple%20Silicon-000?style=for-the-badge&logo=apple&logoColor=white" alt="Download for Apple Silicon"></a>
   &nbsp;
-  <a href="https://github.com/DaniAkash/agent-terminal/releases/latest/download/agent-terminal-x64.dmg"><img src="https://img.shields.io/badge/Download_for-Intel-0071C5?style=for-the-badge&logo=intel&logoColor=white" alt="Download for Intel"></a>
+  <a href="https://github.com/DaniAkash/agent-terminal/releases/latest/download/agent-terminal-amd64.AppImage"><img src="https://img.shields.io/badge/Download_for-Linux-333?style=for-the-badge&logo=linux&logoColor=FCC624" alt="Download for Linux"></a>
 </p>
 
 <p align="center">
   <em>or install via Homebrew:</em><br/>
   <code>brew install --cask daniakash/tap/agent-terminal</code>
+</p>
+
+<p align="center">
+  <sub>Also available: <a href="https://github.com/DaniAkash/agent-terminal/releases/latest/download/agent-terminal-x64.dmg">Intel Mac</a>, and Linux <a href="https://github.com/DaniAkash/agent-terminal/releases/latest/download/agent-terminal-amd64.deb"><code>.deb</code></a> and <a href="https://github.com/DaniAkash/agent-terminal/releases/latest/download/agent-terminal-x86_64.rpm"><code>.rpm</code></a> packages.</sub>
 </p>
 
 <p align="center">
@@ -106,6 +114,7 @@ Want support for another agent? [Open an issue](https://github.com/DaniAkash/age
 | macOS 13+ (Apple Silicon / Intel) | ✅ Daily driver |
 | Zsh | ✅ Daily driver |
 | Bash | ⚠️ Should work, lightly tested |
+| Fish | ⚠️ Should work, lightly tested |
 | Linux (x86-64) | 🚧 Experimental — AppImage, Debian and RPM builds |
 | Windows | 🚧 Untested — contributors wanted |
 
