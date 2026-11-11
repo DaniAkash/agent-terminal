@@ -42,8 +42,7 @@ jobs:
   # creation in June 2026 during a malicious package incident, so the
   # account this job pushes as cannot be created yet. PUBLISH_AUR is
   # unset, so the job is skipped and no other part of the release
-  # depends on it. See docs/linux-release-setup.md section 3 before
-  # turning it on.
+  # depends on it. See packaging/README.md before turning it on.
   aur:
     if: ${{ !github.event.release.prerelease && vars.PUBLISH_AUR == 'true' }}
     runs-on: ubuntu-latest

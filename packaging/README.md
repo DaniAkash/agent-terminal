@@ -1,8 +1,5 @@
 # Publishing Agent Terminal on Linux
 
-For the step-by-step setup guide, see
-[`docs/linux-release-setup.md`](../docs/linux-release-setup.md).
-
 The tag-triggered release workflow builds x86-64 AppImage, Debian, RPM and
 Snap artifacts along with the macOS builds and attaches them to the same
 draft GitHub release. The tag must match `tauri.conf.json`'s version. Publishing
@@ -23,6 +20,14 @@ can trigger it.
    `agent-terminal-bin` package name is available to your account. Users can
    install it with `yay -S agent-terminal-bin`. The `-bin` package uses the
    released Debian artifact and checks its SHA-256 before packaging.
+
+   **AUR registration is closed upstream at the time of writing.** Arch
+   disabled new account creation in June 2026 during an [active malicious
+   packages incident](https://archlinux.org/news/active-aur-malicious-packages-incident/)
+   and has announced no reopening date. Leave `PUBLISH_AUR` unset until it
+   reopens: the AUR job is skipped and nothing else in the Linux release
+   depends on it. If AUR is wanted sooner, an existing AUR maintainer can
+   create and co-maintain `agent-terminal-bin`, which needs no new account.
 3. Add the following GitHub Actions secrets and variables under repository
    Settings → Secrets and variables → Actions. Do not commit credentials.
 
