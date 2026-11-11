@@ -1,15 +1,46 @@
 <script lang="ts">
 import { ArrowDown, ArrowUpRight } from 'phosphor-svelte'
+import { onMount, untrack } from 'svelte'
+import {
+  LATEST_DOWNLOAD,
+  parseRelease,
+  RELEASE_API,
+  RELEASES_URL,
+} from '../../lib/releases'
 import type { PageData } from './$types'
 
 let { data }: { data: PageData } = $props()
-const releases = 'https://github.com/DaniAkash/agent-terminal/releases/latest'
+let release = $state(untrack(() => data.release))
+let retrying = $state(untrack(() => !data.release))
+onMount(() => {
+  if (release) return
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 5000)
+  fetch(RELEASE_API, {
+    headers: { Accept: 'application/vnd.github+json' },
+    signal: controller.signal,
+  })
+    .then((response) => (response.ok ? response.json() : null))
+    .then((value) => {
+      release = parseRelease(value)
+    })
+    .catch(() => {})
+    .finally(() => {
+      clearTimeout(timer)
+      retrying = false
+    })
+  return () => {
+    clearTimeout(timer)
+    controller.abort()
+  }
+})
 const options = [
   {
     platform: 'macOS',
     status: 'STABLE',
     label: 'Apple Silicon',
     detail: 'M1, M2, M3 and newer · DMG',
+    fallback: 'agent-terminal-aarch64.dmg',
     patterns: [/^agent-terminal-aarch64\.dmg$/i, /_aarch64\.dmg$/i],
   },
   {
@@ -17,6 +48,7 @@ const options = [
     status: 'STABLE',
     label: 'Intel Mac',
     detail: 'Intel x86-64 · DMG',
+    fallback: 'agent-terminal-x64.dmg',
     patterns: [/^agent-terminal-x64\.dmg$/i, /_x64\.dmg$/i],
   },
   {
@@ -24,6 +56,7 @@ const options = [
     status: 'EXPERIMENTAL',
     label: 'AppImage',
     detail: 'x86-64 · portable download',
+    fallback: 'agent-terminal-amd64.AppImage',
     patterns: [/^agent-terminal-amd64\.appimage$/i, /_amd64\.appimage$/i],
   },
   {
@@ -31,6 +64,7 @@ const options = [
     status: 'EXPERIMENTAL',
     label: 'Debian / Ubuntu',
     detail: 'x86-64 · DEB package',
+    fallback: 'agent-terminal-amd64.deb',
     patterns: [
       /^agent-terminal-amd64\.deb$/i,
       /^agent-terminal_[\w.-]+_amd64\.deb$/i,
@@ -41,6 +75,7 @@ const options = [
     status: 'EXPERIMENTAL',
     label: 'Fedora and RPM',
     detail: 'x86-64 · RPM package',
+    fallback: 'agent-terminal-x86_64.rpm',
     patterns: [/^agent-terminal-x86_64\.rpm$/i, /\.x86_64\.rpm$/i],
   },
   {
@@ -48,12 +83,13 @@ const options = [
     status: 'EXPERIMENTAL',
     label: 'Snap package',
     detail: 'x86-64 · local installation',
+    fallback: null,
     patterns: [/^agent-terminal_[\w.-]+_amd64\.snap$/i],
   },
 ]
 function asset(patterns: RegExp[]) {
   for (const pattern of patterns) {
-    const match = data.release?.assets.find((item) => pattern.test(item.name))
+    const match = release?.assets.find((item) => pattern.test(item.name))
     if (match) return match
   }
   return undefined
@@ -70,11 +106,13 @@ function asset(patterns: RegExp[]) {
     </p>
     <div class="release-line">
       <span class="release-dot"></span>
-      {#if data.release}
-        LATEST STABLE RELEASE <strong>{data.release.version}</strong>
+      {#if release}
+        LATEST STABLE RELEASE <strong>{release.version}</strong>
+      {:else if retrying}
+        CHECKING LATEST STABLE RELEASE…
       {:else}
         RELEASE INFORMATION UNAVAILABLE ·
-        <a href={releases}>VIEW ON GITHUB <ArrowUpRight size={14} /></a>
+        <a href={RELEASES_URL}>VIEW ON GITHUB <ArrowUpRight size={14} /></a>
       {/if}
     </div>
   </div>
@@ -90,14 +128,12 @@ function asset(patterns: RegExp[]) {
     <div class="build-list">
       {#each options as option}
         {@const file = asset(option.patterns)}
-        <div
-          class="build-row"
-          id={option.label === 'Apple Silicon'
-            ? 'macos'
-            : option.label === 'AppImage'
-              ? 'linux'
-              : undefined}
-        >
+        {@const url =
+          file?.browser_download_url ??
+          (!release && option.fallback
+            ? `${LATEST_DOWNLOAD}/${option.fallback}`
+            : null)}
+        <div class="build-row">
           <div class="build-platform">
             <span>{option.platform}</span><small>{option.status}</small>
           </div>
@@ -105,16 +141,16 @@ function asset(patterns: RegExp[]) {
             <h3>{option.label}</h3>
             <p>{option.detail}</p>
           </div>
-          {#if file}
+          {#if url}
             <a
               class="build-link"
-              href={file.browser_download_url}
+              href={url}
               aria-label={`Download ${option.label} for ${option.platform}`}
               >Download <ArrowDown size={16} /></a
             >
           {:else}
-            <a class="build-link muted" href={releases}
-              >View releases <ArrowUpRight size={16} /></a
+            <span class="build-link muted"
+              >{release ? 'Not in this release' : 'Unavailable'}</span
             >
           {/if}
         </div>
@@ -127,22 +163,18 @@ function asset(patterns: RegExp[]) {
           <h3>Android</h3>
           <p>Pair with your desktop · Google Play</p>
         </div>
-        <a
-          class="build-link"
-          href="https://play.google.com/store/apps/details?id=com.daniakash.agent_terminal"
-          >Google Play <ArrowUpRight size={16} /></a
-        >
+        <span class="build-link muted">Coming soon</span>
       </div>
     </div>
-    {#if data.release}
+    {#if release}
       <p class="download-note">
-        A link appears when that package is included in {data.release.version}.
-        <a href={releases}>View all release files on GitHub ↗</a>
+        Downloads are from {release.version}.
+        <a href={RELEASES_URL}>View all release files on GitHub ↗</a>
       </p>
     {:else}
       <p class="download-note">
-        We couldn’t load the release from GitHub. Use the links above to find
-        available files directly.
+        Release details are unavailable. The download links use GitHub’s latest
+        release; <a href={RELEASES_URL}>check available files on GitHub ↗</a>.
       </p>
     {/if}
   </section>

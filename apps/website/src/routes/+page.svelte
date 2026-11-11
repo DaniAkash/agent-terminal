@@ -21,6 +21,7 @@ import { onMount } from 'svelte'
 import AsciiField from '#lib/AsciiField.svelte'
 import InstallTerminal from '#lib/InstallTerminal.svelte'
 import RibbonField from '#lib/RibbonField.svelte'
+import { LATEST_DOWNLOAD } from '../lib/releases'
 
 const agents = [
   { name: 'Claude Code', logo: claudeLogo },
@@ -34,11 +35,33 @@ const agents = [
 
 let copied = $state(false)
 let downloadPlatform = $state<'macos' | 'linux' | null>(null)
+let macArchitecture = $state<'aarch64' | 'x64'>('aarch64')
 onMount(() => {
   const platform = navigator.userAgent
-  if (/Macintosh|Mac OS X/.test(platform) && !/iPhone|iPad|iPod/.test(platform))
+  if (
+    /Macintosh|Mac OS X/.test(platform) &&
+    !/iPhone|iPad|iPod/.test(platform)
+  ) {
     downloadPlatform = 'macos'
-  else if (/Linux/.test(platform) && !/Android/.test(platform))
+    const hints = (
+      navigator as Navigator & {
+        userAgentData?: {
+          getHighEntropyValues: (
+            hints: string[],
+          ) => Promise<{ architecture?: string }>
+        }
+      }
+    ).userAgentData
+    hints
+      ?.getHighEntropyValues(['architecture'])
+      .then(({ architecture }) => {
+        if (architecture === 'x86') macArchitecture = 'x64'
+      })
+      .catch(() => {})
+  } else if (
+    /Linux/.test(platform) &&
+    !/Android|aarch64|arm64|armv/i.test(platform)
+  )
     downloadPlatform = 'linux'
 })
 const install = 'brew install --cask daniakash/tap/agent-terminal'
@@ -82,9 +105,11 @@ async function copyInstall() {
     <div class="hero-actions">
       <a
         class="button button-primary"
-        href={downloadPlatform
-          ? `/downloads#${downloadPlatform}`
-          : '/downloads'}
+        href={downloadPlatform === 'macos'
+          ? `${LATEST_DOWNLOAD}/agent-terminal-${macArchitecture}.dmg`
+          : downloadPlatform === 'linux'
+            ? `${LATEST_DOWNLOAD}/agent-terminal-amd64.AppImage`
+            : '/downloads'}
         >{#if downloadPlatform}
           <span class="simple-icon"
             >{@html downloadPlatform === 'macos'
@@ -93,9 +118,9 @@ async function copyInstall() {
           >
         {/if}
         {downloadPlatform === 'macos'
-          ? 'Download for macOS'
+          ? `Download for macOS (${macArchitecture === 'x64' ? 'Intel' : 'Apple Silicon'})`
           : downloadPlatform === 'linux'
-            ? 'Download for Linux'
+            ? 'Download for Linux (x86-64)'
             : 'Download Agent Terminal'}
         <ArrowDown size={16} weight="bold" /></a
       ><a
@@ -109,7 +134,7 @@ async function copyInstall() {
     </div>
     <p class="availability">
       Free and open source <span>·</span> macOS 13+ <span>·</span>
-      <a href="/downloads">Linux x86-64 experimental</a>
+      <a href="/downloads">All downloads · Intel Mac · Linux</a>
     </p>
     <div class="hero-visual">
       <div class="hero-image-frame">
@@ -272,16 +297,11 @@ async function copyInstall() {
           ><span>iOS + Android</span>
         </div>
         <div class="mobile-store-badges">
-          <a
-            class="play-badge"
-            href="https://play.google.com/store/apps/details?id=com.daniakash.agent_terminal"
-            target="_blank"
-            rel="noreferrer"
-            aria-label="Get Agent Terminal on Google Play"
+          <span class="appstore-soon"
             ><span class="simple-icon">{@html siGoogleplay.svg}</span
             ><span
-              ><small>GET IT ON</small><strong>Google Play</strong></span
-            ></a
+              ><small>GOOGLE PLAY</small><strong>Coming soon</strong></span
+            ></span
           ><span class="appstore-soon"
             ><span class="simple-icon">{@html siApple.svg}</span
             ><span
