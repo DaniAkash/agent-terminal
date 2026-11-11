@@ -396,17 +396,21 @@ jobs:
         working-directory: apps/desktop
         run: cargo test --locked --lib macos_environment_tests
 
-  # Build the real AppImage, .deb and .rpm. Gated on the shell matrix so
-  # a 45 minute bundle build is not spent proving what a 1 minute
-  # container job already disproved.
+  # Build the real AppImage, .deb and .rpm.
+  #
+  # Deliberately NOT gated on the shell matrix. Waiting on it would save
+  # a bundle build whenever a shell test fails, but it would also mean a
+  # single shell failure reports nothing about whether the packages even
+  # build, and one run is supposed to surface every failure at once so
+  # they can all be fixed together. Nothing flows from the shell jobs to
+  # this one, so the edge was ordering, not a dependency.
   linux-packages:
     name: Linux packages
-    needs: [approve, scope, linux-shells]
+    needs: [approve, scope]
     if: >-
       always()
       && (needs.approve.result == 'success' || needs.approve.result == 'skipped')
       && needs.scope.outputs.native == 'true'
-      && needs['linux-shells'].result == 'success'
     runs-on: ubuntu-22.04
     timeout-minutes: 45
     env:
@@ -454,6 +458,13 @@ jobs:
   # Actually launch what was built, as a non-root user, on X11 and
   # Wayland. The only job here that proves the package runs rather than
   # merely builds.
+  #
+  # This one genuinely cannot run in parallel with the job above: it
+  # downloads that job's artifact and starts the binary from it, so with
+  # no build there is nothing to test. Every other job in this workflow
+  # is a sibling precisely so a failure anywhere still leaves the rest
+  # reporting; this is the single edge that is a real dependency rather
+  # than an ordering preference, so do not try to remove it.
   appimage-smoke:
     name: AppImage (${{ matrix.image }}, ${{ matrix.backend }})
     needs: linux-packages
