@@ -1,0 +1,94 @@
+name: Publish Linux packages
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-package-publish
+  cancel-in-progress: false
+
+jobs:
+  snap:
+    if: ${{ !github.event.release.prerelease && vars.PUBLISH_SNAP == 'true' }}
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Validate credentials
+        env:
+          CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          test -n "$CREDENTIALS" || { echo 'Missing SNAPCRAFT_STORE_CREDENTIALS'; exit 1; }
+          printf '%s' "$RELEASE_TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'
+      - name: Download released Snap
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern '*.snap' --dir snap-release
+          test "$(find snap-release -name '*.snap' | wc -l)" -eq 1
+          mv snap-release/*.snap agent-terminal.snap
+      - uses: snapcore/action-publish@v1
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+        with:
+          snap: agent-terminal.snap
+          release: stable
+
+  aur:
+    if: ${{ !github.event.release.prerelease && vars.PUBLISH_AUR == 'true' }}
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    env:
+      RELEASE_TAG: ${{ github.event.release.tag_name }}
+      AUR_MAINTAINER: ${{ vars.AUR_MAINTAINER }}
+      AUR_GIT_EMAIL: ${{ vars.AUR_GIT_EMAIL }}
+    steps:
+      - run: pacman -Syu --noconfirm git openssh python libarchive curl github-cli
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          persist-credentials: false
+      - name: Validate account configuration
+        env:
+          SSH_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          HOST_KEYS: ${{ secrets.AUR_KNOWN_HOSTS }}
+        run: |
+          test -n "$SSH_KEY" && test -n "$HOST_KEYS" && test -n "$AUR_MAINTAINER" && test -n "$AUR_GIT_EMAIL"
+          printf '%s' "$RELEASE_TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'
+      - name: Generate and verify package
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${RELEASE_TAG#v}"
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern "agent-terminal_${version}_amd64.deb" --dir release-assets
+          python packaging/prepare-aur.py --version "$version" --repository "$GITHUB_REPOSITORY" --maintainer "$AUR_MAINTAINER" --deb "release-assets/agent-terminal_${version}_amd64.deb" --output /tmp/aur-package
+          useradd --create-home builder
+          chown -R builder:builder /tmp/aur-package
+          runuser -u builder -- sh -c 'cd /tmp/aur-package && makepkg --noconfirm --nodeps && makepkg --printsrcinfo > .SRCINFO'
+      - name: Push AUR package
+        env:
+          SSH_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          HOST_KEYS: ${{ secrets.AUR_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/aur
+          printf '%s\n' "$HOST_KEYS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/aur ~/.ssh/known_hosts
+          export GIT_SSH_COMMAND='ssh -i ~/.ssh/aur -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes'
+          git clone ssh://aur@aur.archlinux.org/agent-terminal-bin.git /tmp/aur-repository
+          cp /tmp/aur-package/PKGBUILD /tmp/aur-package/.SRCINFO /tmp/aur-package/LICENSE /tmp/aur-repository/
+          cd /tmp/aur-repository
+          git config user.name "$AUR_MAINTAINER"
+          git config user.email "$AUR_GIT_EMAIL"
+          git add PKGBUILD .SRCINFO LICENSE
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "Update to $RELEASE_TAG"
+          git push origin HEAD:master
+      - name: Remove SSH key
+        if: always()
+        run: rm -f ~/.ssh/aur

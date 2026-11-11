@@ -27,6 +27,9 @@ mod shell_integration;
 // pub so integration tests can drive a SidecarClient instance directly
 // without going through the full Tauri startup path.
 pub mod sidecar_client;
+mod host_env;
+#[cfg(target_os = "linux")]
+mod linux_path;
 // pub for the same reason — tests construct StreamHub directly.
 pub mod stream_hub;
 // pub so the WSS server (next sub-step) and future integration tests can
@@ -71,9 +74,8 @@ use mod_engine::{
 use notifications::NotificationService;
 use shell_integration::setup_shell_integration;
 use tauri::Manager;
-// Unconditional: the run loop emits the held-back quit on every
-// platform and in every feature configuration. It used to be macOS and
-// release only, for the Check for Updates menu item.
+// macOS uses events for native menu actions and the application quit guard.
+#[cfg(target_os = "macos")]
 use tauri::Emitter;
 #[cfg(target_os = "macos")]
 use tauri::menu::{MenuBuilder, SubmenuBuilder};
@@ -91,10 +93,8 @@ use stream_hub::StreamHub;
 use tokio::process::Command;
 use wss_server::{PairedConnMap, ServerState};
 
-/// Locate the runtime binary + sidecar entry script. Dev launches read from
-/// the source tree via CARGO_MANIFEST_DIR; production bundling is a separate
-/// follow-up (Tauri externalBin + a bundled Node binary). Returns None when
-/// either piece is missing so startup degrades to "no sidecar" gracefully.
+/// Locate a runtime and source-tree script for development launches. Linux
+/// bundles instead ship a standalone sidecar selected by `try_spawn_sidecar`.
 fn resolve_sidecar_paths() -> Option<(PathBuf, PathBuf)> {
     // Prefer node; fall back to bun (compatible enough for the JSON-RPC loop
     // + @xterm/headless). Whichever is present on PATH wins.
@@ -113,26 +113,26 @@ fn resolve_sidecar_paths() -> Option<(PathBuf, PathBuf)> {
 /// runtime, missing script, spawn error). The desktop continues running
 /// without it; the sidecar is only consumed by the upcoming StreamHub +
 /// WSS server modules.
-async fn try_spawn_sidecar() -> Option<SidecarClient> {
-    let (runtime, script) = match resolve_sidecar_paths() {
-        Some(p) => p,
-        None => {
+async fn try_spawn_sidecar(app: &tauri::AppHandle) -> Option<SidecarClient> {
+    use tauri::path::BaseDirectory;
+    let bundled = app.path().resolve("sidecar-bin", BaseDirectory::Resource).ok()
+        .filter(|p| p.is_file());
+    let cmd = if let Some(binary) = bundled {
+        Command::new(binary)
+    } else if let Some((runtime, script)) = resolve_sidecar_paths() {
+        let mut command = Command::from(crate::host_env::command(runtime));
+        command.arg(script);
+        command
+    } else {
             eprintln!(
                 "[sidecar] disabled: node/bun not on PATH or sidecar/index.js missing — \
                  remote-attach features will be unavailable until the sidecar is bundled"
             );
             return None;
-        }
     };
-    let mut cmd = Command::new(&runtime);
-    cmd.arg(&script);
     match SidecarClient::spawn(cmd).await {
         Ok(c) => {
-            eprintln!(
-                "[sidecar] spawned via {} {}",
-                runtime.display(),
-                script.display()
-            );
+            eprintln!("[sidecar] spawned");
             Some(c)
         }
         Err(e) => {
@@ -197,9 +197,17 @@ pub fn run() {
         // re-focuses the window.
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             if let Some(window) = app.get_webview_window("main") {
-                let _ = window.show();
-                let _ = window.unminimize();
-                let _ = window.set_focus();
+                if let Err(error) = window.show() {
+                    eprintln!("[single-instance] failed to show main window: {error}");
+                }
+                if let Err(error) = window.unminimize() {
+                    eprintln!("[single-instance] failed to unminimize main window: {error}");
+                }
+                if let Err(error) = window.set_focus() {
+                    eprintln!("[single-instance] failed to focus main window: {error}");
+                }
+            } else {
+                eprintln!("[single-instance] cannot activate: main window is missing");
             }
         }))
         .plugin(tauri_plugin_opener::init())
@@ -298,7 +306,7 @@ pub fn run() {
             // desktop from launching. The StreamHub built below uses
             // Option<Arc<SidecarClient>> so it degrades to local-only fan-
             // out when the sidecar isn't available.
-            let sidecar = tauri::async_runtime::block_on(try_spawn_sidecar()).map(Arc::new);
+            let sidecar = tauri::async_runtime::block_on(try_spawn_sidecar(app.handle())).map(Arc::new);
             if let Some(client) = sidecar.clone() {
                 app.manage(client);
             }
@@ -600,6 +608,7 @@ pub fn run() {
             commands::write_pty,
             commands::resize_pty,
             commands::close_tab,
+            commands::quit_app,
             commands::list_projects,
             commands::save_projects,
             commands::sync_projects_to_wss,
@@ -638,8 +647,10 @@ pub fn run() {
             // all, which is worse than skipping a confirmation. The window
             // is short so that cancelling the dialog and quitting again
             // later still asks.
+            #[cfg(target_os = "macos")]
             const FORCE_QUIT_WINDOW: std::time::Duration =
                 std::time::Duration::from_secs(2);
+            #[cfg(target_os = "macos")]
             let last_quit_request: std::sync::Mutex<Option<std::time::Instant>> =
                 std::sync::Mutex::new(None);
 
@@ -648,6 +659,7 @@ pub fn run() {
                 // already been confirmed. Only an unprompted quit is held
                 // back, which is also what keeps this from looping against
                 // our own exit() call.
+                #[cfg(target_os = "macos")]
                 tauri::RunEvent::ExitRequested { code, api, .. } if code.is_none() => {
                     let now = std::time::Instant::now();
                     let mut last = match last_quit_request.lock() {

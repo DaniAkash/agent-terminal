@@ -87,9 +87,19 @@ export const WTermTerminal = React.memo(function WTermTerminal({
     // radius and a large drop shadow. Inside a pane that reads as a
     // floating panel, and on the light theme the shadow draws a grey
     // halo along the edges.
-    host.style.padding = '2px'
+    host.style.padding = '10px 10px 2px'
     host.style.borderRadius = '0'
     host.style.boxShadow = 'none'
+    // wterm defines these variables on its own root, so inherited values
+    // from the pane are otherwise hidden by its default declarations.
+    host.style.setProperty(
+      '--term-font-family',
+      '"JetBrainsMono Nerd Font Mono", "CommitMono Nerd Font Mono", "Geist Mono", "Symbols Nerd Font Mono", "Symbols Nerd Font", "Cascadia Code", "Fira Code", monospace',
+    )
+    host.style.setProperty(
+      '--term-font-size',
+      'var(--terminal-user-font-size, 14px)',
+    )
     container.appendChild(host)
 
     const darkMq = window.matchMedia('(prefers-color-scheme: dark)')
@@ -250,7 +260,11 @@ export const WTermTerminal = React.memo(function WTermTerminal({
   // changes, so the font size is set as a custom property rather than
   // through an option.
   useEffect(() => {
-    containerRef.current?.style.setProperty('--term-font-size', `${fontSize}px`)
+    containerRef.current?.style.setProperty(
+      '--terminal-user-font-size',
+      `${fontSize}px`,
+    )
+    termRef.current?.fit()
   }, [fontSize])
 
   return (
@@ -259,9 +273,7 @@ export const WTermTerminal = React.memo(function WTermTerminal({
       className={className ?? 'h-full min-h-0 w-full'}
       style={
         {
-          '--term-font-family':
-            '"Geist Mono", "Cascadia Code", "Fira Code", monospace',
-          '--term-font-size': `${fontSize}px`,
+          '--terminal-user-font-size': `${fontSize}px`,
           '--term-line-height': '1.2',
         } as React.CSSProperties
       }

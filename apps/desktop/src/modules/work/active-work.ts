@@ -34,6 +34,7 @@ export function workReason(meta: TabMeta | undefined): WorkReason | null {
   if (!meta) return null
   if (meta.agentState === 'awaiting') return 'awaiting'
   if (meta.agentState === 'in-progress') return 'running'
+  if (meta.nestedShellIdle) return null
   if (meta.processes && meta.processes.length > 0) return 'running'
   if (meta.status === 'running') return 'running'
   return null

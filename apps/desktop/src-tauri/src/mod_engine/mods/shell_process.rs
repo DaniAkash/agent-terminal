@@ -64,19 +64,15 @@ impl Mod for ShellProcessMod {
                 interval.tick().await;
 
                 let cwd = cwd_rx.borrow().clone();
-                let processes = scan_processes(shell_pid).await;
+                let (processes, agent_processes, nested_shell_idle) = scan_processes(shell_pid).await;
 
                 emitter.emit(
                     "shell_process",
                     "process_info",
-                    serde_json::json!({ "processes": processes }),
+                    serde_json::json!({ "processes": processes, "nestedShellIdle": nested_shell_idle }),
                 );
 
-                // Skip agent diffing until the CWD is known — avoids emitting
-                // agent_detected with an empty CWD string on the first scan tick.
-                if let Some(ref cwd) = cwd {
-                    diff_agent_pids(&processes, &mut prev_pids, cwd, &signaler);
-                }
+                diff_agent_pids(&agent_processes, &mut prev_pids, cwd.as_deref().unwrap_or(""), &signaler);
             }
         });
 
@@ -108,7 +104,7 @@ fn diff_agent_pids(
         let cmd = proc.get("command").and_then(|c| c.as_str()).unwrap_or("");
         if let Some(agent_id) = identify_agent(name, cmd) {
             if let Some(pid) = proc.get("pid").and_then(|p| p.as_u64()) {
-                current_pids.insert(agent_id.to_string(), (pid as u32, cmd.to_string()));
+                current_pids.entry(agent_id.to_string()).or_insert((pid as u32, cmd.to_string()));
             }
         }
     }
@@ -163,8 +159,18 @@ fn is_runtime_wrapper(name: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{identify_agent, walk_descendants};
+    use super::{identify_agent, is_interactive_shell, walk_descendants};
     use std::collections::HashMap;
+
+    #[test]
+    fn interactive_shells_are_context_but_scripts_are_tasks() {
+        for command in ["fish", "/usr/bin/fish", "bash -il", "-zsh", "sh --login"] {
+            assert!(is_interactive_shell(command), "{command}");
+        }
+        for command in ["fish -c 'sleep 10'", "bash build.sh", "zsh -lc server", "ping example.com"] {
+            assert!(!is_interactive_shell(command), "{command}");
+        }
+    }
 
     #[test]
     fn direct_process_names_resolve() {
@@ -292,15 +298,30 @@ struct ProcessEntry {
 
 /// Scan for all direct children of `shell_pid` that have been running for at
 /// least 2 seconds, collecting aggregated metrics across the process subtree.
-async fn scan_processes(shell_pid: u32) -> Vec<serde_json::Value> {
+async fn scan_processes(shell_pid: u32) -> (Vec<serde_json::Value>, Vec<serde_json::Value>, bool) {
     if shell_pid == 0 {
-        return Vec::new();
+        return (Vec::new(), Vec::new(), false);
     }
 
     // Step 1: find all direct children of shell_pid
-    let pids = find_children_of_shell(shell_pid).await;
+    let mut pids = find_children_of_shell(shell_pid).await;
+    let mut nested_shell = false;
+    for _ in 0..MAX_DESCENDANT_DEPTH {
+        let args = get_process_args(&pids).await;
+        let mut next = Vec::new();
+        let mut expanded = false;
+        for pid in pids {
+            if args.get(&pid).is_some_and(|cmd| is_interactive_shell(cmd)) {
+                nested_shell = true;
+                expanded = true;
+                next.extend(find_children_of_shell(pid).await);
+            } else { next.push(pid); }
+        }
+        pids = next;
+        if !expanded { break; }
+    }
     if pids.is_empty() {
-        return Vec::new();
+        return (Vec::new(), Vec::new(), nested_shell);
     }
 
     // Step 2: get full cmd args via ps (sysinfo can't read cmd on macOS)
@@ -317,6 +338,8 @@ async fn scan_processes(shell_pid: u32) -> Vec<serde_json::Value> {
     // Without descendant attribution, memory shows only the top launcher's
     // footprint and port scanning misses the server's bound port entirely.
     let descendants = find_descendants(&pids).await;
+    let descendant_pids: Vec<u32> = descendants.iter().map(|(pid, _)| *pid).collect();
+    let descendant_args = get_process_args(&descendant_pids).await;
     let mut attribution: HashMap<u32, u32> = pids.iter().map(|&p| (p, p)).collect();
     for (descendant, root) in &descendants {
         attribution.insert(*descendant, *root);
@@ -335,14 +358,14 @@ async fn scan_processes(shell_pid: u32) -> Vec<serde_json::Value> {
     .unwrap_or_default();
 
     if raw.is_empty() {
-        return Vec::new();
+        return (Vec::new(), Vec::new(), false);
     }
 
     // Step 5: listening ports via lsof TCP, using the pre-built attribution map.
     let metric_pids: Vec<u32> = raw.iter().map(|p| p.0).collect();
     let ports_map = find_listening_ports_per_pid(&metric_pids, &attribution).await;
 
-    raw.into_iter()
+    let processes: Vec<serde_json::Value> = raw.into_iter()
         .map(|(pid, name, cpu_percent, memory_kb, elapsed_time)| {
             let command = args_map.get(&pid).cloned().unwrap_or_default();
             let listening_ports = ports_map.get(&pid).cloned().unwrap_or_default();
@@ -351,7 +374,26 @@ async fn scan_processes(shell_pid: u32) -> Vec<serde_json::Value> {
             })
             .unwrap_or(serde_json::json!(null))
         })
-        .collect()
+        .collect();
+    let mut agents = processes.clone();
+    let mut descendants: Vec<_> = descendant_args.into_iter().collect();
+    descendants.sort_by_key(|(pid, _)| *pid);
+    for (pid, command) in descendants {
+        let executable = command.split_whitespace().next().unwrap_or("");
+        let name = executable.rsplit('/').next().unwrap_or(executable);
+        if identify_agent(name, &command).is_some() {
+            agents.push(serde_json::json!({"pid": pid, "name": name, "command": command}));
+        }
+    }
+    (processes, agents, false)
+}
+
+// Bare interactive shells are session context; shell scripts remain tasks.
+fn is_interactive_shell(command: &str) -> bool {
+    let mut args = command.split_whitespace();
+    let name = args.next().unwrap_or("").rsplit('/').next().unwrap_or("").trim_start_matches('-');
+    matches!(name, "fish" | "bash" | "zsh" | "sh" | "dash" | "ksh")
+        && args.all(|arg| matches!(arg, "-i" | "-l" | "-il" | "-li" | "--interactive" | "--login"))
 }
 
 /// Find PIDs of all direct children of `shell_pid`.
@@ -363,7 +405,7 @@ async fn scan_processes(shell_pid: u32) -> Vec<serde_json::Value> {
 async fn find_children_of_shell(shell_pid: u32) -> Vec<u32> {
     let output = tokio::time::timeout(
         tokio::time::Duration::from_secs(2),
-        tokio::process::Command::new("ps")
+        tokio::process::Command::from(crate::host_env::command("ps"))
             .args(["-ax", "-o", "pid=,ppid=,comm="])
             .output(),
     )
@@ -421,7 +463,7 @@ async fn find_descendants(pids: &[u32]) -> Vec<(u32, u32)> {
     }
     let output = tokio::time::timeout(
         tokio::time::Duration::from_secs(2),
-        tokio::process::Command::new("ps")
+        tokio::process::Command::from(crate::host_env::command("ps"))
             .args(["-ax", "-o", "pid=,ppid="])
             .output(),
     )
@@ -491,7 +533,7 @@ async fn get_process_args(pids: &[u32]) -> HashMap<u32, String> {
     let pid_list = pids.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(",");
     let output = tokio::time::timeout(
         tokio::time::Duration::from_secs(2),
-        tokio::process::Command::new("ps")
+        tokio::process::Command::from(crate::host_env::command("ps"))
             .args(["-p", &pid_list, "-o", "pid=,args="])
             .output(),
     )
@@ -619,7 +661,7 @@ async fn find_listening_ports_per_pid(
 
     let output = tokio::time::timeout(
         tokio::time::Duration::from_secs(3),
-        tokio::process::Command::new("lsof")
+        tokio::process::Command::from(crate::host_env::command("lsof"))
             .args(["-nP", "-a", "-p", &pid_arg, "-iTCP", "-sTCP:LISTEN", "-Fpn"])
             .output(),
     )

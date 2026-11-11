@@ -1,0 +1,17 @@
+name: agent-terminal
+base: core22
+version: '0.0.0'
+summary: A project workspace for terminals and coding agents
+description: |
+  Agent Terminal groups terminal sessions by project and tracks coding agents.
+grade: stable
+confinement: classic
+architectures:
+  - build-on: amd64
+apps:
+  agent-terminal:
+    command: AppRun
+parts:
+  app:
+    plugin: dump
+    source: app

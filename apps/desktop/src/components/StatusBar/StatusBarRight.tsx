@@ -261,7 +261,7 @@ export function StatusBarRight() {
     const model = parseModelFlag(agentCmd)
     const ports = listeningPorts ?? []
     items.push(...buildProcItems(proc, ports, model))
-  } else if (status !== 'idle') {
+  } else if (status !== 'idle' && !meta.nestedShellIdle) {
     // ── Tab with no process data yet — show status text ───────────────────
     const statusColor: Record<string, string> = {
       running: 'var(--terminal-green)',

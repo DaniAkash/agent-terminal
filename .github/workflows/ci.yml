@@ -22,14 +22,8 @@ name: CI
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-    # Integration branches that stack PRs:
-    # - main: production target.
-    # - feat/desktop-sidecar-substrate: epic branch for the mobile-companion
-    #   server stack. Sub-step PRs target this branch and only land in main
-    #   once the whole stack is ready.
     branches:
       - main
-      - feat/desktop-sidecar-substrate
   push:
     # Cache-warming trigger only. Main pushes go through PR review already,
     # so re-running the same checks is defensive, not a second gate.
@@ -254,3 +248,316 @@ jobs:
       # at once.
       - name: bun run check
         run: bun run check
+
+  # Which parts of the tree this run touches.
+  #
+  # The Linux matrix below is 15 jobs, and most pull requests cannot
+  # affect it: a companion or renderer change has no bearing on whether
+  # a .deb installs on Fedora. Deciding that here keeps a routine pull
+  # request at one job.
+  #
+  # This is a job rather than a `paths:` filter on the trigger because
+  # the approval gate lives inside the run. A workflow level filter
+  # would skip the whole run, approval included, which is the opposite
+  # of one approval covering every check.
+  scope:
+    name: Scope
+    needs: approve
+    if: always() && (needs.approve.result == 'success' || needs.approve.result == 'skipped')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # The workflow default is `contents: read`, which leaves every other
+    # scope at none. Listing a pull request's files needs this one, and
+    # granting it per job keeps the default restrictive everywhere else.
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      native: ${{ steps.scope.outputs.native }}
+      bundle: ${{ steps.scope.outputs.bundle }}
+    steps:
+      - name: Decide whether the Linux matrix can be affected
+        id: scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          # Anything that is not a pull request, so a push to main, the
+          # weekly cache cron, or a manual dispatch, runs the full
+          # matrix. Those are the refs releases are cut from and they
+          # must never quietly lose Linux coverage.
+          # Anything that is not a pull request, so a push to main, the
+          # weekly cache cron, or a manual dispatch, runs everything.
+          # Those are the refs releases are cut from, and they are also
+          # the net for the narrowing below.
+          if [ -z "${PR_NUMBER:-}" ]; then
+            echo 'native=true' >> "$GITHUB_OUTPUT"
+            echo 'bundle=true' >> "$GITHUB_OUTPUT"
+            echo 'Not a pull request, running everything.'
+            exit 0
+          fi
+          files=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" \
+            --paginate -q '.[].filename')
+          match() { printf '%s\n' "$files" | grep -Eq "$1"; }
+
+          # Native: anything that can change how the app behaves on a
+          # given distro. Drives the shell matrix and the macOS
+          # regression, which are cheap and catch logic regressions.
+          if match '^(apps/desktop/src-tauri/|apps/desktop/shell-env-tests/|apps/desktop/Cargo\.lock$|bun\.lock$|\.bun-version$|\.github/workflows/ci\.yml$)'; then
+            echo 'native=true' >> "$GITHUB_OUTPUT"
+            echo 'native=true: native or lockfile paths changed.'
+          else
+            echo 'native=false' >> "$GITHUB_OUTPUT"
+            echo 'native=false: nothing native changed.'
+          fi
+
+          # Bundle: only what can change how the app is packaged, or
+          # whether the packaged app starts. Drives the release build
+          # and the smoke matrix, which are 9 of the 15 jobs here.
+          #
+          # Plain Rust sources are deliberately absent. The check job
+          # already runs `tauri build --no-bundle` on Linux for every
+          # pull request, so a compile break is caught there and does
+          # not need a release build and eight containers to prove.
+          # What is listed is what `--no-bundle` skips: the bundler
+          # config, the icons and resources it embeds, the sidecar it
+          # ships, and the dependency manifests that decide which
+          # runtime libraries the packages end up needing.
+          if match '^(packaging/|apps/desktop/src-tauri/tauri[^/]*\.conf\.json$|apps/desktop/src-tauri/icons/|apps/desktop/src-tauri/sidecar/|apps/desktop/src-tauri/capabilities/|apps/desktop/src-tauri/Cargo\.toml$|apps/desktop/Cargo\.lock$|bun\.lock$|\.bun-version$|\.github/workflows/ci\.yml$)'; then
+            echo 'bundle=true' >> "$GITHUB_OUTPUT"
+            echo 'bundle=true: packaging, resources or dependencies changed.'
+          else
+            echo 'bundle=false' >> "$GITHUB_OUTPUT"
+            echo 'bundle=false: nothing that affects packaging changed.'
+          fi
+
+  # Production PATH and environment helpers, then bash, fish and zsh
+  # driven through real PTYs, on each distro family we ship packages for.
+  linux-shells:
+    name: Shells (${{ matrix.image }})
+    needs: [approve, scope]
+    if: >-
+      always()
+      && (needs.approve.result == 'success' || needs.approve.result == 'skipped')
+      && needs.scope.outputs.native == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: ubuntu:22.04
+            family: debian
+          - image: ubuntu:24.04
+            family: debian
+          - image: debian:12
+            family: debian
+          - image: debian:13
+            family: debian
+          - image: fedora:latest
+            family: fedora
+          - image: archlinux:base-devel
+            family: arch
+    container: ${{ matrix.image }}
+    env:
+      DISTRO_FAMILY: ${{ matrix.family }}
+      CARGO_TARGET_DIR: /tmp/shell-env-target
+    steps:
+      - name: Install shell test dependencies
+        run: |
+          case "$DISTRO_FAMILY" in
+            debian)
+              apt-get update
+              DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl git gcc libc6-dev python3 nodejs bash fish zsh
+              ;;
+            fedora)
+              dnf install -y ca-certificates curl git gcc glibc-devel python3 nodejs bash fish zsh
+              ;;
+            arch)
+              pacman -Syu --noconfirm ca-certificates curl git gcc python nodejs bash fish zsh
+              ;;
+          esac
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: 1.95.0
+      - name: Test production PATH and environment helpers
+        run: cargo test --locked --manifest-path apps/desktop/shell-env-tests/Cargo.toml
+      - name: Build PTY environment probe
+        run: cargo build --locked --manifest-path apps/desktop/shell-env-tests/Cargo.toml
+      - name: Test bash, fish and zsh in real PTYs
+        run: python3 -E apps/desktop/shell-env-tests/test_pty.py --probe /tmp/shell-env-target/debug/agent-terminal-shell-env-tests
+
+  # The repository's only macOS coverage: the check job above runs on
+  # ubuntu-latest. Deliberately a sibling of the Linux jobs and a
+  # prerequisite of nothing. It used to gate `packages`, which meant a
+  # cancelled or queued macOS runner skipped Linux packaging it has no
+  # bearing on, and macOS is capped at 5 concurrent jobs account wide.
+  macos-regression:
+    name: macOS shell regression
+    needs: [approve, scope]
+    if: >-
+      always()
+      && (needs.approve.result == 'success' || needs.approve.result == 'skipped')
+      && needs.scope.outputs.native == 'true'
+    runs-on: macos-15
+    timeout-minutes: 30
+    env:
+      CARGO_BUILD_BUILD_DIR: ${{ github.workspace }}/apps/desktop/target
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: 1.95.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop -> target
+      - run: bun install --frozen-lockfile
+      - name: Check macOS startup and environment invariants
+        working-directory: apps/desktop
+        run: cargo test --locked --lib macos_environment_tests
+
+  # Build the real AppImage, .deb and .rpm.
+  #
+  # Deliberately NOT gated on the shell matrix. Waiting on it would save
+  # a bundle build whenever a shell test fails, but it would also mean a
+  # single shell failure reports nothing about whether the packages even
+  # build, and one run is supposed to surface every failure at once so
+  # they can all be fixed together. Nothing flows from the shell jobs to
+  # this one, so the edge was ordering, not a dependency.
+  linux-packages:
+    name: Linux packages
+    needs: [approve, scope]
+    if: >-
+      always()
+      && (needs.approve.result == 'success' || needs.approve.result == 'skipped')
+      && needs.scope.outputs.bundle == 'true'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    env:
+      CARGO_BUILD_BUILD_DIR: ${{ github.workspace }}/apps/desktop/target
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test Linux release packaging
+        run: python3 -m unittest discover -s packaging -p 'test_*.py'
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: 1.95.0
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf rpm
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop -> target
+      - run: bun install --frozen-lockfile
+      - name: Compile the terminal sidecar
+        run: bun build apps/desktop/src-tauri/sidecar/index.js --compile --outfile apps/desktop/src-tauri/sidecar/sidecar-bin
+      - name: Build Linux packages
+        working-directory: apps/desktop
+        run: bunx tauri build --config src-tauri/tauri.linux-bundle.conf.json
+      - name: Check AppImage contents
+        working-directory: apps/desktop
+        run: |
+          image=$(find target/release/bundle/appimage -name '*.AppImage' -print -quit)
+          test -n "$image"
+          chmod +x "$image"
+          "$image" --appimage-extract >/dev/null
+          test -x squashfs-root/AppRun
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-x86_64-packages
+          if-no-files-found: error
+          path: |
+            apps/desktop/target/release/bundle/appimage/*.AppImage
+            apps/desktop/target/release/bundle/deb/*.deb
+            apps/desktop/target/release/bundle/rpm/*.rpm
+
+  # Actually launch what was built, as a non-root user, on X11 and
+  # Wayland. The only job here that proves the package runs rather than
+  # merely builds.
+  #
+  # This one genuinely cannot run in parallel with the job above: it
+  # downloads that job's artifact and starts the binary from it, so with
+  # no build there is nothing to test. Every other job in this workflow
+  # is a sibling precisely so a failure anywhere still leaves the rest
+  # reporting; this is the single edge that is a real dependency rather
+  # than an ordering preference, so do not try to remove it.
+  appimage-smoke:
+    name: AppImage (${{ matrix.image }}, ${{ matrix.backend }})
+    needs: linux-packages
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { image: 'ubuntu:22.04', family: debian, backend: x11 }
+          - { image: 'ubuntu:24.04', family: debian, backend: x11 }
+          - { image: 'debian:12', family: debian, backend: x11 }
+          - { image: 'debian:13', family: debian, backend: x11 }
+          - { image: 'fedora:latest', family: fedora, backend: x11 }
+          - { image: 'archlinux:base-devel', family: arch, backend: x11 }
+          - { image: 'ubuntu:22.04', family: debian, backend: wayland }
+          - { image: 'ubuntu:24.04', family: debian, backend: wayland }
+    container: ${{ matrix.image }}
+    env:
+      DISTRO_FAMILY: ${{ matrix.family }}
+      DISPLAY_BACKEND: ${{ matrix.backend }}
+    steps:
+      - name: Install desktop runtime dependencies
+        run: |
+          case "$DISTRO_FAMILY" in
+            debian)
+              for attempt in 1 2 3; do
+                if apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates git python3 libwebkit2gtk-4.1-0 libayatana-appindicator3-1 xdotool openbox xvfb xauth dbus weston; then
+                  break
+                fi
+                if [ "$attempt" -eq 3 ]; then
+                  echo "Desktop dependency installation failed after $attempt attempts" >&2
+                  exit 1
+                fi
+                echo "Refreshing package indexes before retry $((attempt + 1))"
+              done
+              ;;
+            fedora)
+              dnf install -y ca-certificates git python3 webkit2gtk4.1 libayatana-appindicator-gtk3 xdotool openbox xorg-x11-server-Xvfb xorg-x11-xauth dbus-daemon weston
+              ;;
+            arch)
+              pacman -Syu --noconfirm ca-certificates git python webkit2gtk-4.1 libayatana-appindicator xdotool openbox xorg-server-xvfb xorg-xauth dbus weston
+              ;;
+          esac
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-x86_64-packages
+          path: /tmp/linux-packages
+      - name: Start AppImage as a regular desktop user
+        run: |
+          useradd --create-home smoke
+          image=$(find /tmp/linux-packages -name '*.AppImage' -print -quit)
+          test -n "$image"
+          chmod +x "$image"
+          runuser -u smoke -- python3 -E apps/desktop/shell-env-tests/smoke_appimage.py --image "$image" --backend "$DISPLAY_BACKEND"
+      - name: Install and start native package
+        if: matrix.family != 'arch'
+        run: |
+          case "$DISTRO_FAMILY" in
+            debian)
+              package=$(find /tmp/linux-packages -name '*.deb' -print -quit)
+              apt-get install -y "$package"
+              ;;
+            fedora)
+              package=$(find /tmp/linux-packages -name '*.rpm' -print -quit)
+              dnf install -y "$package"
+              ;;
+          esac
+          test -x /usr/bin/agent-terminal
+          runuser -u smoke -- python3 -E apps/desktop/shell-env-tests/smoke_appimage.py --binary /usr/bin/agent-terminal --backend "$DISPLAY_BACKEND"

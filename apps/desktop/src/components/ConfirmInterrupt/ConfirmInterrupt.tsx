@@ -1,6 +1,7 @@
 import { useStore } from '@nanostores/react'
-import { exit, relaunch } from '@tauri-apps/plugin-process'
+import { relaunch } from '@tauri-apps/plugin-process'
 import { TriangleAlert } from 'lucide-react'
+import { useState } from 'react'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,6 +22,7 @@ import {
 import { type ActiveWork, collectActiveWork } from '@/modules/work/active-work'
 import { confirmCloseTab } from '@/modules/work/close-tab'
 import { interruptCopy } from '@/modules/work/interrupt.copy'
+import { quitApp } from '@/modules/work/quit-app'
 
 /**
  * The one confirmation behind quitting, closing a tab and restarting for
@@ -36,6 +38,8 @@ export function ConfirmInterrupt() {
 }
 
 function InterruptDialog({ intent }: { intent: InterruptIntent }) {
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const projects = useStore($projects)
   const tabMeta = useStore($tabMeta)
 
@@ -48,24 +52,34 @@ function InterruptDialog({ intent }: { intent: InterruptIntent }) {
       : all
   const copy = interruptCopy(intent, work)
 
-  function onConfirm() {
-    dismissInterrupt()
-    if (intent.kind === 'quit') {
-      void exit(0)
-      return
+  async function onConfirm() {
+    if (pending) return
+    setPending(true)
+    setError(null)
+    try {
+      if (intent.kind === 'quit') {
+        await quitApp()
+        return
+      }
+      if (intent.kind === 'restart') {
+        await relaunch()
+        return
+      }
+      confirmCloseTab(intent.projectId, intent.tabId)
+      dismissInterrupt()
+    } catch (cause) {
+      setError(
+        `Unable to ${intent.kind === 'quit' ? 'quit' : 'complete this action'}: ${String(cause)}`,
+      )
+      setPending(false)
     }
-    if (intent.kind === 'restart') {
-      void relaunch()
-      return
-    }
-    confirmCloseTab(intent.projectId, intent.tabId)
   }
 
   return (
     <AlertDialog
       open
       onOpenChange={(open) => {
-        if (!open) dismissInterrupt()
+        if (!open && !pending) dismissInterrupt()
       }}
     >
       <AlertDialogContent className="flex max-h-[min(32rem,calc(100vh-4rem))] flex-col gap-0 sm:max-w-md">
@@ -97,11 +111,22 @@ function InterruptDialog({ intent }: { intent: InterruptIntent }) {
         )}
 
         <AlertDialogFooter className="mt-4 shrink-0">
-          <AlertDialogCancel>{copy.cancel}</AlertDialogCancel>
-          <AlertDialogAction variant="destructive" onClick={onConfirm}>
+          <AlertDialogCancel disabled={pending}>
+            {copy.cancel}
+          </AlertDialogCancel>
+          <AlertDialogAction
+            disabled={pending}
+            variant="destructive"
+            onClick={onConfirm}
+          >
             {copy.confirm}
           </AlertDialogAction>
         </AlertDialogFooter>
+        {error && (
+          <p role="alert" className="text-destructive mt-3 text-sm">
+            {error}
+          </p>
+        )}
       </AlertDialogContent>
     </AlertDialog>
   )

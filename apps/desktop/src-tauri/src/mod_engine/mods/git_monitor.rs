@@ -299,7 +299,7 @@ async fn query_git_info(cwd: &str) -> serde_json::Value {
 async fn run_git(args: &[&str], cwd: &str) -> Option<String> {
     let output = tokio::time::timeout(
         tokio::time::Duration::from_secs(5),
-        tokio::process::Command::new("git")
+        tokio::process::Command::from(crate::host_env::command("git"))
             .args(args)
             .current_dir(cwd)
             .output(),
@@ -321,7 +321,7 @@ async fn run_gh_pr(root: &str) -> Option<serde_json::Value> {
         // stays well within the 5s timeout. The extra fields keep the PR
         // pill's checks dot + tooltip breakdown coming through the same call.
         tokio::time::Duration::from_secs(5),
-        tokio::process::Command::new("gh")
+        tokio::process::Command::from(crate::host_env::command("gh"))
             .args([
                 "pr",
                 "view",

@@ -124,10 +124,14 @@ function dispatch({
       break
     }
     case 'process_info': {
-      const { processes } = data as { processes: ProcessInfo[] }
+      const { processes, nestedShellIdle } = data as {
+        processes: ProcessInfo[]
+        nestedShellIdle?: boolean
+      }
       const ports = processes.flatMap((p) => p.listeningPorts ?? [])
       updateTabMeta(tabId, {
         processes,
+        nestedShellIdle: nestedShellIdle ?? false,
         listeningPorts: [...new Set(ports)],
       })
       break

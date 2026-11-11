@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Agent Terminal
+Exec=agent-terminal
+Icon=${SNAP}/meta/gui/agent-terminal.png
+Terminal=false
+Categories=System;TerminalEmulator;Development;

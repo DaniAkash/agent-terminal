@@ -1,0 +1,23 @@
+# Maintainer: @MAINTAINER@
+pkgname=agent-terminal-bin
+pkgver=@VERSION@
+pkgrel=1
+pkgdesc='A project workspace for terminals and coding agents'
+arch=('x86_64')
+url='https://github.com/@REPOSITORY@'
+license=('MIT')
+depends=('webkit2gtk-4.1' 'gtk3' 'openssl' 'libayatana-appindicator' 'xdg-utils' 'hicolor-icon-theme' 'procps-ng' 'lsof')
+provides=('agent-terminal')
+conflicts=('agent-terminal')
+options=('!strip')
+source=("agent-terminal.deb::https://github.com/@REPOSITORY@/releases/download/v${pkgver}/agent-terminal_${pkgver}_amd64.deb" 'LICENSE')
+sha256sums=('@SHA256@' '@LICENSE_SHA256@')
+noextract=('agent-terminal.deb')
+
+package() {
+  local payload
+  payload=$(bsdtar -tf "$srcdir/agent-terminal.deb" | sed -n '/^data\.tar\./p')
+  test -n "$payload"
+  bsdtar -xOf "$srcdir/agent-terminal.deb" "$payload" | bsdtar -xf - -C "$pkgdir"
+  install -Dm644 "$srcdir/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

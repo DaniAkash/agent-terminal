@@ -1,7 +1,7 @@
 import { atom } from 'nanostores'
 
 const STORAGE_KEY = 'agent-terminal:font-size'
-const DEFAULT = 13
+const DEFAULT = 14
 const MIN = 8
 const MAX = 32
 

@@ -426,6 +426,20 @@ fn build_shell_command(
     tab_id: &str,
 ) -> CommandBuilder {
     let mut cmd = CommandBuilder::new(shell_path);
+    for (key, value) in crate::host_env::overrides() {
+        match value {
+            Some(value) => cmd.env(key, value),
+            None => cmd.env_remove(key),
+        }
+    }
+    #[cfg(target_os = "linux")]
+    if let Some(home) = dirs::home_dir() {
+        if let Some(path) = crate::linux_path::shell_path(
+            &home, crate::identity::NAMESPACE, cmd.get_env("PATH"),
+        ) {
+            cmd.env("PATH", path);
+        }
+    }
     cmd.env("AGENT_TERMINAL_TAB_ID", tab_id);
     // Plugin-based agents (opencode) report over HTTP from their own runtime,
     // so they need the hook port at runtime. The shell hook scripts hardcode it
@@ -480,9 +494,53 @@ fn build_shell_command(
             cmd.arg("--init-file");
             cmd.arg(&init);
         }
+    } else if shell_name == "fish" {
+        if let Some(init) = dirs::home_dir()
+            .map(|h| h.join(".config").join(crate::identity::NAMESPACE).join("fish-integration.fish"))
+        {
+            cmd.env("AGENT_TERMINAL_FISH_INTEGRATION", init);
+            cmd.arg("--init-command");
+            cmd.arg("source $AGENT_TERMINAL_FISH_INTEGRATION");
+        }
     }
 
     cmd
+}
+
+/// Linux GUI launch environments can inherit a stale SHELL from a parent.
+/// Prefer the login shell registered for the current account, then SHELL.
+fn default_shell() -> String {
+    #[cfg(target_os = "linux")]
+    {
+        let account_shell = crate::host_env::command("id").arg("-u").output().ok()
+            .filter(|output| output.status.success())
+            .and_then(|output| String::from_utf8(output.stdout).ok())
+            .and_then(|uid| crate::host_env::command("getent").args(["passwd", uid.trim()]).output().ok())
+            .filter(|output| output.status.success())
+            .and_then(|output| String::from_utf8(output.stdout).ok())
+            .and_then(|entry| entry.trim().rsplit(':').next().map(str::to_owned))
+            .filter(|path| path.starts_with('/') && std::path::Path::new(path).is_file());
+        if let Some(shell) = account_shell { return shell; }
+    }
+    std::env::var("SHELL").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| {
+        if cfg!(target_os = "macos") { "/bin/zsh" } else { "/bin/sh" }.to_string()
+    })
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod macos_environment_tests {
+    use super::build_shell_command;
+
+    #[test]
+    fn macos_keeps_inherited_path_and_shell_arguments() {
+        let path = std::env::var_os("PATH");
+        let zsh = build_shell_command("/bin/zsh", None, "regression-test");
+        assert_eq!(zsh.get_env("PATH"), path.as_deref());
+        assert_eq!(zsh.get_argv().last().and_then(|v| v.to_str()), Some("-l"));
+        let bash = build_shell_command("/bin/bash", None, "regression-test");
+        assert_eq!(bash.get_env("PATH"), path.as_deref());
+        assert!(bash.get_argv().iter().any(|v| v == "--init-file"));
+    }
 }
 
 // Long signature is the trade-off for keeping spawn_pty callable from both
@@ -513,9 +571,7 @@ pub fn spawn_pty(
         .openpty(PtySize { rows: 24, cols: 80, pixel_width: 0, pixel_height: 0 })
         .map_err(|e| e.to_string())?;
 
-    let shell_path = shell.unwrap_or_else(|| {
-        std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string())
-    });
+    let shell_path = shell.filter(|s| !s.is_empty()).unwrap_or_else(default_shell);
 
     let cmd = build_shell_command(&shell_path, cwd.as_deref(), &tab_id);
     let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;

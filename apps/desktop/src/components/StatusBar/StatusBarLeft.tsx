@@ -46,7 +46,7 @@ function computeWorkspaceCounts(
       (m) => m.type === 'agent' && m.status === 'running',
     ).length,
     tasksRunning: metas.filter(
-      (m) => m.type === 'shell' && m.status === 'running',
+      (m) => m.type === 'shell' && m.status === 'running' && !m.nestedShellIdle,
     ).length,
     tasksFailed: metas.filter((m) => m.status === 'error').length,
   }

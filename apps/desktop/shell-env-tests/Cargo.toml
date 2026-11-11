@@ -1,0 +1,15 @@
+[package]
+name = "agent-terminal-shell-env-tests"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# A small independent harness lets distro CI exercise the actual production
+# environment helpers without compiling/linking the desktop GUI.
+[workspace]
+
+[dependencies]
+serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3"
