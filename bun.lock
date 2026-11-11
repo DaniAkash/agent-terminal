@@ -71,7 +71,7 @@
     },
     "apps/desktop": {
       "name": "@agent-terminal/desktop",
-      "version": "0.6.0",
+      "version": "0.7.0",
       "dependencies": {
         "@agent-terminal/core-ui": "workspace:*",
         "@base-ui/react": "^1.9.0",
