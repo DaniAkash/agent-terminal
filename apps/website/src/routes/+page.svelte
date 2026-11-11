@@ -16,7 +16,8 @@ import {
   Monitor,
   SquaresFour,
 } from 'phosphor-svelte'
-import { siApple, siGithub, siGoogleplay } from 'simple-icons'
+import { siApple, siGithub, siGoogleplay, siLinux } from 'simple-icons'
+import { onMount } from 'svelte'
 import AsciiField from '#lib/AsciiField.svelte'
 import InstallTerminal from '#lib/InstallTerminal.svelte'
 import RibbonField from '#lib/RibbonField.svelte'
@@ -32,6 +33,14 @@ const agents = [
 ]
 
 let copied = $state(false)
+let downloadPlatform = $state<'macos' | 'linux' | null>(null)
+onMount(() => {
+  const platform = navigator.userAgent
+  if (/Macintosh|Mac OS X/.test(platform) && !/iPhone|iPad|iPod/.test(platform))
+    downloadPlatform = 'macos'
+  else if (/Linux/.test(platform) && !/Android/.test(platform))
+    downloadPlatform = 'linux'
+})
 const install = 'brew install --cask daniakash/tap/agent-terminal'
 async function copyInstall() {
   await navigator.clipboard.writeText(install)
@@ -67,15 +76,28 @@ async function copyInstall() {
       >
     </h1>
     <p class="hero-copy">
-      An open-source macOS terminal for AI coding agents. Keep your projects,
-      sessions, and everything in between in view.
+      An open-source terminal for AI coding agents on macOS and Linux. Keep your
+      projects, sessions, and everything in between in view.
     </p>
     <div class="hero-actions">
       <a
         class="button button-primary"
-        href="https://github.com/DaniAkash/agent-terminal/releases/latest/download/agent-terminal-aarch64.dmg"
-        ><span class="simple-icon">{@html siApple.svg}</span>
-        Download for macOS <ArrowDown size={16} weight="bold" /></a
+        href={downloadPlatform
+          ? `/downloads#${downloadPlatform}`
+          : '/downloads'}
+        >{#if downloadPlatform}
+          <span class="simple-icon"
+            >{@html downloadPlatform === 'macos'
+              ? siApple.svg
+              : siLinux.svg}</span
+          >
+        {/if}
+        {downloadPlatform === 'macos'
+          ? 'Download for macOS'
+          : downloadPlatform === 'linux'
+            ? 'Download for Linux'
+            : 'Download Agent Terminal'}
+        <ArrowDown size={16} weight="bold" /></a
       ><a
         class="button button-secondary"
         href="https://github.com/DaniAkash/agent-terminal"
@@ -87,10 +109,7 @@ async function copyInstall() {
     </div>
     <p class="availability">
       Free and open source <span>·</span> macOS 13+ <span>·</span>
-      <a
-        href="https://github.com/DaniAkash/agent-terminal/releases/latest/download/agent-terminal-x64.dmg"
-        >Intel download</a
-      >
+      <a href="/downloads">Linux x86-64 experimental</a>
     </p>
     <div class="hero-visual">
       <div class="hero-image-frame">
@@ -244,7 +263,7 @@ async function copyInstall() {
         <div class="section-kicker">THE MOBILE COMPANION</div>
         <h2>Your terminal,<br><em>in your pocket.</em></h2>
         <p>
-          Pair your phone with your Mac over your local network. See your
+          Pair your phone with your desktop over your local network. See your
           projects, open a terminal, and keep working with your agents from
           wherever you are.
         </p>
@@ -343,7 +362,7 @@ async function copyInstall() {
           <a
             href="https://github.com/DaniAkash/agent-terminal/releases/latest/download/agent-terminal-x64.dmg"
             >Intel</a
-          >.
+          >. <a href="/downloads">Explore all downloads, including Linux</a>.
         </p>
       </div>
     </div>
@@ -392,7 +411,8 @@ async function copyInstall() {
         </summary>
         <p>
           Agent Terminal is stable on macOS 13 and later, on both Apple Silicon
-          and Intel. Linux and Windows need more testing and contributions.
+          and Intel. Linux x86-64 builds are experimental; Windows needs more
+          testing and contributions. <a href="/downloads">Explore downloads.</a>
         </p>
       </details>
       <details>
@@ -422,11 +442,8 @@ async function copyInstall() {
     <div class="section-kicker">YOUR AGENTS ARE READY</div>
     <h2>A better home for<br>your <em>best work.</em></h2>
     <p>Bring a little more clarity to your command line.</p>
-    <a
-      class="button button-primary"
-      href="https://github.com/DaniAkash/agent-terminal/releases/latest/download/agent-terminal-aarch64.dmg"
-      ><span class="simple-icon">{@html siApple.svg}</span>
-      Download for macOS <ArrowDown size={16} weight="bold" /></a
-    ><span class="closing-note">FREE & OPEN SOURCE · MADE FOR MACOS</span>
+    <a class="button button-primary" href="/downloads"
+      >Download Agent Terminal <ArrowDown size={16} weight="bold" /></a
+    ><span class="closing-note">FREE & OPEN SOURCE · MACOS & LINUX</span>
   </section>
 </main>

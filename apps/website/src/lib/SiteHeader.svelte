@@ -4,6 +4,7 @@ import {
   BookOpen,
   CaretDown,
   ClockCounterClockwise,
+  DownloadSimple,
   Robot,
   SquaresFour,
   Star,
@@ -17,17 +18,20 @@ let mobileMenu: HTMLDetailsElement
 const links = [
   { label: 'Features', href: '/#features', icon: SquaresFour },
   { label: 'Agents', href: '/agents', icon: Robot },
+  { label: 'Downloads', href: '/downloads', icon: DownloadSimple },
   { label: 'Changelog', href: '/changelog', icon: ClockCounterClockwise },
   { label: 'Docs', href: '/docs', icon: BookOpen },
 ]
 let active = $derived(
   page.url.pathname === '/agents'
     ? 'Agents'
-    : page.url.pathname === '/changelog'
-      ? 'Changelog'
-      : page.url.pathname === '/docs'
-        ? 'Docs'
-        : 'Features',
+    : page.url.pathname === '/downloads'
+      ? 'Downloads'
+      : page.url.pathname === '/changelog'
+        ? 'Changelog'
+        : page.url.pathname === '/docs'
+          ? 'Docs'
+          : 'Features',
 )
 function closeMenu() {
   mobileMenu.open = false

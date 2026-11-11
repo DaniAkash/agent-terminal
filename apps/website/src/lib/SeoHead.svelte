@@ -25,7 +25,7 @@ let schema = $derived(
             url: `${SITE_URL}/`,
             description: pages['/'].description,
             applicationCategory: 'DeveloperApplication',
-            operatingSystem: 'macOS 13 or later',
+            operatingSystem: 'macOS 13 or later, Linux (experimental)',
             isAccessibleForFree: true,
             downloadUrl: 'https://github.com/DaniAkash/agent-terminal/releases',
             softwareHelp: `${SITE_URL}/docs`,
