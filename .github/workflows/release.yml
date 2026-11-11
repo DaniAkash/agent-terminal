@@ -85,6 +85,16 @@ jobs:
           cp "$deb" "linux-assets/agent-terminal_${version}_amd64.deb"
           cp "$image" linux-assets/
           cp apps/desktop/target/release/bundle/rpm/*.rpm linux-assets/
+          # Version-less copies so `releases/latest/download/<name>` keeps
+          # resolving after the next version bump, which is what the README
+          # download buttons rely on. The two .dmg files already get this
+          # treatment; without it a Linux link works until the next release
+          # and then 404s. The versioned names stay for anyone pinning.
+          rpm=$(find apps/desktop/target/release/bundle/rpm -name '*.rpm' -print -quit)
+          test -n "$rpm"
+          cp "$deb" linux-assets/agent-terminal-amd64.deb
+          cp "$image" linux-assets/agent-terminal-amd64.AppImage
+          cp "$rpm" linux-assets/agent-terminal-x86_64.rpm
           chmod +x "$image"
           image=$(realpath "$image")
           (cd packaging/snap && "$image" --appimage-extract > /dev/null && mv squashfs-root app)
