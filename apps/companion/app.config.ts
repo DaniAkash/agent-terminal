@@ -134,6 +134,24 @@ const config: ExpoConfig = {
       {
         android: {
           networkSecurityConfig: './network-security-config.xml',
+          // Dex is the largest thing the user actually downloads: 49.8 MB
+          // uncompressed in the 1.3.0 bundle, against 4.5 MB of JS and a
+          // per-ABI slice of native code. R8 is the only thing that
+          // shrinks it, since it leaves the Hermes bundle and the .so
+          // files alone.
+          //
+          // It also ends the Play warning about a missing deobfuscation
+          // file. That warning is not about a mapping that failed to
+          // upload, it is about there having been nothing to map: with
+          // minification off, no mapping exists. Once R8 runs, the
+          // Android Gradle Plugin writes the mapping into the bundle's
+          // own metadata and Play reads it from there, the same route the
+          // native debug symbols already take in withAndroidRelease.
+          enableMinifyInReleaseBuilds: true,
+          // Only legal alongside minification, and the two are worth
+          // having together: the resource shrinker uses R8's reachability
+          // analysis to decide what is unused.
+          enableShrinkResourcesInReleaseBuilds: true,
         },
       },
     ],
