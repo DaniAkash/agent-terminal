@@ -5178,6 +5178,12 @@ body:has(.home-page) .site-footer {
 .footer-bottom {
   align-items: center;
 }
+.footer-legal {
+  margin-left: auto;
+}
+.footer-legal:hover {
+  color: #ddd;
+}
 .footer-product-hunt img {
   display: block;
   width: 150px;

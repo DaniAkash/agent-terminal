@@ -26,4 +26,9 @@ export const pages: Record<string, { title: string; description: string }> = {
     description:
       'Follow Agent Terminal releases, features, and fixes in a changelog sourced from the project’s GitHub releases.',
   },
+  '/privacy': {
+    title: 'Privacy Policy for Agent Terminal',
+    description:
+      'Agent Terminal runs no servers, accounts, or analytics. Read exactly what the macOS and Linux desktop app and the iOS and Android companions keep on your device, and the few things that leave it.',
+  },
 }

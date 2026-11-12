@@ -10,6 +10,7 @@ Agent Terminal is stable on macOS 13 or later with Zsh. Experimental Linux x86-6
 - [Downloads](https://agent-terminal.org/downloads): Latest stable macOS and Linux packages from GitHub.
 - [Agent integrations](https://agent-terminal.org/agents): Support status, launch commands, and setup links for coding agents.
 - [Changelog](https://agent-terminal.org/changelog): Published release notes from GitHub.
+- [Privacy policy](https://agent-terminal.org/privacy): What the desktop app and the mobile companions do and do not send off your device.
 - [GitHub repository](https://github.com/DaniAkash/agent-terminal): Source code, README, issues, and releases.
 - [Agent Usage limits](https://github.com/DaniAkash/agent-terminal/blob/main/docs/agent-usage.md): Provider quota sources, settings, and troubleshooting.
 - [Contributing](https://github.com/DaniAkash/agent-terminal/blob/main/CONTRIBUTING.md): Development setup and adding agent integrations.

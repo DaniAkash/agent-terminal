@@ -65,5 +65,6 @@ import { siGithub, siX } from 'simple-icons'
   </div>
   <div class="wrap footer-bottom">
     <span>© 2026 AGENT TERMINAL CONTRIBUTORS · OPEN SOURCE UNDER MIT</span>
+    <a class="footer-legal" href="/privacy">PRIVACY POLICY</a>
   </div>
 </footer>
