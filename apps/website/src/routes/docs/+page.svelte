@@ -2,6 +2,7 @@
 import { ArrowUpRight, BookOpen, Check, Copy } from 'phosphor-svelte'
 import { onMount } from 'svelte'
 import { siApple, siIntel } from 'simple-icons'
+import LinuxInstallation from '#lib/LinuxInstallation.svelte'
 let activeSection = $state('overview')
 
 let copied = $state(false)
@@ -14,6 +15,7 @@ async function copy() {
 const sections = [
   { label: 'Overview', id: 'overview' },
   { label: 'Installation', id: 'installation' },
+  { label: 'Linux installation', id: 'linux-installation' },
   { label: 'Projects & tabs', id: 'projects' },
   { label: 'Agent integrations', id: 'agents' },
   { label: 'Status bar', id: 'status-bar' },
@@ -149,6 +151,7 @@ onMount(() => {
           context around them.
         </p>
       </section>
+      <LinuxInstallation />
       <section class="docs-section" id="projects">
         <span class="docs-kicker">02 / WORKSPACE</span>
         <h2>Projects and tabs</h2>
