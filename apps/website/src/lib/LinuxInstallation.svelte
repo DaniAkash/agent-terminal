@@ -12,7 +12,7 @@
     downloaded file. Files may have versioned names; use the name you actually
     downloaded.
   </p>
-  <h3>AppImage · Ubuntu, Arch Linux and Fedora</h3>
+  <h3 id="appimage">AppImage · Ubuntu, Arch Linux and Fedora</h3>
   <p>
     The AppImage runs without installing a system package. Download
     <code>agent-terminal-amd64.AppImage</code>, make it executable, and start
@@ -29,7 +29,7 @@
     AppImage and replace the old file after closing the app. An AppImage does
     not automatically add a desktop menu entry.
   </p>
-  <h3>Ubuntu and Debian · DEB</h3>
+  <h3 id="ubuntu-debian">Ubuntu and Debian · DEB</h3>
   <p>
     Download <code>agent-terminal-amd64.deb</code>, then install the local file
     with APT so it can resolve dependencies:
@@ -43,7 +43,7 @@
     <code>agent-terminal</code>. To update, download and install the newer DEB
     in the same way.
   </p>
-  <h3>Fedora · RPM</h3>
+  <h3 id="fedora">Fedora · RPM</h3>
   <p>
     Download <code>agent-terminal-x86_64.rpm</code>, then install it with DNF:
   </p>
@@ -57,11 +57,11 @@
     Fedora variant, follow its package installation guidance or use the
     AppImage.
   </p>
-  <h3>Arch Linux · AppImage</h3>
+  <h3 id="arch">Arch Linux · AppImage</h3>
   <p>
     Use the AppImage instructions above to run Agent Terminal on Arch Linux.
   </p>
-  <h3>Linux troubleshooting</h3>
+  <h3 id="linux-troubleshooting">Linux troubleshooting</h3>
   <ul>
     <li>
       <strong>AppImage asks for FUSE:</strong>

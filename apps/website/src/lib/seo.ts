@@ -1,3 +1,5 @@
+import { docSections } from '../routes/docs/doc-sections'
+
 export const SITE_URL = 'https://agent-terminal.org'
 export const SITE_NAME = 'Agent Terminal'
 export const pages: Record<string, { title: string; description: string }> = {
@@ -31,4 +33,11 @@ export const pages: Record<string, { title: string; description: string }> = {
     description:
       'Agent Terminal runs no servers, accounts, or analytics. Read exactly what the macOS and Linux desktop app and the iOS and Android companions keep on your device, and the few things that leave it.',
   },
+}
+for (const section of docSections) {
+  if (section.id !== 'overview')
+    pages[`/docs/${section.id}`] = {
+      title: `${section.title} — Agent Terminal`,
+      description: section.description,
+    }
 }
