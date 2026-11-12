@@ -57,45 +57,9 @@
     Fedora variant, follow its package installation guidance or use the
     AppImage.
   </p>
-  <h3>Arch Linux · AppImage or AUR</h3>
+  <h3>Arch Linux · AppImage</h3>
   <p>
-    Use the AppImage instructions above. The project also prepares an AUR
-    package named <code>agent-terminal-bin</code>; publishing is optional, so
-    check
-    <a href="https://aur.archlinux.org/packages/agent-terminal-bin"
-      >its AUR page</a
-    >
-    before installing. If it is published and you use yay, review the PKGBUILD
-    and install it with:
-  </p>
-  <div class="docs-code">
-    <div>ARCH LINUX · IF AVAILABLE</div>
-    <code>yay -S agent-terminal-bin</code>
-  </div>
-  <h3>Snap · availability and local installation</h3>
-  <p>
-    A Snap file may be attached to a GitHub release. Snap Store publishing is
-    separate and requires approval for classic confinement, so check the
-    <a href="https://snapcraft.io/agent-terminal">Snap Store listing</a>
-    before using <code>sudo snap install agent-terminal --classic</code>. The
-    classic package has access to host resources with your user’s permissions.
-  </p>
-  <p>
-    To test a downloaded Snap locally, install and enable snapd for your
-    distribution. Replace the example filename with the downloaded file name:
-  </p>
-  <div class="docs-code">
-    <div>LOCAL SNAP · REPLACE VERSION</div>
-    <code
-      >sudo snap install --dangerous --classic
-      ./agent-terminal_VERSION_amd64.snap</code
-    >
-  </div>
-  <p>
-    <code>--dangerous</code>
-    installs a local file without a Store assertion; use it only for a release
-    you trust. A local file installation is not the same as installing from the
-    Store.
+    Use the AppImage instructions above to run Agent Terminal on Arch Linux.
   </p>
   <h3>Linux troubleshooting</h3>
   <ul>
