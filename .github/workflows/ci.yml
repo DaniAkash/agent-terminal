@@ -284,13 +284,10 @@ jobs:
         run: |
           set -euo pipefail
           # Anything that is not a pull request, so a push to main, the
-          # weekly cache cron, or a manual dispatch, runs the full
-          # matrix. Those are the refs releases are cut from and they
-          # must never quietly lose Linux coverage.
-          # Anything that is not a pull request, so a push to main, the
           # weekly cache cron, or a manual dispatch, runs everything.
-          # Those are the refs releases are cut from, and they are also
-          # the net for the narrowing below.
+          # Those are the refs releases are cut from, they must never
+          # quietly lose Linux coverage, and they are also the net for
+          # the narrowing below.
           if [ -z "${PR_NUMBER:-}" ]; then
             echo 'native=true' >> "$GITHUB_OUTPUT"
             echo 'bundle=true' >> "$GITHUB_OUTPUT"
@@ -304,9 +301,18 @@ jobs:
           # Native: anything that can change how the app behaves on a
           # given distro. Drives the shell matrix and the macOS
           # regression, which are cheap and catch logic regressions.
-          if match '^(apps/desktop/src-tauri/|apps/desktop/shell-env-tests/|apps/desktop/Cargo\.lock$|bun\.lock$|\.bun-version$|\.github/workflows/ci\.yml$)'; then
+          #
+          # The dependency term is the desktop app's own manifest, not
+          # the lockfile. `bun.lock` is a single file at the repository
+          # root shared by every workspace member, so a dependency
+          # change anywhere, the companion or the website included,
+          # rewrites it and used to drag the whole Linux matrix in
+          # behind a change that cannot reach the desktop app. The
+          # sidecar's manifest needs no term of its own: it lives under
+          # the src-tauri prefix already listed above.
+          if match '^(apps/desktop/src-tauri/|apps/desktop/shell-env-tests/|apps/desktop/Cargo\.lock$|apps/desktop/package\.json$|\.bun-version$|\.github/workflows/ci\.yml$)'; then
             echo 'native=true' >> "$GITHUB_OUTPUT"
-            echo 'native=true: native or lockfile paths changed.'
+            echo 'native=true: native or desktop dependency paths changed.'
           else
             echo 'native=false' >> "$GITHUB_OUTPUT"
             echo 'native=false: nothing native changed.'
@@ -324,7 +330,15 @@ jobs:
           # config, the icons and resources it embeds, the sidecar it
           # ships, and the dependency manifests that decide which
           # runtime libraries the packages end up needing.
-          if match '^(packaging/|apps/desktop/src-tauri/tauri[^/]*\.conf\.json$|apps/desktop/src-tauri/icons/|apps/desktop/src-tauri/sidecar/|apps/desktop/src-tauri/capabilities/|apps/desktop/src-tauri/Cargo\.toml$|apps/desktop/Cargo\.lock$|bun\.lock$|\.bun-version$|\.github/workflows/ci\.yml$)'; then
+          #
+          # Those manifests are the desktop app's, the sidecar's and
+          # core-ui's, which the frontend imports as a workspace
+          # dependency and so bundles into the assets the packages
+          # ship. Never the root `bun.lock`: one lockfile backs every
+          # workspace member, so keying on it packaged and smoke tested
+          # eight containers whenever an unrelated app bumped a
+          # dependency.
+          if match '^(packaging/|apps/desktop/src-tauri/tauri[^/]*\.conf\.json$|apps/desktop/src-tauri/icons/|apps/desktop/src-tauri/sidecar/|apps/desktop/src-tauri/capabilities/|apps/desktop/src-tauri/Cargo\.toml$|apps/desktop/Cargo\.lock$|apps/desktop/package\.json$|packages/core-ui/package\.json$|\.bun-version$|\.github/workflows/ci\.yml$)'; then
             echo 'bundle=true' >> "$GITHUB_OUTPUT"
             echo 'bundle=true: packaging, resources or dependencies changed.'
           else
