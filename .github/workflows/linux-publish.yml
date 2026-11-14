@@ -31,7 +31,7 @@ jobs:
           gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern '*.snap' --dir snap-release
           test "$(find snap-release -name '*.snap' | wc -l)" -eq 1
           mv snap-release/*.snap agent-terminal.snap
-      - uses: snapcore/action-publish@v1
+      - uses: snapcore/action-publish@v1.2.0
         env:
           SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
         with:
@@ -48,7 +48,7 @@ jobs:
       AUR_GIT_EMAIL: ${{ vars.AUR_GIT_EMAIL }}
     steps:
       - run: pacman -Syu --noconfirm git openssh python libarchive curl github-cli
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4.4.0
         with:
           ref: ${{ github.event.release.tag_name }}
           persist-credentials: false

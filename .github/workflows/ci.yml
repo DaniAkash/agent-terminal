@@ -87,9 +87,9 @@ jobs:
       # rust-cache expects.
       CARGO_BUILD_BUILD_DIR: ${{ github.workspace }}/apps/desktop/target
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4.4.0
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@v2.2.0
         with:
           bun-version: latest
 
@@ -128,7 +128,7 @@ jobs:
       # job fails, so every red run would re-download the whole layer.
       - name: Restore Tauri Linux dependency packages
         id: apt-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v4.3.0
         with:
           path: ~/.cache/apt-tauri
           key: apt-tauri-${{ runner.os }}-${{ runner.arch }}-${{ env.ImageOS }}-${{ hashFiles('.github/tauri-linux-deps.txt') }}
@@ -156,12 +156,12 @@ jobs:
 
       - name: Save Tauri Linux dependency packages
         if: steps.apt-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v4.3.0
         with:
           path: ~/.cache/apt-tauri
           key: ${{ steps.apt-cache.outputs.cache-primary-key }}
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@v2.9.3
         with:
           # Cargo workspace lives at apps/desktop/Cargo.toml with target
           # at apps/desktop/target after the monorepo Phase 2 migration.
@@ -219,7 +219,7 @@ jobs:
           # hole for a cache hit.
 
       - name: Cache typeshare-cli install
-        uses: actions/cache@v4
+        uses: actions/cache@v4.3.0
         with:
           path: ~/.cargo/bin/typeshare
           key: typeshare-cli-1.13.4-${{ runner.os }}
@@ -378,7 +378,7 @@ jobs:
               pacman -Syu --noconfirm ca-certificates curl git gcc python nodejs bash fish zsh
               ;;
           esac
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4.4.0
       - uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: 1.95.0
@@ -406,14 +406,14 @@ jobs:
     env:
       CARGO_BUILD_BUILD_DIR: ${{ github.workspace }}/apps/desktop/target
     steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@v4.4.0
+      - uses: oven-sh/setup-bun@v2.2.0
         with:
           bun-version-file: .bun-version
       - uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: 1.95.0
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@v2.9.3
         with:
           workspaces: apps/desktop -> target
       - run: bun install --frozen-lockfile
@@ -441,10 +441,10 @@ jobs:
     env:
       CARGO_BUILD_BUILD_DIR: ${{ github.workspace }}/apps/desktop/target
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4.4.0
       - name: Test Linux release packaging
         run: python3 -m unittest discover -s packaging -p 'test_*.py'
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@v2.2.0
         with:
           bun-version-file: .bun-version
       - uses: dtolnay/rust-toolchain@v1
@@ -454,7 +454,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf rpm
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@v2.9.3
         with:
           workspaces: apps/desktop -> target
       - run: bun install --frozen-lockfile
@@ -471,7 +471,7 @@ jobs:
           chmod +x "$image"
           "$image" --appimage-extract >/dev/null
           test -x squashfs-root/AppRun
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4.6.2
         with:
           name: linux-x86_64-packages
           if-no-files-found: error
@@ -534,8 +534,8 @@ jobs:
               pacman -Syu --noconfirm ca-certificates git python webkit2gtk-4.1 libayatana-appindicator xdotool openbox xorg-server-xvfb xorg-xauth dbus weston
               ;;
           esac
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v4.4.0
+      - uses: actions/download-artifact@v4.3.0
         with:
           name: linux-x86_64-packages
           path: /tmp/linux-packages
