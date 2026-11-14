@@ -4,6 +4,16 @@
   <url><loc>https://agent-terminal.org/agents</loc></url>
   <url><loc>https://agent-terminal.org/downloads</loc></url>
   <url><loc>https://agent-terminal.org/docs</loc></url>
+  <url><loc>https://agent-terminal.org/docs/installation</loc></url>
+  <url><loc>https://agent-terminal.org/docs/linux-installation</loc></url>
+  <url><loc>https://agent-terminal.org/docs/projects</loc></url>
+  <url><loc>https://agent-terminal.org/docs/agents</loc></url>
+  <url><loc>https://agent-terminal.org/docs/status-bar</loc></url>
+  <url><loc>https://agent-terminal.org/docs/agent-usage</loc></url>
+  <url><loc>https://agent-terminal.org/docs/mobile</loc></url>
+  <url><loc>https://agent-terminal.org/docs/shortcuts</loc></url>
+  <url><loc>https://agent-terminal.org/docs/platforms</loc></url>
+  <url><loc>https://agent-terminal.org/docs/contributing</loc></url>
   <url><loc>https://agent-terminal.org/changelog</loc></url>
   <url><loc>https://agent-terminal.org/privacy</loc></url>
 </urlset>
