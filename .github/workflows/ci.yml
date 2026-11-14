@@ -331,12 +331,14 @@ jobs:
           # ships, and the dependency manifests that decide which
           # runtime libraries the packages end up needing.
           #
-          # Those manifests are the desktop app's and the sidecar's,
-          # never the root `bun.lock`: one lockfile backs every
+          # Those manifests are the desktop app's, the sidecar's and
+          # core-ui's, which the frontend imports as a workspace
+          # dependency and so bundles into the assets the packages
+          # ship. Never the root `bun.lock`: one lockfile backs every
           # workspace member, so keying on it packaged and smoke tested
           # eight containers whenever an unrelated app bumped a
           # dependency.
-          if match '^(packaging/|apps/desktop/src-tauri/tauri[^/]*\.conf\.json$|apps/desktop/src-tauri/icons/|apps/desktop/src-tauri/sidecar/|apps/desktop/src-tauri/capabilities/|apps/desktop/src-tauri/Cargo\.toml$|apps/desktop/Cargo\.lock$|apps/desktop/package\.json$|\.bun-version$|\.github/workflows/ci\.yml$)'; then
+          if match '^(packaging/|apps/desktop/src-tauri/tauri[^/]*\.conf\.json$|apps/desktop/src-tauri/icons/|apps/desktop/src-tauri/sidecar/|apps/desktop/src-tauri/capabilities/|apps/desktop/src-tauri/Cargo\.toml$|apps/desktop/Cargo\.lock$|apps/desktop/package\.json$|packages/core-ui/package\.json$|\.bun-version$|\.github/workflows/ci\.yml$)'; then
             echo 'bundle=true' >> "$GITHUB_OUTPUT"
             echo 'bundle=true: packaging, resources or dependencies changed.'
           else
