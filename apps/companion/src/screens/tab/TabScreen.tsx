@@ -52,12 +52,16 @@ export function TabScreen({ projectId, tabId }: TabScreenProps) {
   // the home indicator. Sitting in that strip, iOS swallows the touch
   // before it reaches the key: the wider keys still have tappable area
   // above it, but a half-width one is simply dead.
-  const spacerHeight = useRef(new Animated.Value(insets.bottom)).current
+  const spacerHeightRef = useRef<Animated.Value | null>(null)
+  spacerHeightRef.current ??= new Animated.Value(insets.bottom)
+  const spacerHeight = spacerHeightRef.current
   // How much of the key bar is showing. The bar only earns its space
   // while there is a keyboard to sit on: with the keyboard down there is
   // nothing to type into, and the two rows were taking scrollback from
   // the terminal to say so.
-  const barReveal = useRef(new Animated.Value(0)).current
+  const barRevealRef = useRef<Animated.Value | null>(null)
+  barRevealRef.current ??= new Animated.Value(0)
+  const barReveal = barRevealRef.current
   // Measured rather than declared, so a change to the bar's padding or
   // type size cannot leave it clipped. Zero until the first layout, which
   // happens long before a keyboard can be raised.

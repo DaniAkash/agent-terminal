@@ -70,16 +70,24 @@ async function readIndex(): Promise<DevicesIndex | null> {
 async function readRecords(
   ids: string[],
 ): Promise<Record<string, DeviceRecord>> {
+  // Read concurrently: the records are independent keychain entries, and
+  // a serial loop made boot wait for one round trip per paired desktop.
+  const entries = await Promise.all(
+    ids.map(async (id) => {
+      try {
+        const raw = await SecureStore.getItemAsync(recordKey(id))
+        if (!raw) return null
+        const parsed: unknown = JSON.parse(raw)
+        return isDeviceRecord(parsed) ? ([id, parsed] as const) : null
+      } catch {
+        // Skipped; reconcileIndex removes the id below.
+        return null
+      }
+    }),
+  )
   const byId: Record<string, DeviceRecord> = {}
-  for (const id of ids) {
-    try {
-      const raw = await SecureStore.getItemAsync(recordKey(id))
-      if (!raw) continue
-      const parsed: unknown = JSON.parse(raw)
-      if (isDeviceRecord(parsed)) byId[id] = parsed
-    } catch {
-      // Skipped; reconcileIndex removes the id below.
-    }
+  for (const entry of entries) {
+    if (entry) byId[entry[0]] = entry[1]
   }
   return byId
 }

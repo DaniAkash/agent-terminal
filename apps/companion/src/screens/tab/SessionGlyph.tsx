@@ -213,7 +213,9 @@ function AwaitingBadge({ size }: { size: number }) {
  * when the turn ends, hence the cleanup.
  */
 function usePulse(active: boolean): Animated.Value {
-  const pulse = useRef(new Animated.Value(1)).current
+  const pulseRef = useRef<Animated.Value | null>(null)
+  pulseRef.current ??= new Animated.Value(1)
+  const pulse = pulseRef.current
   useEffect(() => {
     if (!active) {
       pulse.setValue(1)
