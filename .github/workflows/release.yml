@@ -53,20 +53,20 @@ jobs:
     env:
       CARGO_BUILD_BUILD_DIR: ${{ github.workspace }}/apps/desktop/target
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@v4.4.0
       - name: Test AUR metadata generator
         run: python3 -m unittest discover -s packaging -p 'test_*.py'
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - uses: oven-sh/setup-bun@v2.2.0
         with:
           bun-version-file: .bun-version
-      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
+      - uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: 1.95.0
       - name: Install Linux dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf rpm
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - uses: Swatinem/rust-cache@v2.9.3
         with:
           workspaces: apps/desktop -> target
       - run: bun install --frozen-lockfile
@@ -103,14 +103,14 @@ jobs:
           sed -i "s/^version: '0.0.0'$/version: '$version'/" packaging/snap/snapcraft.yaml
       - name: Build Snap
         id: snap
-        uses: snapcore/action-build@3bdaa03e1ba6bf59a65f84a751d943d549a54e79 # v1.3.0
+        uses: snapcore/action-build@v1.3.0
         with:
           path: packaging/snap
       - name: Collect Snap
         env:
           SNAP_FILE: ${{ steps.snap.outputs.snap }}
         run: cp "$SNAP_FILE" linux-assets/
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@v4.6.2
         with:
           name: bundles-linux-x86_64
           path: linux-assets/*
@@ -130,7 +130,7 @@ jobs:
       content: ${{ steps.changelog.outputs.content || 'first release' }}
     steps:
       - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        uses: actions/checkout@v4.4.0
         with:
           # Full history is required so git-cliff (and `git describe`) can
           # walk back to the previous tag and compute the changelog range.
@@ -164,7 +164,7 @@ jobs:
         # git-cliff parses conventional-commit messages between the previous
         # tag and the new tag, groups them by type per cliff.toml, and
         # exposes the rendered markdown as `steps.changelog.outputs.content`.
-        uses: orhun/git-cliff-action@a9a95522b26fe6403f7bb24031f21fb573d0f5ff # v4.9.1
+        uses: orhun/git-cliff-action@v4.9.1
         with:
           config: cliff.toml
           args: --strip header ${{ steps.previous_tag.outputs.previous_tag }}..${{ github.ref_name }}
@@ -196,21 +196,21 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        uses: actions/checkout@v4.4.0
 
       - name: Install Bun
         # Reads the version from the checked-in `.bun-version` file —
         # bumping Bun is a one-line change to that file, reviewed like any
         # other source change.
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        uses: oven-sh/setup-bun@v2.2.0
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
 
       - name: Cache Cargo registry + build artifacts
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@v4.3.0
         with:
           path: |
             ~/.cargo/registry
@@ -232,7 +232,7 @@ jobs:
         # `tagName` means the action does NOT create a release itself —
         # the dedicated `release` job below does that, once both matrix
         # entries succeed.
-        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0.6.2
+        uses: tauri-apps/tauri-action@v0.6.2
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -331,7 +331,7 @@ jobs:
         # filesystem directly). Short retention because everything also
         # lands on the GitHub Release within minutes — workflow artifacts
         # are a job-to-job carrier, not a long-term archive.
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: bundles-${{ matrix.target }}
           path: |
@@ -357,7 +357,7 @@ jobs:
       contents: write
     steps:
       - name: Download all build artifacts
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@v4.3.0
         with:
           pattern: bundles-*
           path: artifacts
@@ -415,7 +415,7 @@ jobs:
           RELEASE_NOTES: ${{ needs.changelog.outputs.content }}
 
       - name: Create draft release with .dmgs + updater bundles + manifest
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
+        uses: softprops/action-gh-release@v2.6.2
         with:
           # DRAFT — never auto-publish. The user reviews the body, edits
           # if needed, and clicks Publish in the GitHub UI.
@@ -456,7 +456,7 @@ jobs:
         # run; creating it from main would carry the codebase into the
         # manifest branch (handled in the bootstrap step documented
         # alongside this change).
-        uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 # v4.1.0
+        uses: peaceiris/actions-gh-pages@v4.1.0
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_branch: release-manifest

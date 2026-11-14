@@ -17,7 +17,7 @@ A useful report says which version you tested, what an attacker gains, and the s
 
 ## What to expect
 
-You should get an acknowledgement within 3 working days, and an assessment with a rough fix timeline within 10. Fixes ship in the next release of the affected component, and the advisory is published alongside it.
+Agent Terminal is maintained by one person alongside other work, so the timings below are best-effort targets rather than a guarantee: an acknowledgement and an initial assessment within 10 days of your report, and a fix within 30 days. If something is going to take longer than that, you will hear why rather than hearing nothing, and a fix ships in the next release of the affected component with the advisory published alongside it.
 
 You will be credited in the advisory unless you ask not to be. Please hold off on disclosing publicly until that advisory is out.
 
