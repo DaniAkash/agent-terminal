@@ -112,10 +112,11 @@ export default function TerminalDom({
     },
   }))
 
-  // The refs exist to keep this effect out of the dependency graph.
-  // Listing their `.current` reads would remount the terminal on every
+  // The refs exist to keep the callbacks themselves out of this effect's
+  // dependency graph: listing them would remount the terminal on every
   // parent render, which is the remount the indirection exists to stop.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: mount-once by design
+  // The ref objects are listed instead, and they keep one identity for the
+  // component's lifetime, so the effect still runs exactly once.
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
@@ -212,7 +213,7 @@ export default function TerminalDom({
       core?.dispose()
       termRef.current = null
     }
-  }, [])
+  }, [onDataRef, onResizeRef, onReadyRef, onOpenUrlRef])
 
   return (
     <>

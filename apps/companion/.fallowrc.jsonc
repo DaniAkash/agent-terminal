@@ -22,9 +22,7 @@
   // file directly imports it; the bundler wires it transparently.
   // expo-build-properties + expo-dev-client + expo-system-ui are
   // autolinked / config-plugin loaded, so nothing imports them
-  // directly. @expo/config-plugins is a transitive Expo dep required
-  // from the local config plugins (build-time modules fallow does
-  // not scan).
+  // directly.
   // expo-font is the runtime the @react-native-vector-icons packages load
   // their font through, and a config plugin in app.config.ts. Expo's own
   // migration guide requires it to be installed; nothing imports it.
@@ -33,8 +31,7 @@
     "react-native-web",
     "expo-build-properties",
     "expo-dev-client",
-    "expo-system-ui",
-    "@expo/config-plugins"
+    "expo-system-ui"
   ],
   "rules": {
     // `expo` is the Expo SDK runtime. It's imported transitively by

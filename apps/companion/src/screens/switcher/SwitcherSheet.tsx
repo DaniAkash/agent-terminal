@@ -1,7 +1,13 @@
 import type { SessionNode } from '@agent-terminal/core-ui'
 import { useActionSheet } from '@expo/react-native-action-sheet'
 import { useState } from 'react'
-import { FlatList, Pressable, Text, View } from 'react-native'
+import {
+  FlatList,
+  type ListRenderItemInfo,
+  Pressable,
+  Text,
+  View,
+} from 'react-native'
 import { Icon } from '@/components/ui/Icon'
 import { NewProjectSheet } from '@/screens/projects/NewProjectSheet'
 import { NewTabSheet } from '@/screens/projects/NewTabSheet'
@@ -64,6 +70,20 @@ export function SwitcherSheet({ currentKey }: SwitcherSheetProps) {
     )
   }
 
+  function renderRow({ item }: ListRenderItemInfo<SwitcherItem>) {
+    return (
+      <SwitcherItemRow
+        item={item}
+        now={now}
+        onOpen={open}
+        onMenu={openRowMenu}
+        onToggle={toggle}
+        isCollapsed={isCollapsed}
+        onNewSession={setNewSessionIn}
+      />
+    )
+  }
+
   // collapsable={false} is load-bearing. React Native flattens a view that
   // only groups children, which hoists them into the screen wrapper and
   // loses this flex container: inside a detent-sized sheet the content then
@@ -123,17 +143,7 @@ export function SwitcherSheet({ currentKey }: SwitcherSheetProps) {
             <SwitcherViewToggle view={view} onChange={setView} />
           </View>
         }
-        renderItem={({ item }) => (
-          <SwitcherItemRow
-            item={item}
-            now={now}
-            onOpen={open}
-            onMenu={openRowMenu}
-            onToggle={toggle}
-            isCollapsed={isCollapsed}
-            onNewSession={setNewSessionIn}
-          />
-        )}
+        renderItem={renderRow}
         ListFooterComponent={
           <Pressable
             onPress={() => setShowNewProject(true)}

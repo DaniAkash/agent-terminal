@@ -80,19 +80,25 @@ export function useConnectionNotices(
   tabId: string,
   write: (payload: string) => void,
 ): void {
-  const session = useStore($session)
   const noticeState = useRef<NoticeState>(INITIAL_NOTICE_STATE)
 
-  // useEffect exception: pushes to an external system (the terminal
-  // surface) on a value change, with no render-time equivalent, and it must
-  // happen once per transition rather than once per render.
+  // useEffect exception: subscribes to an external event source (the
+  // session store) and narrates into another one (the terminal surface).
+  // The status arrives from the subscription rather than through
+  // `useStore`, so a transition is narrated where it happens instead of
+  // being derived from a render, and this screen is not re-rendered to
+  // print a line into a surface React does not own. `nextNotice` keys off
+  // its own previous observation, so the extra calls a map change brings
+  // with it stay silent.
   useEffect(() => {
-    const { state, notice } = nextNotice(
-      noticeState.current,
-      session.status,
-      flushedWritesFor(tabId),
-    )
-    noticeState.current = state
-    if (notice) write(renderNotice(notice))
-  }, [session.status, tabId, write])
+    return $session.subscribe((session) => {
+      const { state, notice } = nextNotice(
+        noticeState.current,
+        session.status,
+        flushedWritesFor(tabId),
+      )
+      noticeState.current = state
+      if (notice) write(renderNotice(notice))
+    })
+  }, [tabId, write])
 }

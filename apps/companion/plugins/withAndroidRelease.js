@@ -1,7 +1,7 @@
 const {
   withAppBuildGradle,
   withGradleProperties,
-} = require('@expo/config-plugins')
+} = require('expo/config-plugins')
 
 /**
  * Teach the generated `android/app/build.gradle` to sign release builds
