@@ -1,6 +1,6 @@
 {
   "name": "companion",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "main": "expo-router/entry",
   "dependencies": {
     "@agent-terminal/core-ui": "workspace:*",

@@ -14,8 +14,11 @@
 #
 # There is deliberately no GitHub Release job here: the Android workflow
 # already creates the draft release for this tag, and two workflows writing
-# one tag's release would collide. The .ipa is kept as a workflow artifact
-# instead.
+# one tag's release would collide.
+#
+# The build is not kept anywhere outside App Store Connect. Artifacts on a
+# public repository can be downloaded by anyone, so a signed .ipa placed in
+# one would be distributable without going through TestFlight.
 #
 # How to cut a release:
 #   1. Bump version in apps/companion/package.json
@@ -245,18 +248,6 @@ jobs:
           else
             bundle exec fastlane ios beta build_offset:"$BUILD_OFFSET"
           fi
-
-      - name: Upload the archive as a workflow artifact
-        # Keeps the exact artifact inspectable afterwards, which is what makes
-        # an App Store Connect rejection explainable. Also the only copy kept,
-        # since this workflow creates no GitHub release.
-        if: always()
-        uses: actions/upload-artifact@v4.6.2
-        with:
-          name: companion-ipa
-          path: apps/companion/build/ios/*.ipa
-          if-no-files-found: warn
-          retention-days: 14
 
       - name: Shred the signing material
         # `always()` so a failed build cannot leave an installed identity or a

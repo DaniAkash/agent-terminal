@@ -1,8 +1,13 @@
 # Tag-triggered signed Android release for the companion app.
 #
 # Push a `companion-v*` tag (e.g. `companion-v1.0.1`) → this workflow builds
-# a signed .aab, uploads it to the Play **internal** track, creates a DRAFT
-# GitHub Release for that tag, and attaches the bundle.
+# a signed .aab, uploads it to the Play **internal** track, and creates a
+# DRAFT GitHub Release carrying the release notes for that tag.
+#
+# The release carries notes only. The bundle itself is not attached and is
+# not kept as a workflow artifact, because both are readable by anyone on a
+# public repository, which would make a signed build distributable without
+# going through Play.
 #
 # The GitHub Release stays in DRAFT state, and Play only ever receives the
 # internal track. Both final steps are human: publish the draft from the
@@ -257,19 +262,6 @@ jobs:
             bundle exec fastlane android "$LANE" build_offset:"$BUILD_OFFSET"
           fi
 
-      - name: Upload the bundle as a workflow artifact
-        # Carries the bundle to the release job, which runs on a different
-        # runner and cannot reach this filesystem. Also keeps the exact
-        # artifact inspectable afterwards, which matters when a Play
-        # rejection has to be explained.
-        if: always()
-        uses: actions/upload-artifact@v4.6.2
-        with:
-          name: companion-aab
-          path: apps/companion/android/app/build/outputs/bundle/release/*.aab
-          if-no-files-found: warn
-          retention-days: 14
-
       - name: Shred the decoded credentials
         # `always()` so a failed build cannot leave a decoded key behind on
         # a runner that something later in the job might surface.
@@ -279,27 +271,22 @@ jobs:
                 "$RUNNER_TEMP/play-store-key.json" \
                 apps/companion/android/keystore.properties
 
-  # Job 3: create the draft release with the bundle attached. Separate from
-  # the build so it runs on a free Linux runner that only downloads an
-  # artifact and POSTs to the API, and so a manual dispatch cannot create a
-  # GitHub Release for a tag that does not exist.
+  # Job 3: create the draft release holding the changelog. Separate from the
+  # build so it runs on a free Linux runner that only POSTs to the API, and
+  # so a manual dispatch cannot create a GitHub Release for a tag that does
+  # not exist. It needs nothing from the build beyond having succeeded, so no
+  # bundle crosses between the two runners.
   release:
     name: Create draft release
     needs: [changelog, build]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
-    # softprops/action-gh-release creates the draft release and uploads the
-    # bundle to it. No other job in this workflow writes to the repository.
+    # softprops/action-gh-release creates the draft release. No other job in
+    # this workflow writes to the repository.
     permissions:
       contents: write
     steps:
-      - name: Download the bundle
-        uses: actions/download-artifact@v4.3.0
-        with:
-          name: companion-aab
-          path: artifacts
-
-      - name: Create draft release with the bundle
+      - name: Create draft release
         uses: softprops/action-gh-release@v2.6.2
         with:
           # DRAFT — never auto-publish. The release is reviewed, edited if
@@ -308,5 +295,3 @@ jobs:
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
           body: ${{ needs.changelog.outputs.content }}
-          files: artifacts/*.aab
-          fail_on_unmatched_files: true
