@@ -1,3 +1,10 @@
 source "https://rubygems.org"
 
 gem "fastlane"
+
+# CocoaPods has to be in the bundle, not merely installed: the bundler shim
+# shadows `pod` on PATH for the whole job, so `expo prebuild` cannot shell out
+# to a gem the bundle does not declare. The exclusions are upstream React
+# Native constraints.
+gem "cocoapods", ">= 1.13", "!= 1.15.0", "!= 1.15.1"
+gem "activesupport", ">= 6.1.7.5", "!= 7.1.0"
