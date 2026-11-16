@@ -1,10 +1,30 @@
-# The Play service account key is account-bound and comes from the
-# environment. The package name is public, it is on the store listing, so
-# it is a literal.
+# Scoped per platform rather than left flat, because `package_name` is
+# Android's alias for the same key `app_identifier` fills on iOS. Unscoped,
+# the two would overwrite each other and whichever lane ran second would
+# address the wrong store record.
 #
-# There is deliberately no ANDROID_PACKAGE override: the build lane always
-# sets APP_VARIANT=production, so pointing supply at a different package
-# than the one the bundle declares could only ever produce a mismatch Play
-# rejects. One source of truth instead of two that can disagree.
-json_key_file(ENV["PLAY_STORE_JSON_KEY"])
-package_name("com.daniakash.agent_terminal")
+# Both identifiers are literals because both are public: they are printed on
+# the store listings and already appear in app.config.ts. Everything
+# account-bound comes from the environment instead, because this repository
+# is public: a Team ID and an Apple ID are personal identifiers, and the Play
+# service account key is a credential.
+#
+# There is deliberately no override for either identifier: the build lanes
+# always set APP_VARIANT=production, so pointing an upload at a different
+# identifier than the artifact declares could only ever produce a mismatch
+# the store rejects. One source of truth instead of two that can disagree.
+
+for_platform :ios do
+  app_identifier("com.daniakash.agent-terminal.companion")
+  team_id(ENV["APPLE_TEAM_ID"])
+
+  # Only when present. The lanes authenticate with an App Store Connect API
+  # key, which needs no Apple ID at all, so setting this unconditionally
+  # would hand fastlane an empty string to try to log in with.
+  apple_id(ENV["FASTLANE_APPLE_ID"]) unless ENV["FASTLANE_APPLE_ID"].to_s.empty?
+end
+
+for_platform :android do
+  json_key_file(ENV["PLAY_STORE_JSON_KEY"])
+  package_name("com.daniakash.agent_terminal")
+end

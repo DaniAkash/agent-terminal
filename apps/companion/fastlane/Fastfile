@@ -1,14 +1,22 @@
-# Android lanes for the Agent Terminal companion.
+# Release lanes for the Agent Terminal companion, Android and iOS.
 #
-# iOS is deliberately absent: those lanes need App Store Connect API and
-# `match` credentials that do not exist yet. They land with the iOS pass
-# rather than sitting here failing.
+# Both platforms share one ordering rule, because both regenerate their
+# native project from the Expo config on every build: `prebuild --clean`
+# deletes the generated directory, so signing is configured after it runs,
+# never before.
 
 require "shellwords"
 
 APP_DIR     = File.expand_path("..", __dir__)
 ANDROID_DIR = File.join(APP_DIR, "android")
+IOS_DIR     = File.join(APP_DIR, "ios")
 AAB_PATH    = File.join(ANDROID_DIR, "app", "build", "outputs", "bundle", "release", "app-release.aab")
+
+# Public, and on the store listing. The `.dev` suffix the config appends for
+# non-production variants is absent here on purpose: this constant names the
+# record an upload is allowed to reach, and a dev-suffixed build matching it
+# would mean APP_VARIANT was wrong.
+IOS_APP_ID = "com.daniakash.agent-terminal.companion"
 
 # `apps/companion/package.json` is the single source of truth for the
 # version, mirroring how the desktop app is released.
@@ -181,5 +189,219 @@ platform :android do
       skip_upload_screenshots: true,
       skip_upload_changelogs: true,
     )
+  end
+end
+
+# --- iOS ---------------------------------------------------------------------
+
+# Expo names the generated iOS project from the sanitised `expo.name`, so
+# `Agent Terminal` becomes `AgentTerminal`. Discovered rather than hardcoded:
+# prebuild prefers an existing project's name over the config and only
+# `--clean` performs the rename, so a tree generated under an older name keeps
+# it, and a display-name change would invalidate a hardcoded path silently.
+def ios_workspace
+  found = Dir[File.join(IOS_DIR, "*.xcworkspace")]
+  UI.user_error!("no .xcworkspace under #{IOS_DIR}: prebuild did not finish, or pods never installed") if found.empty?
+  if found.size > 1
+    UI.user_error!("#{found.size} workspaces under #{IOS_DIR}, expected one: #{found.map { |p| File.basename(p) }.join(', ')}")
+  end
+  found.first
+end
+
+def ios_scheme
+  File.basename(ios_workspace, ".xcworkspace")
+end
+
+# An unset variable and one set to the empty string mean the same thing here,
+# which is what a workflow passing through an optional value produces.
+def present_env(key)
+  value = ENV[key].to_s
+  value.empty? ? nil : value
+end
+
+# match reports the profile it installed through a lane-context mapping, and
+# through an environment variable whose name is built from the identifier.
+# Both are read rather than one assumed: a profile name resolving to nil makes
+# the signing settings land empty, and the archive then fails with an error
+# that reads like a certificate problem rather than a missing profile.
+def ios_profile_name
+  mapping = Fastlane::Actions.lane_context[Fastlane::Actions::SharedValues::MATCH_PROVISIONING_PROFILE_MAPPING] || {}
+  name = mapping[IOS_APP_ID] || mapping[IOS_APP_ID.to_sym] || ENV["sigh_#{IOS_APP_ID}_appstore_profile-name"]
+  if name.to_s.empty?
+    UI.user_error!(
+      "match reported no provisioning profile for #{IOS_APP_ID}. " \
+      "Run `bundle exec fastlane action match` to see what this fastlane version exports, " \
+      "and pass profile_name literally if the mapping is absent.",
+    )
+  end
+  name
+end
+
+# The shipped app config exists ONLY inside the built app. expo-constants
+# re-evaluates app.config.ts in a CocoaPods script phase during the Xcode
+# build, not at prebuild, so there is nothing in ios/ to inspect instead.
+#
+# All three of these failures produce an app that installs, launches and looks
+# perfect. The first reports push as "Not available", which reads to a tester
+# as a broken phone rather than a broken build. This is the iOS counterpart to
+# assert_release_signed.
+def assert_push_shipped(ipa)
+  require "json"
+  require "tmpdir"
+
+  Dir.mktmpdir do |dir|
+    sh("unzip", "-qo", ipa, "-d", dir)
+    app = Dir[File.join(dir, "Payload", "*.app")].first
+    UI.user_error!("no Payload/*.app inside #{File.basename(ipa)}") unless app
+
+    config = File.join(app, "EXConstants.bundle", "app.config")
+    UI.user_error!("#{File.basename(ipa)} has no EXConstants.bundle/app.config") unless File.exist?(config)
+    exp = JSON.parse(File.read(config))
+
+    if exp.dig("extra", "eas", "projectId").to_s.empty?
+      UI.user_error!(
+        "#{File.basename(ipa)} shipped without extra.eas.projectId, so push can never register. " \
+        "EAS_PROJECT_ID was visible to prebuild but not to xcodebuild.",
+      )
+    end
+
+    shipped_id = exp.dig("ios", "bundleIdentifier")
+    if shipped_id != IOS_APP_ID
+      UI.user_error!("#{File.basename(ipa)} carries #{shipped_id.inspect}, not #{IOS_APP_ID}: APP_VARIANT was not production")
+    end
+
+    # `--entitlements :-` is deprecated on current Xcode; `--entitlements -`
+    # prints a human-readable dump, so --xml is what makes it machine
+    # readable. plutil treats dots as key-path separators, which is fine for
+    # the iOS key and would not be for its macOS-style counterpart.
+    aps = `codesign -d --entitlements - --xml #{Shellwords.escape(app)} 2>/dev/null | plutil -extract 'aps-environment' raw -o - - 2>/dev/null`.strip
+    unless aps == "production"
+      UI.user_error!(
+        "aps-environment is #{aps.empty? ? 'absent' : aps.inspect}, not production. " \
+        "TestFlight would register a sandbox token and no notification would ever arrive.",
+      )
+    end
+  end
+
+  UI.success("project id present, bundle id correct, aps-environment production")
+end
+
+platform :ios do
+  desc "Generate the native project and build a signed App Store archive"
+  lane :build do |options|
+    build_number = options[:build_number] || derived_version_code(options[:build_offset] || 0)
+
+    # Read by app.config.ts, and read TWICE: once by `expo prebuild` below,
+    # and again by the expo-constants script phase inside the Xcode build,
+    # which is the evaluation that actually reaches the binary. Setting them
+    # in the lane covers both. Exporting them for prebuild alone would not.
+    ENV["APP_VARIANT"]  = "production"
+    ENV["BUILD_NUMBER"] = build_number.to_s
+
+    # Fail in seconds rather than ship a build whose only symptom is a
+    # settings screen telling the user their phone cannot receive push.
+    if ENV["EAS_PROJECT_ID"].to_s.empty?
+      UI.user_error!("EAS_PROJECT_ID is unset, so this build would ship with push permanently unregistered")
+    end
+
+    UI.message("version #{package_version}, build #{build_number}")
+
+    api_key = app_store_connect_api_key(duration: 1200, in_house: false)
+
+    # Creates a temporary keychain and unlocks it, so match has somewhere to
+    # install the identity that is not the login keychain. The action checks
+    # for CI itself and prints a skip message when run locally, so it is safe
+    # unconditionally and keeps the lane identical in both places.
+    setup_ci
+
+    # --clean for the same reason as Android: a tree generated under the other
+    # variant keeps the old bundle identifier, and that mistake only surfaces
+    # as a rejected upload minutes later. It also performs the project rename.
+    Dir.chdir(APP_DIR) do
+      sh("bunx", "expo", "prebuild", "--platform", "ios", "--clean")
+    end
+
+    # After prebuild, never before: --clean deletes ios/ and everything
+    # written into it. Same ordering rule write_keystore_properties follows.
+    #
+    # readonly so a release can never mint or revoke a signing asset. The
+    # certificates repository is populated once, by hand, with
+    # `bundle exec fastlane match appstore`. A missing profile here is a
+    # setup error worth failing on, not something to fix mid-release.
+    match(
+      type: "appstore",
+      app_identifier: IOS_APP_ID,
+      api_key: api_key,
+      readonly: true,
+    )
+
+    update_code_signing_settings(
+      path: File.join(IOS_DIR, "#{ios_scheme}.xcodeproj"),
+      use_automatic_signing: false,
+      team_id: CredentialsManager::AppfileConfig.try_fetch_value(:team_id),
+      code_sign_identity: "Apple Distribution",
+      profile_name: ios_profile_name,
+      targets: [ios_scheme],
+    )
+
+    ipa = build_app(
+      workspace: ios_workspace,
+      scheme: ios_scheme,
+      # Set explicitly. The parameter is documented as defaulting to Release
+      # but resolves from the scheme, and the scheme here is regenerated by
+      # prebuild on every run.
+      configuration: "Release",
+      # Not "app-store-connect", which Xcode uses internally: gym accepts
+      # only app-store, validation, ad-hoc, package, enterprise, development,
+      # developer-id and mac-application.
+      export_method: "app-store",
+      output_directory: File.join(APP_DIR, "build", "ios"),
+      clean: true,
+    )
+
+    assert_push_shipped(ipa)
+    UI.success("built #{ipa}")
+    ipa
+  end
+
+  desc "Build and upload to TestFlight for internal testers"
+  lane :beta do |options|
+    ipa = build(options)
+
+    upload_to_testflight(
+      ipa: ipa,
+      app_identifier: IOS_APP_ID,
+      # Internal testers need no Beta App Review, so nothing here asks for
+      # one. Both are passed explicitly because they share one environment
+      # variable name in fastlane's own options, so setting that variable
+      # would silently drive both at once.
+      distribute_external: false,
+      submit_beta_review: false,
+      skip_waiting_for_build_processing: false,
+      # Read from the environment as well as from a lane argument, because a
+      # generated changelog is multi-line and lane arguments are key:value
+      # pairs on one line.
+      changelog: options[:changelog] || present_env("TESTFLIGHT_CHANGELOG") || "Internal build #{package_version}",
+    )
+  end
+
+  desc "Build and assert the artifact, upload nothing. The counterpart to android validate."
+  lane :validate do |options|
+    build(options)
+  end
+
+  desc "Check the App Store Connect API key is valid before trusting a release to it"
+  lane :check_asc_key do
+    api_key = app_store_connect_api_key(duration: 1200, in_house: false)
+
+    # The cheapest authenticated round trip that also proves the app record
+    # exists and the key's role can read builds. initial_build_number keeps a
+    # brand-new app with no builds yet from reading as a failure.
+    latest = latest_testflight_build_number(
+      api_key: api_key,
+      app_identifier: IOS_APP_ID,
+      initial_build_number: 0,
+    )
+    UI.success("App Store Connect API key works, latest TestFlight build for #{IOS_APP_ID} is #{latest}")
   end
 end

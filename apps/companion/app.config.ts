@@ -70,6 +70,12 @@ const config: ExpoConfig = {
       // and keystrokes still never leave.
       NSLocalNetworkUsageDescription:
         'Agent Terminal connects to your desktop over your local Wi-Fi to stream terminal output. Your terminal output and keystrokes never leave your network.',
+      // Every cryptographic operation here is Apple's own: URLSession for
+      // TLS, CryptoKit and expo-crypto for SHA-256, Keychain for storage.
+      // Nothing proprietary and no bundled crypto library, so the use is
+      // exempt. Declaring it in the binary stops App Store Connect asking
+      // on every upload, which is what keeps the release scriptable.
+      ITSAppUsesNonExemptEncryption: false,
     },
   },
   android: {
@@ -112,6 +118,14 @@ const config: ExpoConfig = {
         // monochrome layer rather than adding a near-identical asset.
         icon: './assets/android-icon-monochrome.png',
         color: '#0e0f10',
+        // Decides which APNs environment Expo registers the token
+        // against, and TestFlight is production. Set explicitly rather
+        // than relying on Xcode to rewrite the entitlement during export:
+        // the plugin's own default is `development`, and a build that
+        // ships it registers a sandbox token and then receives nothing,
+        // with no error anywhere. The iOS lane asserts the shipped value
+        // because this key is undocumented and could become a no-op.
+        mode: isProd ? 'production' : 'development',
       },
     ],
     'expo-secure-store',

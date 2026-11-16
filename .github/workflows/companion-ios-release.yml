@@ -1,0 +1,269 @@
+# Tag-triggered signed iOS release for the companion app.
+#
+# Push a `companion-v*` tag (e.g. `companion-v1.0.1`) → this workflow builds
+# a signed .ipa and uploads it to TestFlight for **internal** testers.
+#
+# This is the same tag the Android workflow listens on, so one tag ships both
+# stores from one version number. The two run independently: neither waits on
+# the other, and one failing does not cancel the other.
+#
+# Internal TestFlight needs no Beta App Review, so nothing here is submitted
+# for review and nothing reaches the public. Promoting to external testers or
+# to the App Store stays a human decision in App Store Connect, which is the
+# same contract the Android and desktop release workflows keep.
+#
+# There is deliberately no GitHub Release job here: the Android workflow
+# already creates the draft release for this tag, and two workflows writing
+# one tag's release would collide. The .ipa is kept as a workflow artifact
+# instead.
+#
+# How to cut a release:
+#   1. Bump version in apps/companion/package.json
+#   2. Commit ("chore(release): companion-vX.Y.Z")
+#   3. git tag companion-vX.Y.Z && git push origin main --tags
+#   4. Wait for the build to finish processing, then distribute it to the
+#      internal group from App Store Connect
+#
+# Before the first tag, run this once from the Actions tab with upload set to
+# `none`. That builds and runs every assertion without consuming a build
+# number in App Store Connect, which is the cheapest way to prove the signing
+# setup before a release depends on it.
+#
+# Required repo secrets (settings → Secrets and variables → Actions):
+#   ASC_KEY_ID                      App Store Connect API key id
+#   ASC_ISSUER_ID                   the issuer the key belongs to
+#   ASC_KEY_P8                      the .p8 key contents, base64 encoded, on
+#                                   one line. base64 so that a newline in the
+#                                   PEM cannot break the value in transit.
+#   MATCH_PASSWORD                  decrypts the certificates repository
+#   MATCH_GIT_URL                   the private certificates repository
+#   MATCH_GIT_BASIC_AUTHORIZATION   base64 of `username:token`, where the
+#                                   token has read access to that repository
+#   APPLE_TEAM_ID                   the Apple Developer team (already present)
+#   EAS_PROJECT_ID                  required by getExpoPushTokenAsync, and
+#                                   required at archive time rather than only
+#                                   at prebuild (already present)
+#
+# All values stored in repo Settings → Secrets and variables → Actions.
+# Never inline any of them here, even as examples.
+#
+# The certificates repository is populated once, by hand, with
+# `bundle exec fastlane match appstore` from a machine that can reach Apple.
+# This workflow only ever reads from it: the lane runs match in readonly mode,
+# so a release can never mint or revoke a signing asset.
+
+name: Companion Release (signed iOS build)
+
+on:
+  push:
+    tags:
+      # Scoped to `companion-v…` so the desktop's own `v…` tags, which the
+      # other release workflow owns, never start an iOS build.
+      - 'companion-v[0-9]*'
+  # The only way to reach a build that uploads nothing. Worth keeping for
+  # proving the signing path, and for diagnosing a failure without consuming
+  # an App Store Connect build number.
+  workflow_dispatch:
+    inputs:
+      upload:
+        description: 'Where to send the build'
+        type: choice
+        default: testflight
+        options: [testflight, none]
+      build_offset:
+        description: 'Added to the derived build number, for a respin of the same version'
+        default: '0'
+
+# Read-only. Unlike the Android workflow there is no job here that writes to
+# the repository, because this workflow creates no release.
+permissions:
+  contents: read
+
+# App Store Connect rejects a build number it has already seen, so two
+# concurrent runs of the same version would make the second fail at upload.
+# Queue instead. A separate group from the Android workflow, so one tag
+# starting both does not serialise them behind each other.
+concurrency:
+  group: companion-ios-release
+  cancel-in-progress: false
+
+jobs:
+  # Job 1: work out the changelog once, on a free Linux runner, and hand it to
+  # the build as a job output. It becomes the TestFlight "What to Test" note,
+  # so testers see the same summary the GitHub release carries.
+  changelog:
+    name: Compute changelog
+    runs-on: ubuntu-latest
+    outputs:
+      first_release: ${{ steps.previous_tag.outputs.first_release }}
+      content: ${{ steps.changelog.outputs.content || 'first release' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.4.0
+        with:
+          # Full history is required so git-cliff (and `git describe`) can
+          # walk back to the previous tag and compute the changelog range.
+          fetch-depth: 0
+
+      - name: Determine previous tag (for changelog range)
+        id: previous_tag
+        run: |
+          # `--match 'companion-v[0-9]*'` keeps the desktop's `v…` tags out
+          # of the range. Without it the previous tag would usually be a
+          # desktop release and the changelog would cover the wrong window.
+          set +e
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 --match 'companion-v[0-9]*' "${GITHUB_REF_NAME}^" 2>/dev/null)
+          set -e
+          if [ -z "$PREVIOUS_TAG" ]; then
+            echo "first_release=true" >> "$GITHUB_OUTPUT"
+            echo "No previous companion tag found, treating as the first release."
+          else
+            echo "first_release=false" >> "$GITHUB_OUTPUT"
+            echo "previous_tag=$PREVIOUS_TAG" >> "$GITHUB_OUTPUT"
+            echo "Previous tag: $PREVIOUS_TAG"
+          fi
+
+      - name: Generate changelog (subsequent releases only)
+        if: steps.previous_tag.outputs.first_release == 'false'
+        id: changelog
+        # Same cliff.toml and the same --include-path the Android release
+        # uses, so both stores get the same notes for one tag.
+        uses: orhun/git-cliff-action@v4.9.1
+        with:
+          config: cliff.toml
+          args: >-
+            --strip header
+            --include-path "apps/companion/**"
+            ${{ steps.previous_tag.outputs.previous_tag }}..${{ github.ref_name }}
+
+  # Job 2: build, sign and upload. A macOS runner, because this needs Xcode.
+  build:
+    name: Build signed archive
+    needs: [changelog]
+    runs-on: macos-latest
+    # Longer than the Android job: a cold macOS runner has to resolve pods and
+    # compile the native project from scratch, since ios/ is regenerated by
+    # prebuild on every run and so nothing of it can be cached.
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.4.0
+
+      - name: Assert the tag matches the version in package.json
+        # The cheapest possible place to catch a mistyped tag: before
+        # anything is built, rather than as a wrong version string sitting
+        # in App Store Connect.
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          set -euo pipefail
+          tag_version="${GITHUB_REF_NAME#companion-v}"
+          pkg_version=$(jq -r .version apps/companion/package.json)
+          if [ "$tag_version" != "$pkg_version" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} implies version ${tag_version}, but apps/companion/package.json says ${pkg_version}"
+            exit 1
+          fi
+          echo "version ${pkg_version} confirmed"
+
+      - name: Record the toolchain
+        # Not pinned to an Xcode version, so the runner's default decides it.
+        # Printing it means a build that breaks after a runner image update
+        # can be diagnosed from its own log rather than from guesswork.
+        run: |
+          xcodebuild -version
+          sw_vers
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2.2.0
+
+      - name: Set up Ruby and Fastlane
+        # `bundler: latest` rather than the stock bundler, because the
+        # committed Gemfile.lock records a newer BUNDLED WITH than the one
+        # shipping with this Ruby, and the stock bundler refuses it.
+        uses: ruby/setup-ruby@v1.338.0
+        with:
+          ruby-version: '3.3'
+          bundler: latest
+          bundler-cache: true
+          working-directory: apps/companion
+
+      - name: Cache CocoaPods
+        # Only the spec repo and the downloaded pod sources. The Pods
+        # directory itself lives inside ios/, which prebuild --clean deletes
+        # every run, so there would be nothing there to restore.
+        uses: actions/cache@v4.3.0
+        with:
+          path: |
+            ~/Library/Caches/CocoaPods
+            ~/.cocoapods
+          key: ${{ runner.os }}-pods-companion-${{ hashFiles('apps/companion/package.json', 'bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pods-companion-
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Run the companion check gate
+        # A release is the worst time to discover a type error. Same gate
+        # the PR runs, so this should never be the step that fails.
+        run: bun run --filter companion check
+
+      - name: Build and upload
+        working-directory: apps/companion
+        env:
+          # fastlane's canonical names, so `app_store_connect_api_key` picks
+          # them up with no parameters at all.
+          APP_STORE_CONNECT_API_KEY_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          APP_STORE_CONNECT_API_KEY_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY_KEY: ${{ secrets.ASC_KEY_P8 }}
+          APP_STORE_CONNECT_API_KEY_IS_KEY_CONTENT_BASE64: true
+          # match reads all three itself. The lane pins readonly, so nothing
+          # here can create or revoke a certificate.
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
+          MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}
+          # Read by the Appfile, and passed to the signing settings from there.
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Required by getExpoPushTokenAsync. It has to be visible to
+          # xcodebuild and not merely to prebuild: expo-constants re-evaluates
+          # the app config in a pod script phase during the build, and that
+          # evaluation is the one that reaches the binary. The lane asserts
+          # the result rather than trusting this.
+          EAS_PROJECT_ID: ${{ secrets.EAS_PROJECT_ID }}
+          # Becomes the TestFlight "What to Test" note. Passed through the
+          # environment rather than as a lane argument because it is
+          # multi-line and lane arguments are single-line key:value pairs.
+          TESTFLIGHT_CHANGELOG: ${{ needs.changelog.outputs.content }}
+          FASTLANE_SKIP_UPDATE_CHECK: '1'
+          # A tag always goes to TestFlight. A manual run can pick `none` for
+          # a build that runs every assertion and uploads nothing.
+          UPLOAD: ${{ github.event_name == 'workflow_dispatch' && inputs.upload || 'testflight' }}
+          BUILD_OFFSET: ${{ inputs.build_offset || '0' }}
+        run: |
+          set -euo pipefail
+          if [ "$UPLOAD" = "none" ]; then
+            bundle exec fastlane ios validate build_offset:"$BUILD_OFFSET"
+          else
+            bundle exec fastlane ios beta build_offset:"$BUILD_OFFSET"
+          fi
+
+      - name: Upload the archive as a workflow artifact
+        # Keeps the exact artifact inspectable afterwards, which is what makes
+        # an App Store Connect rejection explainable. Also the only copy kept,
+        # since this workflow creates no GitHub release.
+        if: always()
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: companion-ipa
+          path: apps/companion/build/ios/*.ipa
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Shred the signing material
+        # `always()` so a failed build cannot leave an installed identity or a
+        # decrypted profile behind on a runner that something later might
+        # surface. The runner is ephemeral, so this is defence in depth rather
+        # than the only thing standing between a key and a log.
+        if: always()
+        run: |
+          security delete-keychain fastlane_tmp_keychain 2>/dev/null || true
+          rm -rf ~/Library/MobileDevice/Provisioning\ Profiles
