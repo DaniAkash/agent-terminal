@@ -23,6 +23,13 @@ workflows:
         - 'oven-sh/setup-bun@v2.2.0'
         - 'ruby/setup-ruby@v1.338.0'
         - 'softprops/action-gh-release@v2.6.2'
+    '.github/workflows/companion-ios-release.yml':
+        - 'actions/cache@v4.3.0'
+        - 'actions/checkout@v4.4.0'
+        - 'actions/upload-artifact@v4.6.2'
+        - 'orhun/git-cliff-action@v4.9.1'
+        - 'oven-sh/setup-bun@v2.2.0'
+        - 'ruby/setup-ruby@v1.338.0'
     '.github/workflows/linux-publish.yml':
         - 'actions/checkout@v4.4.0'
         - 'snapcore/action-publish@v1.2.0'
@@ -84,7 +91,7 @@ dependencies:
         repo_id: 192625955
     'dtolnay/rust-toolchain@stable':
         ref: 'stable'
-        commit: 'sha1-b725eda525362e7cf34af9a7243cac1e3f01a7ec'
+        commit: 'sha1-39008827e6b4319a349e9a42dfc90579dd25f1ca'
         owner_id: 1940490
         repo_id: 260749683
     'dtolnay/rust-toolchain@v1':
