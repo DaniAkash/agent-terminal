@@ -66,6 +66,10 @@ yarn-error.*
 /ios
 /android
 
+# Where the iOS lane writes the archive and the .ipa. Ignored here rather
+# than relying on a global ignore, which a CI runner does not have.
+/build
+
 # Gradle build output inside local Expo modules. Ephemeral, regenerated
 # on every `expo run:android`, never committed. Also keeps biome + fallow
 # from scanning it via their `useIgnoreFile` integration.
