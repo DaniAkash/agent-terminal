@@ -57,7 +57,10 @@ const config: ExpoConfig = {
     // `com.daniakash.agent-terminal` as its bundle id, and on Apple that is
     // a real collision.
     bundleIdentifier: `com.daniakash.agent-terminal.companion${suffix}`,
-    supportsTablet: false,
+    // iPad runs an iPhone-only app in a small compatibility window, which
+    // is what this app was doing. The terminal already resizes with its
+    // container, so the larger canvas needs no separate layout.
+    supportsTablet: true,
     buildNumber,
     infoPlist: {
       NSAppTransportSecurity: {
