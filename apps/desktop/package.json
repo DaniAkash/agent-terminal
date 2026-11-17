@@ -20,20 +20,20 @@
     "@tailwindcss/vite": "^4.3.5",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "^2.8.4",
-    "@tauri-apps/plugin-opener": "^2.7.2",
+    "@tauri-apps/plugin-opener": "^2.7.3",
     "@tauri-apps/plugin-process": "^2",
     "@tauri-apps/plugin-updater": "^2.14.1",
-    "@wterm/dom": "0.5.9",
-    "@wterm/ghostty": "0.5.9",
+    "@wterm/dom": "0.5.10",
+    "@wterm/ghostty": "0.5.10",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
-    "lucide-react": "^1.70.0",
+    "lucide-react": "^1.73.0",
     "nanostores": "^1.5.4",
     "qrcode.react": "^4.2.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "react-hotkeys-hook": "^5.3.3",
+    "react-hotkeys-hook": "^5.4.0",
     "shadcn": "^4.23.0",
     "tailwind-merge": "^3.7.0",
     "tailwindcss": "^4.3.5",
@@ -46,6 +46,6 @@
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^4.6.0",
     "typescript": "^7.0.2",
-    "vite": "^8.3.6"
+    "vite": "^8.3.8"
   }
 }
