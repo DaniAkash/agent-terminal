@@ -15,8 +15,8 @@ describe('assetUrl', () => {
   // A resolver failure otherwise surfaces as WebAssembly refusing bytes
   // that do not start with \0asm, which says nothing about the cause.
   test('throws when the asset resolved to neither shape', () => {
-    expect(() => assetUrl(undefined)).toThrow(/assetExts/)
-    expect(() => assetUrl({})).toThrow(/assetExts/)
-    expect(() => assetUrl(42)).toThrow(/assetExts/)
+    expect(() => assetUrl(undefined)).toThrow(/inlining transformer/)
+    expect(() => assetUrl({})).toThrow(/inlining transformer/)
+    expect(() => assetUrl(42)).toThrow(/inlining transformer/)
   })
 })

@@ -4,11 +4,16 @@ import { linkifyRows, openableHref } from '@agent-terminal/core-ui'
 import { WTerm } from '@wterm/dom'
 import '@wterm/dom/css'
 import { GhosttyCore } from '@wterm/ghostty'
-// @ts-expect-error Metro resolves this through `assetExts`, which has no types.
+// @ts-expect-error Metro routes this through the inlining transformer in
+// metro.config.js, which has no types.
 import wasmAsset from '@wterm/ghostty/ghostty-vt.wasm'
 import type { DOMImperativeFactory, DOMProps } from 'expo/dom'
 import { useDOMImperativeHandle } from 'expo/dom'
 import { type Ref, useEffect, useRef } from 'react'
+import {
+  bootFailureMessage,
+  renderBootFailure,
+} from './terminal-boot-error.helpers'
 import { assetUrl } from './ghostty-wasm.helpers'
 import {
   type TerminalCallbacks,
@@ -200,6 +205,28 @@ export default function TerminalDom({
 
     boot(container).catch((err: unknown) => {
       console.error('[TerminalDom] wterm boot failed:', err)
+      // boot can reject after it has built a terminal, a WASM instance or
+      // both, and the component stays mounted to show the message. Release
+      // them here rather than holding a live core behind an error screen,
+      // and before the surface those nodes belong to is replaced: a
+      // terminal destroyed after its host was emptied is a terminal tidying
+      // up nodes that are already gone. Clearing the handles is what keeps
+      // unmount from reaching the same objects a second time.
+      linkObserver?.disconnect()
+      linkObserver = null
+      if (linkFrame !== 0) {
+        cancelAnimationFrame(linkFrame)
+        linkFrame = 0
+      }
+      term?.destroy()
+      term = null
+      core?.dispose()
+      core = null
+      termRef.current = null
+      // A console line is invisible in a release build, so a failed boot
+      // used to read as an app that renders nothing at all. Say what
+      // happened on the surface the terminal would have occupied.
+      renderBootFailure(container, bootFailureMessage(err))
     })
 
     return () => {

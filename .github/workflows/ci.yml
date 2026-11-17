@@ -575,3 +575,101 @@ jobs:
           esac
           test -x /usr/bin/agent-terminal
           runuser -u smoke -- python3 -E apps/desktop/shell-env-tests/smoke_appimage.py --binary /usr/bin/agent-terminal --backend "$DISPLAY_BACKEND"
+
+  # Advisory only, and deliberately not part of `bun run check`.
+  #
+  # `expo install --check` compares the installed packages against the
+  # versions Expo recommends for the SDK, and that recommendation is
+  # resolved when the check runs rather than read from anything in the
+  # repository. Expo ships SDK patches continuously, so the moment one is
+  # published every open pull request starts failing a gate on work that
+  # did not touch a dependency, and the lockfile cannot always be
+  # regenerated on demand. Blocking merges on someone else's release
+  # schedule is the wrong trade.
+  #
+  # So it runs here instead: never red, never a merge gate, and it leaves
+  # a comment when the versions have moved so the drift is still visible
+  # and can be picked up deliberately.
+  expo-versions:
+    name: Expo version drift (advisory)
+    needs: approve
+    if: >-
+      always() && github.event_name == 'pull_request'
+      && (needs.approve.result == 'success' || needs.approve.result == 'skipped')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Writing the advisory comment is the only reason this job needs more
+    # than the read-only workflow default.
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4.4.0
+
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version: latest
+
+      - name: bun install
+        run: bun install --frozen-lockfile
+
+      # continue-on-error is what makes this advisory: a drifted version
+      # set is reported below rather than failing the job.
+      - name: Check Expo package versions
+        id: expo
+        continue-on-error: true
+        working-directory: apps/companion
+        run: |
+          set -o pipefail
+          bun run expo-check 2>&1 | tee "${RUNNER_TEMP}/expo-check.log"
+
+      # A fork's token is read-only, so there is nothing to post with and
+      # the attempt would be the one failure in an advisory job.
+      - name: Report version drift on the pull request
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          OUTCOME: ${{ steps.expo.outcome }}
+        run: |
+          set -euo pipefail
+          marker='<!-- expo-version-drift -->'
+          # One comment per pull request, found by its marker and then
+          # rewritten, so a branch that is pushed ten times does not
+          # collect ten copies of the same advice.
+          existing=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" \
+            --paginate --jq "[.[] | select(.body | startswith(\"${marker}\")) | .id] | first // empty")
+
+          if [ "$OUTCOME" = 'success' ]; then
+            if [ -n "$existing" ]; then
+              gh api -X DELETE "repos/${GITHUB_REPOSITORY}/issues/comments/${existing}"
+              echo 'Versions are in step again; removed the earlier advisory comment.'
+            else
+              echo 'Versions are in step with the SDK.'
+            fi
+            exit 0
+          fi
+
+          {
+            printf '%s\n' "$marker"
+            printf '### Expo package versions have drifted\n\n'
+            printf '%s' 'This is advisory and does not block this pull request. '
+            printf '%s' 'Expo publishes SDK patches continuously, and the expected '
+            printf '%s' 'versions are resolved when the check runs, so this can '
+            printf '%s\n\n' 'appear on a branch that changed no dependencies.'
+            printf '```\n'
+            sed -e 's/\x1b\[[0-9;]*m//g' "${RUNNER_TEMP}/expo-check.log"
+            printf '```\n\n'
+            printf '%s' "Run \`bun run --filter companion expo-check\` to see it locally, "
+            printf '%s\n' "and \`bunx expo install --fix\` in \`apps/companion\` to take the update."
+          } > "${RUNNER_TEMP}/comment.md"
+
+          if [ -n "$existing" ]; then
+            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${existing}" \
+              -F body=@"${RUNNER_TEMP}/comment.md" >/dev/null
+            echo 'Updated the existing advisory comment.'
+          else
+            gh api -X POST "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" \
+              -F body=@"${RUNNER_TEMP}/comment.md" >/dev/null
+            echo 'Posted an advisory comment.'
+          fi
