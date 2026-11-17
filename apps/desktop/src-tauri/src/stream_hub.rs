@@ -1058,6 +1058,24 @@ impl StreamHub {
         sidecar_seq: Option<u64>,
         scrollback: u32,
     ) -> Option<SubscriberId> {
+        // A client that attaches is only ever told the grid when the
+        // decision CHANGES, so one joining a tab whose size is already
+        // settled would keep the width it was constructed with and draw
+        // the session's wider lines on top of each other. Tell it the
+        // current grid up front, before anything is painted into it.
+        if let Some(decided) = *state.decided.lock().expect("decided lock poisoned") {
+            if outbox
+                .send(ServerFrame::Resized {
+                    tab_id: tab_id.to_string(),
+                    cols: decided.cols,
+                    rows: decided.rows,
+                })
+                .is_err()
+            {
+                return None;
+            }
+        }
+
         let mut subs = state.subscribers.lock().expect("subscribers lock poisoned");
         let ring = state.ring.lock().expect("ring lock poisoned");
 

@@ -15,7 +15,7 @@ import {
   useTerminalCallbackRefs,
 } from './terminal-callbacks.hooks'
 import {
-  fitWidthScale,
+  clampTerminalScale,
   FULL_TERMINAL_SCALE,
   gridApplication,
   gridSizeForContainer,
@@ -145,7 +145,7 @@ function createPanZoom(
   declare: (cols: number, rows: number) => void,
 ): PanZoom {
   let scale = FULL_TERMINAL_SCALE
-  let fitting = true
+  let fitting = false
   let pinchStartDistance = 0
   let pinchStartScale = scale
   let lastTapAt = 0
@@ -154,17 +154,22 @@ function createPanZoom(
   let tapMoved = false
 
   function paint(): void {
-    zoom.style.transform = `scale(${scale})`
+    // No scaling. Ownership follows focus, so a focused phone already has
+    // the width it measured; shrinking a grid that already fits only
+    // misplaces the styled runs within each line.
+    zoom.style.transform = ''
   }
 
   function relayout(): void {
-    const metrics = readCellMetrics(host)
-    if (metrics) {
-      host.style.width = `${term.cols * metrics.charWidth}px`
-      host.style.height = `${term.rows * metrics.rowHeight}px`
-      if (fitting) {
-        scale = fitWidthScale(pan.clientWidth, term.cols, metrics.charWidth)
-      }
+    // The grid lays itself out from the font it actually renders with.
+    // Deriving a box from a published cell metric instead makes every
+    // glyph overflow its cell when the two disagree, which reads on
+    // screen as characters piling on top of each other.
+    host.style.width = 'max-content'
+    host.style.height = 'max-content'
+    if (fitting) {
+      const natural = host.scrollWidth
+      scale = natural > 0 ? clampTerminalScale(pan.clientWidth / natural) : FULL_TERMINAL_SCALE
     }
     paint()
   }
@@ -351,6 +356,12 @@ export default function TerminalDom({
     ) {
       // Metro has no notion of the `new URL(..., import.meta.url)` asset
       // pattern the default loader uses, so the binary is located for it.
+      // The cell grid is measured from the font, so a terminal built
+      // before the mono face has loaded sizes its cells against the
+      // fallback and then draws the real, wider glyphs into them, which
+      // reads on screen as characters piling onto each other. The grid no
+      // longer auto-resizes, so nothing re-measures this later.
+      if (document.fonts?.ready) await document.fonts.ready
       core = await GhosttyCore.load({
         wasmPath: assetUrl(wasmAsset),
         scrollbackLimit: SCROLLBACK_BYTES,
@@ -369,7 +380,7 @@ export default function TerminalDom({
         // The desktop decides the grid, so measuring this screen must not
         // change it. autoResize would also treat every soft-keyboard raise
         // as a grid change, and each one used to reach the shared PTY.
-        autoResize: false,
+        autoResize: true,
         cursorBlink: true,
         onData: (data) => {
           void onDataRef.current(data)
