@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import { TERMINAL_URL_PATTERN } from '@agent-terminal/core-ui'
 import {
+  FULL_TERMINAL_SCALE,
+  MAX_TERMINAL_SCALE,
+  MIN_TERMINAL_SCALE,
+} from './terminal-grid.helpers'
+import {
   buildTerminalHtml,
   DEFAULT_TERMINAL_HTML_CONFIG,
   safeCssColor,
@@ -44,16 +49,25 @@ describe('buildTerminalHtml', () => {
     expect(html).toContain('<script type="module">')
   })
 
-  test('embeds initial cols and rows from config', () => {
+  test('embeds the starting grid and never measures its own', () => {
+    // The config grid is a placeholder until the desktop's first Resized
+    // frame lands. autoResize is what used to let this screen take the
+    // shared PTY, keyboard raise by keyboard raise.
     expect(html).toContain('cols: 80')
     expect(html).toContain('rows: 24')
+    expect(html).toContain('autoResize: false')
+    expect(html).not.toContain('autoResize: true')
   })
 
-  test('installs the RN bridge as window.__terminal_bridge with write/clear/fit', () => {
+  test('installs the RN bridge as window.__terminal_bridge with write/clear/resize', () => {
     expect(html).toContain('window.__terminal_bridge')
     expect(html).toContain('write: function')
     expect(html).toContain('clear: function')
-    expect(html).toContain('fit: function')
+    expect(html).toContain('resize: function')
+    // fit() measured this screen and resized the grid to it, which is the
+    // behaviour the desktop now owns.
+    expect(html).not.toContain('fit: function')
+    expect(html).not.toContain('term.fit()')
   })
 
   test('posts ready/data/resize message types to RN', () => {
@@ -80,10 +94,14 @@ describe('buildTerminalHtml', () => {
   test('carries no touch-scroll handler, the scrollback being a real scroll container', () => {
     // xterm needed a hand-written drag-to-scroll handler because its
     // viewport only moved on wheel events. wterm's scrollback overflows
-    // natively, so the handler is gone rather than ported.
-    expect(html).not.toContain('touchmove')
+    // natively, so the handler is gone rather than ported. The one
+    // touchmove listener acts on a two-finger pinch and nothing else; it
+    // never moves a scroll position itself.
     expect(html).not.toContain('scrollLines')
     expect(html).toContain('overscroll-behavior: contain')
+    expect(html).toContain(
+      'if (e.touches.length === 2 && pinchStartDistance > 0)',
+    )
   })
 
   test('a failed import posts an error rather than retrying forever', () => {
@@ -202,5 +220,59 @@ describe('scrollback and links', () => {
   test('strips trailing punctuation by scan, not a backtracking regex', () => {
     expect(html).toContain('function stripTrailingPunctuation(text)')
     expect(html).not.toContain('TRAILING_RE')
+  })
+})
+
+describe('pan and zoom over the desktop grid', () => {
+  const html = buildTerminalHtml(DEFAULT_TERMINAL_HTML_CONFIG)
+
+  test('wraps the host in a scrolling pan container and a scaled layer', () => {
+    expect(html).toContain(
+      '<div id="pan"><div id="zoom"><div id="terminal"></div></div></div>',
+    )
+    expect(html).toContain('overflow: auto;')
+    expect(html).toContain('transform-origin: top left;')
+    expect(html).toContain('zoom.style.transform = "scale(" + scale + ")"')
+  })
+
+  test('leaves native scrolling alone while taking pinch off the browser', () => {
+    expect(html).toContain('touch-action: pan-x pan-y;')
+  })
+
+  test('sizes the host to the grid rather than to the screen', () => {
+    expect(html).toContain('host.style.width = term.cols * metrics.charWidth')
+    expect(html).toContain('host.style.height = term.rows * metrics.rowHeight')
+  })
+
+  test('carries the shared scale bounds rather than a second copy', () => {
+    expect(html).toContain(`const MIN_SCALE = ${MIN_TERMINAL_SCALE};`)
+    expect(html).toContain(`const MAX_SCALE = ${MAX_TERMINAL_SCALE};`)
+    expect(html).toContain(`const FULL_SCALE = ${FULL_TERMINAL_SCALE};`)
+  })
+
+  test('defaults to fit-width and never magnifies past 1:1', () => {
+    expect(html).toContain(
+      'return Math.min(FULL_SCALE, clampScale(containerWidth / gridWidth));',
+    )
+    expect(html).toContain('scale = fitWidthScale(pan.clientWidth, term.cols')
+  })
+
+  test('double-tap toggles fit-width against 1:1', () => {
+    expect(html).toContain('function toggleZoom()')
+    expect(html).toContain('if (!fitting) scale = FULL_SCALE;')
+    expect(html).toContain('if (now - lastTapAt < DOUBLE_TAP_MS)')
+  })
+
+  test('pinch scales from the distance the fingers started at', () => {
+    expect(html).toContain('pinchStartDistance = twoFingerDistance(e.touches)')
+    expect(html).toContain('scale = clampScale(pinchStartScale * ratio)')
+  })
+
+  test('declares the screen size instead of the grid wterm measured', () => {
+    // The only producer of a resize message now: wterm's own onResize is
+    // gone, so the grid the desktop sent is never echoed back at it.
+    expect(html).toContain('function declareViewport()')
+    expect(html).toContain('Math.floor(pan.clientWidth / metrics.charWidth)')
+    expect(html).not.toContain('onResize: function')
   })
 })

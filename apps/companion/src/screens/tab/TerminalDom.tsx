@@ -14,13 +14,22 @@ import {
   type TerminalCallbacks,
   useTerminalCallbackRefs,
 } from './terminal-callbacks.hooks'
+import {
+  fitWidthScale,
+  FULL_TERMINAL_SCALE,
+  gridSizeForContainer,
+  INITIAL_TERMINAL_COLS,
+  INITIAL_TERMINAL_ROWS,
+  pinchScale,
+} from './terminal-grid.helpers'
 
 type Args = Parameters<DOMImperativeFactory[string]>
 
 export interface TerminalHandle extends DOMImperativeFactory {
   write: (...args: Args) => void
   clear: (...args: Args) => void
-  fit: (...args: Args) => void
+  /** Adopt the grid the desktop decided on. The only way the grid moves. */
+  resize: (...args: Args) => void
   /** Drop focus so the next tap on the terminal can take it again. */
   blurInput: (...args: Args) => void
 }
@@ -40,6 +49,9 @@ const CLEAR_SEQUENCE = '\x1b[2J\x1b[3J\x1b[H'
 // for here. The default is 10,000 bytes, about 1,260 rows at that width.
 const SCROLLBACK_BYTES = 2_000_000
 
+const DOUBLE_TAP_MS = 300
+const TAP_SLOP_PX = 16
+
 const THEME = {
   background: 0x0e0f10,
   foreground: 0xe6e8eb,
@@ -51,16 +63,29 @@ const THEME = {
   ],
 } as const
 
-// wterm draws cells as DOM nodes and lets the scrollback be a real
-// overflow container, so a finger scrolls it the way it scrolls any
-// other page. The whole touch-scroll shim xterm needed is gone with it.
-// `overscroll-behavior` keeps a flick at the top of the scrollback from
-// becoming a pull-to-refresh on the WebView itself.
+// The grid is the desktop's, so the host is sized to the grid in pixels
+// and the screen becomes a window onto it: #pan scrolls, #zoom scales.
+// `touch-action: pan-x pan-y` leaves native scrolling alone, in both the
+// pan container and wterm's own scrollback, while taking pinch and
+// double-tap off the browser, which would zoom the page instead of the
+// grid. `overscroll-behavior` keeps a flick at either end from becoming a
+// pull-to-refresh on the WebView itself.
 const HOST_CSS = `
   html, body { margin: 0; padding: 0; background: #0e0f10; }
+  #pan {
+    position: fixed;
+    inset: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
+    touch-action: pan-x pan-y;
+    background: #0e0f10;
+  }
+  #zoom {
+    width: max-content;
+    height: max-content;
+    transform-origin: top left;
+  }
   .wterm {
-    width: 100vw;
-    height: 100vh;
     padding: 0;
     border-radius: 0;
     box-shadow: none;
@@ -72,6 +97,181 @@ const HOST_CSS = `
   }
 `
 
+interface CellMetrics {
+  charWidth: number
+  rowHeight: number
+}
+
+// wterm publishes its measured cell on the host as custom properties, so
+// the metrics come from the renderer that drew the cells rather than from
+// a second font measurement that could disagree with it.
+function readCellMetrics(host: HTMLElement): CellMetrics | null {
+  const style = getComputedStyle(host)
+  const charWidth = Number.parseFloat(
+    style.getPropertyValue('--term-cell-width'),
+  )
+  const rowHeight = Number.parseFloat(
+    style.getPropertyValue('--term-row-height'),
+  )
+  if (!(charWidth > 0) || !(rowHeight > 0)) return null
+  return { charWidth, rowHeight }
+}
+
+function twoFingerDistance(touches: TouchList): number {
+  const a = touches.item(0)
+  const b = touches.item(1)
+  if (!a || !b) return 0
+  return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY)
+}
+
+interface PanZoom {
+  applyGrid: (cols: number, rows: number) => void
+  dispose: () => void
+}
+
+/**
+ * Present the desktop's grid on a phone screen: fit its width by default,
+ * pinch to zoom, double-tap to toggle fit-width against 1:1, pan for the
+ * rest. Also measures the screen in cells and hands that up as a
+ * declaration, which only decides anything when no desktop is attached.
+ */
+// fallow-ignore-next-line complexity
+function createPanZoom(
+  pan: HTMLElement,
+  zoom: HTMLElement,
+  host: HTMLElement,
+  term: WTerm,
+  declare: (cols: number, rows: number) => void,
+): PanZoom {
+  let scale = FULL_TERMINAL_SCALE
+  let fitting = true
+  let pinchStartDistance = 0
+  let pinchStartScale = scale
+  let lastTapAt = 0
+  let tapX = 0
+  let tapY = 0
+  let tapMoved = false
+
+  function paint(): void {
+    zoom.style.transform = `scale(${scale})`
+  }
+
+  function relayout(): void {
+    const metrics = readCellMetrics(host)
+    if (metrics) {
+      host.style.width = `${term.cols * metrics.charWidth}px`
+      host.style.height = `${term.rows * metrics.rowHeight}px`
+      if (fitting) {
+        scale = fitWidthScale(pan.clientWidth, term.cols, metrics.charWidth)
+      }
+    }
+    paint()
+  }
+
+  function applyGrid(cols: number, rows: number): void {
+    if (!(cols > 0) || !(rows > 0)) return
+    if (cols !== term.cols || rows !== term.rows) term.resize(cols, rows)
+    relayout()
+  }
+
+  function declareViewport(): void {
+    const metrics = readCellMetrics(host)
+    if (!metrics) return
+    const size = gridSizeForContainer(
+      pan.clientWidth,
+      pan.clientHeight,
+      metrics.charWidth,
+      metrics.rowHeight,
+    )
+    if (size) declare(size.cols, size.rows)
+  }
+
+  function toggleZoom(): void {
+    fitting = !fitting
+    if (!fitting) scale = FULL_TERMINAL_SCALE
+    relayout()
+  }
+
+  function onTouchStart(e: TouchEvent): void {
+    if (e.touches.length === 2) {
+      pinchStartDistance = twoFingerDistance(e.touches)
+      pinchStartScale = scale
+      return
+    }
+    const touch = e.touches.item(0)
+    tapX = touch?.clientX ?? 0
+    tapY = touch?.clientY ?? 0
+    tapMoved = false
+  }
+
+  function onTouchMove(e: TouchEvent): void {
+    if (e.touches.length === 2 && pinchStartDistance > 0) {
+      e.preventDefault()
+      fitting = false
+      scale = pinchScale(
+        pinchStartScale,
+        pinchStartDistance,
+        twoFingerDistance(e.touches),
+      )
+      paint()
+      return
+    }
+    const touch = e.touches.item(0)
+    if (!touch) return
+    if (
+      Math.abs(touch.clientX - tapX) > TAP_SLOP_PX ||
+      Math.abs(touch.clientY - tapY) > TAP_SLOP_PX
+    ) {
+      tapMoved = true
+    }
+  }
+
+  function onTouchEnd(e: TouchEvent): void {
+    if (e.touches.length > 0) return
+    if (pinchStartDistance > 0) {
+      pinchStartDistance = 0
+      lastTapAt = 0
+      return
+    }
+    if (tapMoved) {
+      lastTapAt = 0
+      return
+    }
+    const now = Date.now()
+    if (now - lastTapAt < DOUBLE_TAP_MS) {
+      lastTapAt = 0
+      toggleZoom()
+      return
+    }
+    lastTapAt = now
+  }
+
+  pan.addEventListener('touchstart', onTouchStart, { passive: true })
+  pan.addEventListener('touchmove', onTouchMove, { passive: false })
+  pan.addEventListener('touchend', onTouchEnd, { passive: true })
+  pan.addEventListener('touchcancel', onTouchEnd, { passive: true })
+
+  const observer = new ResizeObserver(() => {
+    relayout()
+    declareViewport()
+  })
+  observer.observe(pan)
+
+  relayout()
+  declareViewport()
+
+  return {
+    applyGrid,
+    dispose: () => {
+      observer.disconnect()
+      pan.removeEventListener('touchstart', onTouchStart)
+      pan.removeEventListener('touchmove', onTouchMove)
+      pan.removeEventListener('touchend', onTouchEnd)
+      pan.removeEventListener('touchcancel', onTouchEnd)
+    },
+  }
+}
+
 export default function TerminalDom({
   onData,
   onResize,
@@ -79,8 +279,11 @@ export default function TerminalDom({
   onOpenUrl,
   ref,
 }: TerminalDomProps) {
-  const containerRef = useRef<HTMLDivElement>(null)
+  const panRef = useRef<HTMLDivElement>(null)
+  const zoomRef = useRef<HTMLDivElement>(null)
+  const hostRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<WTerm | null>(null)
+  const panZoomRef = useRef<PanZoom | null>(null)
 
   const {
     onData: onDataRef,
@@ -97,8 +300,11 @@ export default function TerminalDom({
     clear: () => {
       termRef.current?.write(CLEAR_SEQUENCE)
     },
-    fit: () => {
-      termRef.current?.fit()
+    resize: (...args: Args) => {
+      const cols = args[0]
+      const rows = args[1]
+      if (typeof cols !== 'number' || typeof rows !== 'number') return
+      panZoomRef.current?.applyGrid(cols, rows)
     },
     // The keyboard is raised by focus CHANGING, and the terminal keeps
     // its hidden textarea focused after the keyboard goes away, so a
@@ -118,8 +324,10 @@ export default function TerminalDom({
   // The ref objects are listed instead, and they keep one identity for the
   // component's lifetime, so the effect still runs exactly once.
   useEffect(() => {
-    const container = containerRef.current
-    if (!container) return
+    const pan = panRef.current
+    const zoom = zoomRef.current
+    const host = hostRef.current
+    if (!pan || !zoom || !host) return
     let disposed = false
     let term: WTerm | null = null
     let core: GhosttyCore | null = null
@@ -138,9 +346,13 @@ export default function TerminalDom({
       if (href) void onOpenUrlRef.current(href)
     }
 
-    container.addEventListener('click', onClickCapture, { capture: true })
+    pan.addEventListener('click', onClickCapture, { capture: true })
 
-    async function boot(host: HTMLDivElement) {
+    async function boot(
+      panEl: HTMLDivElement,
+      zoomEl: HTMLDivElement,
+      target: HTMLDivElement,
+    ) {
       // Metro has no notion of the `new URL(..., import.meta.url)` asset
       // pattern the default loader uses, so the binary is located for it.
       core = await GhosttyCore.load({
@@ -154,20 +366,17 @@ export default function TerminalDom({
         return
       }
 
-      term = new WTerm(host, {
+      term = new WTerm(target, {
         core,
-        autoResize: true,
+        cols: INITIAL_TERMINAL_COLS,
+        rows: INITIAL_TERMINAL_ROWS,
+        // The desktop decides the grid, so measuring this screen must not
+        // change it. autoResize would also treat every soft-keyboard raise
+        // as a grid change, and each one used to reach the shared PTY.
+        autoResize: false,
         cursorBlink: true,
-        // Registered up front rather than after init, so the resize from
-        // the default 80x24 to the container's real size reaches the
-        // native side. Otherwise the desktop renders its snapshot at
-        // whatever size the tab was created with and the first paint on
-        // the phone is wrong.
         onData: (data) => {
           void onDataRef.current(data)
-        },
-        onResize: (cols, rows) => {
-          void onResizeRef.current(cols, rows)
         },
       })
       await term.init()
@@ -184,29 +393,40 @@ export default function TerminalDom({
       // every repaint, which discards the previous pass's anchors, so
       // this reapplies per frame rather than once. Coalescing into an
       // animation frame keeps a burst of output to one sweep.
-      linkifyRows(host)
+      linkifyRows(target)
       linkObserver = new MutationObserver(() => {
         if (disposed || linkFrame !== 0) return
         linkFrame = requestAnimationFrame(() => {
           linkFrame = 0
-          if (!disposed) linkifyRows(host)
+          if (!disposed) linkifyRows(target)
         })
       })
-      linkObserver.observe(host, { childList: true, subtree: true })
+      linkObserver.observe(target, { childList: true, subtree: true })
 
       termRef.current = term
+      panZoomRef.current = createPanZoom(
+        panEl,
+        zoomEl,
+        target,
+        term,
+        (cols, rows) => {
+          void onResizeRef.current(cols, rows)
+        },
+      )
       void onReadyRef.current()
     }
 
-    boot(container).catch((err: unknown) => {
+    boot(pan, zoom, host).catch((err: unknown) => {
       console.error('[TerminalDom] wterm boot failed:', err)
     })
 
     return () => {
       disposed = true
-      container.removeEventListener('click', onClickCapture, { capture: true })
+      pan.removeEventListener('click', onClickCapture, { capture: true })
       linkObserver?.disconnect()
       if (linkFrame !== 0) cancelAnimationFrame(linkFrame)
+      panZoomRef.current?.dispose()
+      panZoomRef.current = null
       term?.destroy()
       // destroy() leaves a host-supplied core alone by design, so the
       // WASM instance behind it is this component's to release.
@@ -218,10 +438,11 @@ export default function TerminalDom({
   return (
     <>
       <style>{HOST_CSS}</style>
-      <div
-        ref={containerRef}
-        style={{ width: '100vw', height: '100vh', background: '#0e0f10' }}
-      />
+      <div id="pan" ref={panRef}>
+        <div id="zoom" ref={zoomRef}>
+          <div ref={hostRef} />
+        </div>
+      </div>
     </>
   )
 }

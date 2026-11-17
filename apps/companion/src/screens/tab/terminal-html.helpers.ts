@@ -2,9 +2,17 @@ import {
   TERMINAL_TRAILING_CHARS,
   TERMINAL_URL_PATTERN,
 } from '@agent-terminal/core-ui'
+import {
+  FULL_TERMINAL_SCALE,
+  INITIAL_TERMINAL_COLS,
+  INITIAL_TERMINAL_ROWS,
+  MAX_TERMINAL_SCALE,
+  MIN_TERMINAL_SCALE,
+} from './terminal-grid.helpers'
 
 export interface TerminalHtmlConfig {
   wtermVersion: string
+  /** Starting grid only: the desktop's first Resized frame replaces it. */
   initialCols: number
   initialRows: number
   fontFamily: string
@@ -18,8 +26,8 @@ export interface TerminalHtmlConfig {
 
 export const DEFAULT_TERMINAL_HTML_CONFIG: TerminalHtmlConfig = {
   wtermVersion: '0.5.6',
-  initialCols: 80,
-  initialRows: 24,
+  initialCols: INITIAL_TERMINAL_COLS,
+  initialRows: INITIAL_TERMINAL_ROWS,
   fontFamily:
     'ui-monospace, "SF Mono", Menlo, "Roboto Mono", "Droid Sans Mono", monospace',
   fontSize: 12,
@@ -85,14 +93,25 @@ export function buildTerminalHtml(config: TerminalHtmlConfig): string {
 <link rel="stylesheet" href="https://unpkg.com/@wterm/dom@${v}/src/terminal.css">
 <style>
   html, body { margin: 0; padding: 0; height: 100%; width: 100%; background: ${cssBackground}; overflow: hidden; }
-  #terminal { position: absolute; inset: 0; }
+  /* The grid belongs to the desktop, so the host is sized to the grid in
+     pixels and the screen becomes a window onto it: #pan scrolls, #zoom
+     scales. touch-action leaves native scrolling alone, both here and in
+     wterm's own scrollback, while taking pinch and double-tap off the
+     browser, which would zoom the page rather than the grid.
+     overscroll-behavior keeps a flick past either end from turning into a
+     WebView pull-to-refresh. */
+  #pan {
+    position: absolute;
+    inset: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
+    touch-action: pan-x pan-y;
+  }
+  #zoom { width: max-content; height: max-content; transform-origin: top left; }
   /* wterm draws cells as DOM nodes and makes the scrollback a real
      overflow container, so a finger scrolls it like any other page and
-     the touch handler xterm needed is gone. overscroll-behavior keeps a
-     flick past the top from turning into a WebView pull-to-refresh. */
+     the touch handler xterm needed is gone. */
   .wterm {
-    width: 100%;
-    height: 100%;
     padding: 0;
     border-radius: 0;
     box-shadow: none;
@@ -107,7 +126,7 @@ export function buildTerminalHtml(config: TerminalHtmlConfig): string {
 </style>
 </head>
 <body>
-<div id="terminal"></div>
+<div id="pan"><div id="zoom"><div id="terminal"></div></div></div>
 <script type="module">
 function post(msg) {
   if (window.ReactNativeWebView) {
@@ -134,14 +153,20 @@ try {
     backgroundColor: ${JSON.stringify(config.themeBackground)},
   });
 
-  const term = new WTerm(document.getElementById("terminal"), {
+  const host = document.getElementById("terminal");
+  const pan = document.getElementById("pan");
+  const zoom = document.getElementById("zoom");
+
+  // The desktop decides the grid, so measuring this screen must not change
+  // it: autoResize would, and it would also read every soft-keyboard raise
+  // as a grid change, each of which used to reach the shared PTY.
+  const term = new WTerm(host, {
     core,
     cols: ${config.initialCols},
     rows: ${config.initialRows},
-    autoResize: true,
+    autoResize: false,
     cursorBlink: true,
     onData: function (data) { post({ type: "data", payload: data }); },
-    onResize: function (cols, rows) { post({ type: "resize", cols: cols, rows: rows }); },
   });
   await term.init();
 
@@ -276,11 +301,172 @@ try {
     true,
   );
 
+  // Pan and zoom over the desktop's grid. Mirrors
+  // terminal-grid.helpers.ts, which cannot be imported here: this page is
+  // served as a string and loads wterm from a CDN, with no bundler. The
+  // constants are interpolated from that module so only the formulas are
+  // written twice.
+  const MIN_SCALE = ${MIN_TERMINAL_SCALE};
+  const MAX_SCALE = ${MAX_TERMINAL_SCALE};
+  const FULL_SCALE = ${FULL_TERMINAL_SCALE};
+  const DOUBLE_TAP_MS = 300;
+  const TAP_SLOP_PX = 16;
+
+  function clampScale(value) {
+    if (!isFinite(value)) return FULL_SCALE;
+    return Math.min(MAX_SCALE, Math.max(MIN_SCALE, value));
+  }
+
+  function fitWidthScale(containerWidth, cols, charWidth) {
+    const gridWidth = cols * charWidth;
+    if (!(gridWidth > 0) || !(containerWidth > 0)) return FULL_SCALE;
+    return Math.min(FULL_SCALE, clampScale(containerWidth / gridWidth));
+  }
+
+  // wterm publishes the cell it measured on the host, so the metrics come
+  // from the renderer that drew the cells rather than a second measurement.
+  function cellMetrics() {
+    const style = getComputedStyle(host);
+    const charWidth = parseFloat(style.getPropertyValue("--term-cell-width"));
+    const rowHeight = parseFloat(style.getPropertyValue("--term-row-height"));
+    if (!(charWidth > 0) || !(rowHeight > 0)) return null;
+    return { charWidth: charWidth, rowHeight: rowHeight };
+  }
+
+  let scale = FULL_SCALE;
+  let fitting = true;
+
+  function paintScale() {
+    zoom.style.transform = "scale(" + scale + ")";
+  }
+
+  function relayout() {
+    const metrics = cellMetrics();
+    if (metrics) {
+      host.style.width = term.cols * metrics.charWidth + "px";
+      host.style.height = term.rows * metrics.rowHeight + "px";
+      if (fitting) {
+        scale = fitWidthScale(pan.clientWidth, term.cols, metrics.charWidth);
+      }
+    }
+    paintScale();
+  }
+
+  function applyGrid(cols, rows) {
+    if (!(cols > 0) || !(rows > 0)) return;
+    if (cols !== term.cols || rows !== term.rows) term.resize(cols, rows);
+    relayout();
+  }
+
+  // What this screen would hold at 1:1, sent up as a declaration the hub
+  // may ignore. It settles the grid only when no desktop is attached.
+  function declareViewport() {
+    const metrics = cellMetrics();
+    if (!metrics) return;
+    if (!(pan.clientWidth > 0) || !(pan.clientHeight > 0)) return;
+    post({
+      type: "resize",
+      cols: Math.max(1, Math.floor(pan.clientWidth / metrics.charWidth)),
+      rows: Math.max(1, Math.floor(pan.clientHeight / metrics.rowHeight)),
+    });
+  }
+
+  function toggleZoom() {
+    fitting = !fitting;
+    if (!fitting) scale = FULL_SCALE;
+    relayout();
+  }
+
+  let pinchStartDistance = 0;
+  let pinchStartScale = scale;
+  let lastTapAt = 0;
+  let tapX = 0;
+  let tapY = 0;
+  let tapMoved = false;
+
+  function twoFingerDistance(touches) {
+    const a = touches.item(0);
+    const b = touches.item(1);
+    if (!a || !b) return 0;
+    return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+  }
+
+  pan.addEventListener(
+    "touchstart",
+    function (e) {
+      if (e.touches.length === 2) {
+        pinchStartDistance = twoFingerDistance(e.touches);
+        pinchStartScale = scale;
+        return;
+      }
+      const touch = e.touches.item(0);
+      tapX = touch ? touch.clientX : 0;
+      tapY = touch ? touch.clientY : 0;
+      tapMoved = false;
+    },
+    { passive: true },
+  );
+
+  pan.addEventListener(
+    "touchmove",
+    function (e) {
+      if (e.touches.length === 2 && pinchStartDistance > 0) {
+        e.preventDefault();
+        fitting = false;
+        const ratio = twoFingerDistance(e.touches) / pinchStartDistance;
+        scale = clampScale(pinchStartScale * ratio);
+        paintScale();
+        return;
+      }
+      const touch = e.touches.item(0);
+      if (!touch) return;
+      if (
+        Math.abs(touch.clientX - tapX) > TAP_SLOP_PX ||
+        Math.abs(touch.clientY - tapY) > TAP_SLOP_PX
+      ) {
+        tapMoved = true;
+      }
+    },
+    { passive: false },
+  );
+
+  function endTouch(e) {
+    if (e.touches.length > 0) return;
+    if (pinchStartDistance > 0) {
+      pinchStartDistance = 0;
+      lastTapAt = 0;
+      return;
+    }
+    if (tapMoved) {
+      lastTapAt = 0;
+      return;
+    }
+    const now = Date.now();
+    if (now - lastTapAt < DOUBLE_TAP_MS) {
+      lastTapAt = 0;
+      toggleZoom();
+      return;
+    }
+    lastTapAt = now;
+  }
+
+  pan.addEventListener("touchend", endTouch, { passive: true });
+  pan.addEventListener("touchcancel", endTouch, { passive: true });
+
+  new ResizeObserver(function () {
+    relayout();
+    declareViewport();
+  }).observe(pan);
+
+  relayout();
+  declareViewport();
+
   window.__terminal_bridge = {
     write: function (data) { term.write(data); },
     // wterm has no clear(); erase the screen, the scrollback, then home.
     clear: function () { term.write("\\u001b[2J\\u001b[3J\\u001b[H"); },
-    fit: function () { term.fit(); },
+    // The one path by which the grid moves: the desktop's decision.
+    resize: function (cols, rows) { applyGrid(cols, rows); },
     // The keyboard is raised by focus changing, and the terminal holds
     // its hidden textarea's focus after the keyboard goes, so without
     // this a later tap is not a change and nothing comes up.
