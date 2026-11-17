@@ -20,6 +20,11 @@ import {
 
 const SCROLLBACK = 2000
 
+// Long enough that raising the soft keyboard, which resizes the WebView
+// through an animation, settles into one declaration instead of a burst
+// of them.
+const VIEWPORT_DECLARATION_DEBOUNCE_MS = 150
+
 /**
  * Everything the terminal screen needs, composed from the smaller hooks.
  *
@@ -72,6 +77,15 @@ export function useTabData(projectId: string, tabId: string) {
         if (typeof handle?.write !== 'function') return
         handle.write(decode(b64))
       },
+      // The grid is the desktop's to decide. History is serialized against
+      // the width that produced it, so rendering it at any other width
+      // turns cursor moves into junk; the phone adopts the size it is told
+      // and pans over the result.
+      onResized: (cols, rows) => {
+        const handle = terminalRef.current
+        if (typeof handle?.resize !== 'function') return
+        handle.resize(cols, rows)
+      },
     })
     return () => {
       unsubscribeFromTab(tabId)
@@ -98,9 +112,27 @@ export function useTabData(projectId: string, tabId: string) {
     sendInputRef.current(data)
   }, [])
 
+  // A declaration, not a command: the hub decides the grid and answers
+  // with `onResized`, which may well be a different size. It settles
+  // anything only when no desktop window is attached.
+  const declarationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(
+    () => () => {
+      if (declarationTimerRef.current) {
+        clearTimeout(declarationTimerRef.current)
+      }
+    },
+    [],
+  )
   const onResize = useCallback(
     async (cols: number, rows: number) => {
-      resizeTabWss(tabId, cols, rows)
+      if (declarationTimerRef.current) {
+        clearTimeout(declarationTimerRef.current)
+      }
+      declarationTimerRef.current = setTimeout(() => {
+        declarationTimerRef.current = null
+        resizeTabWss(tabId, cols, rows)
+      }, VIEWPORT_DECLARATION_DEBOUNCE_MS)
     },
     [tabId],
   )

@@ -28,7 +28,7 @@ use crate::protocol::{
 };
 use tauri::Emitter;
 use crate::pty_manager::{spawn_pty_if_absent, PtyMap};
-use crate::stream_hub::{StreamHub, SubscriberId};
+use crate::stream_hub::{StreamHub, SubscriberId, Viewport};
 use axum::{
     Router,
     extract::{
@@ -38,7 +38,6 @@ use axum::{
     response::Response,
     routing::get,
 };
-use portable_pty::PtySize;
 use std::collections::HashMap;
 use std::io::{self, Write};
 use std::net::SocketAddr;
@@ -1000,29 +999,22 @@ async fn dispatch_client_frame(
             state.mod_engine_handle.on_input(&tab_id, bytes);
         }
 
+        // A remote client declares the grid it is painting into; it does
+        // not command the PTY. The hub weighs the declaration against
+        // every other attached client and applies whatever it decides,
+        // which is why a phone can no longer squeeze the desktop. A frame
+        // for a tab this connection never subscribed to has no subscriber
+        // to attribute the viewport to, so it is dropped.
         ClientFrame::Resize {
             tab_id,
             cols,
             rows,
         } => {
-            {
-                let map = state.pty_map.lock().expect("pty_map lock poisoned");
-                if let Some(handle) = map.get(&tab_id) {
-                    if let Err(e) = handle.master.resize(PtySize {
-                        rows,
-                        cols,
-                        pixel_width: 0,
-                        pixel_height: 0,
-                    }) {
-                        eprintln!("[wss] resize {tab_id} failed: {e}");
-                    }
-                }
+            if let Some(sub_id) = subscriptions.get(&tab_id) {
+                state
+                    .hub
+                    .declare_viewport(&tab_id, *sub_id, Viewport { cols, rows });
             }
-            state.mod_engine_handle.on_resize(&tab_id, cols, rows);
-            // Keep the sidecar's shadow xterm in step so a subsequent
-            // Snapshot from a re-subscribing client sees the right
-            // dimensions.
-            state.hub.resize_tab(&tab_id, cols, rows);
         }
 
         ClientFrame::Ping => {

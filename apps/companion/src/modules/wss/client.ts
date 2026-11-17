@@ -37,6 +37,13 @@ export type TabHandlers = {
   onTabState?: (state: TabStateSummary) => void
 }
 
+/**
+ * Whether attaching should also restate this phone's viewport. A
+ * handshake replay keeps whatever the desktop decided, because it also
+ * fires for a socket that dropped while the app was backgrounded.
+ */
+type ViewportReclaim = 'reclaim' | 'keep'
+
 type TabSubscription = TabHandlers & {
   scrollback: number
   lastSeq: number | null
@@ -263,9 +270,41 @@ export function subscribeToTab(
 
 export function unsubscribeFromTab(tabId: string): void {
   const had = subscriptions.delete(tabId)
+  declaredViewports.delete(tabId)
   if (!had) return
   if ($session.get().status === 'connected') {
     send({ op: 'unsubscribe', body: { tab_id: tabId } })
+  }
+}
+
+/**
+ * Detach every open session from the desktop without forgetting it.
+ *
+ * The desktop hands the terminal width to whichever surface declared
+ * last and never takes it away on its own, so a phone that walks off
+ * with the grid has to give it back explicitly. Detaching is how: the
+ * desktop renegotiates down to the clients that are left, which while
+ * the app is backgrounded means itself.
+ *
+ * Registrations and stream cursors stay, so coming back is a resume that
+ * replays the bytes missed rather than a fresh snapshot.
+ */
+export function releaseTabSubscriptions(): void {
+  for (const tabId of subscriptions.keys()) {
+    send({ op: 'unsubscribe', body: { tab_id: tabId } })
+  }
+}
+
+/**
+ * Re-attach every open session, claiming the width back for the phone.
+ *
+ * Only for a socket that survived: a reconnect replays its subscriptions
+ * as part of the handshake, and asking twice buys a second snapshot and
+ * nothing else.
+ */
+export function reclaimTabSubscriptions(): void {
+  for (const [tabId, sub] of subscriptions) {
+    sendSubscribeOrResume(tabId, sub)
   }
 }
 
@@ -322,8 +361,34 @@ function flushOutbox(): void {
   }
 }
 
+/**
+ * The grid each registered session last measured here.
+ *
+ * Kept because a declaration is a claim on the terminal width, and a
+ * claim has to be repeatable: re-attaching or coming back into view has
+ * to restate the grid without waiting for the WebView to happen to
+ * resize again.
+ */
+const declaredViewports = new Map<string, { cols: number; rows: number }>()
+
 export function resizeTab(tabId: string, cols: number, rows: number): void {
+  declaredViewports.set(tabId, { cols, rows })
   send({ op: 'resize', body: { tab_id: tabId, cols, rows } })
+}
+
+/**
+ * Re-declare the grid this session already measured.
+ *
+ * Silent until something has been measured, which is every first attach:
+ * the WebView's own first resize is the declaration then.
+ */
+export function reclaimViewport(tabId: string): void {
+  const declared = declaredViewports.get(tabId)
+  if (!declared) return
+  send({
+    op: 'resize',
+    body: { tab_id: tabId, cols: declared.cols, rows: declared.rows },
+  })
 }
 
 // -------- Phase B: mobile CRUD senders --------
@@ -473,7 +538,11 @@ export function sendUnregisterPush(): Promise<void> {
   return sendPending(op_id, frame)
 }
 
-function sendSubscribeOrResume(tabId: string, sub: TabSubscription): void {
+function sendSubscribeOrResume(
+  tabId: string,
+  sub: TabSubscription,
+  reclaim: ViewportReclaim = 'reclaim',
+): void {
   if (sub.lastSeq !== null) {
     console.log('[wss.client] resume', { tabId, lastSeq: sub.lastSeq })
     send({
@@ -484,13 +553,23 @@ function sendSubscribeOrResume(tabId: string, sub: TabSubscription): void {
         last_seq: sub.lastSeq,
       },
     })
-    return
+  } else {
+    console.log('[wss.client] subscribe', { tabId })
+    send({
+      op: 'subscribe',
+      body: { tab_id: tabId, scrollback: sub.scrollback },
+    })
   }
-  console.log('[wss.client] subscribe', { tabId })
-  send({
-    op: 'subscribe',
-    body: { tab_id: tabId, scrollback: sub.scrollback },
-  })
+  // Attaching makes a new subscriber on the desktop, which knows nothing
+  // about the grid this phone is painting into and will size the session
+  // for whoever claimed the width last. Restating it here is what keeps a
+  // reconnect from coming back at the desktop's column count.
+  //
+  // A handshake replay is the exception: it also runs for a socket that
+  // dropped while the app sat in the background, and taking the width
+  // there would undo the release that backgrounding just performed, for
+  // a screen nobody is looking at.
+  if (reclaim === 'reclaim') reclaimViewport(tabId)
 }
 
 function send(frame: ClientFrame): void {
@@ -765,7 +844,7 @@ function parseWssHostPort(url: string): { host: string; port: number } | null {
 
 function replayOpenSubscriptions(): void {
   for (const [tabId, sub] of subscriptions) {
-    sendSubscribeOrResume(tabId, sub)
+    sendSubscribeOrResume(tabId, sub, 'keep')
   }
 }
 

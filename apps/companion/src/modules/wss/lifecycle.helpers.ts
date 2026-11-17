@@ -103,6 +103,13 @@ export interface LifecycleDeps<TRecord> {
 }
 
 /**
+ * What a foreground actually did to the connection, which is not the
+ * same question as what it set out to do: a probe that comes back dead
+ * reconnects.
+ */
+export type ForegroundOutcome = 'skipped' | 'alive' | 'reconnected'
+
+/**
  * Execute the foreground action chosen by decideForegroundAction. Pure
  * with respect to deps: does not touch $activeDevice / $session / imports
  * itself; everything flows in through the deps arg. Kept here (rather
@@ -113,15 +120,48 @@ export async function executeForegroundAction<TRecord>(
   action: ForegroundAction,
   record: TRecord | null,
   deps: LifecycleDeps<TRecord>,
-): Promise<void> {
-  if (action === 'skip' || record === null) return
+): Promise<ForegroundOutcome> {
+  if (action === 'skip' || record === null) return 'skipped'
   if (action === 'reconnect') {
     await deps.autoConnect(record)
-    return
+    return 'reconnected'
   }
   // action === 'probe'
   const verdict = await deps.probeConnection()
-  if (verdict === 'dead') await deps.autoConnect(record)
+  if (verdict === 'dead') {
+    await deps.autoConnect(record)
+    return 'reconnected'
+  }
+  return 'alive'
+}
+
+export type ReattachAction = 'reclaim' | 'skip'
+
+/**
+ * Whether coming back to the foreground has to re-attach the open
+ * sessions by hand.
+ *
+ * Only a socket that survived the background needs it. A reconnect
+ * replays every registration as part of its own handshake, so asking
+ * again would buy a second snapshot and nothing else, and a foreground
+ * that did nothing at all has nothing attached to re-attach.
+ */
+export function decideForegroundReattach(
+  outcome: ForegroundOutcome,
+): ReattachAction {
+  return outcome === 'alive' ? 'reclaim' : 'skip'
+}
+
+/**
+ * Whether a session coming into view should claim the terminal width.
+ *
+ * The desktop gives the width to whichever surface declared last, so
+ * looking at a session on the phone has to say so. Navigation focus also
+ * fires on the way into the background, where claiming would hand the
+ * grid to a screen nobody is looking at.
+ */
+export function shouldClaimOnFocus(appState: AppStateStatus): boolean {
+  return appState === 'active'
 }
 
 /** Same shape as executeForegroundAction, for the NetInfo path. */

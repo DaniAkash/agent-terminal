@@ -10,7 +10,8 @@
 // - A bytes-capped ring buffer of recent (seq, bytes) entries — used for
 //   replay-on-reconnect to remote clients (no consumers yet; sub-step 4
 //   wires this up).
-// - A list of subscribers. In this sub-step only `Subscriber::Local` exists;
+// - A list of subscribers, each carrying the viewport it declared. In
+//   this sub-step only `Subscriber::Local` exists;
 //   `Subscriber::Remote` arrives when the WSS server lands.
 // - Last-known cols/rows so future `subscribe_remote` calls know what size
 //   to ask the sidecar to serialise.
@@ -65,6 +66,87 @@ pub struct SubscriberId(u64);
 /// upper bound is far below.
 const REMOTE_ACK_UNSET: u64 = u64::MAX;
 
+/// A client's terminal grid in character cells. One per attached client,
+/// which is the whole point: the PTY has a single winsize, the clients do
+/// not.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Viewport {
+    pub cols: u16,
+    pub rows: u16,
+}
+
+/// Which kind of surface a subscriber is. Only used to break a tie
+/// between clients that have never claimed the width, where the desktop
+/// is the better guess; it no longer buys the desktop a standing
+/// advantage.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ViewportClaim {
+    Primary,
+    Secondary,
+}
+
+/// One attached client's bid for the PTY's size: the grid it says it is
+/// painting into, and when it last said so.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct ViewportBid {
+    pub id: SubscriberId,
+    pub claim: ViewportClaim,
+    pub viewport: Viewport,
+    /// Hub-assigned, per tab, monotonically increasing: the higher value
+    /// is the more recent declaration. `0` means this subscriber has
+    /// never declared, which only the fallback ordering ever sees.
+    pub claim_seq: u64,
+}
+
+/// Decide the PTY size from every attached viewport: the most recent
+/// claim wins.
+///
+/// A client declaring a viewport is claiming the width, and a client that
+/// has gone quiet is not giving it up. That asymmetry is the whole
+/// policy: ownership moves when somebody else actually asks for it, so
+/// switching away from a window cannot reflow an agent's full-screen
+/// frame, while picking up a phone and looking at a session can.
+///
+/// With nothing claimed yet the order falls back to the Primary (desktop)
+/// subscriber, then the larger grid, then the lowest subscriber id, so a
+/// decision taken before anyone has declared is still deterministic
+/// however the clients happened to arrive.
+///
+/// Pure on purpose: a real `openpty` is impractical in a hermetic test, so
+/// the arbitration has to be assertable without one.
+pub fn decide_viewport(bids: &[ViewportBid]) -> Option<Viewport> {
+    bids.iter()
+        .max_by_key(|bid| {
+            (
+                bid.claim_seq,
+                bid.claim == ViewportClaim::Primary,
+                bid.viewport.cols,
+                bid.viewport.rows,
+                // Subscriber ids are unique within a tab, so this last
+                // term makes the ordering total: no two bids can tie and
+                // leave the winner down to list order.
+                std::cmp::Reverse(bid.id.0),
+            )
+        })
+        .map(|bid| bid.viewport)
+}
+
+/// Applies a decided viewport to the real PTY. Injected so the hub can own
+/// renegotiation without owning the `PtyMap`, and so tests can assert
+/// decisions with no PTY at all.
+pub trait ViewportSink: Send + Sync {
+    fn apply(&self, tab_id: &str, viewport: Viewport);
+}
+
+/// Test-only sink that drops every decision. Lets a hub be constructed in
+/// a harness that has no `PtyMap` behind it.
+#[doc(hidden)]
+pub struct NoopViewportSink;
+
+impl ViewportSink for NoopViewportSink {
+    fn apply(&self, _tab_id: &str, _viewport: Viewport) {}
+}
+
 /// Per-tab fan-out target. `#[non_exhaustive]` so adding future variants
 /// (relay backends, notification sinks, etc.) stays non-breaking.
 #[non_exhaustive]
@@ -87,30 +169,91 @@ pub enum Subscriber {
         /// sending bytes the subscribe path already replayed from ring.
         last_acked_seq: Arc<AtomicU64>,
         outbox: mpsc::UnboundedSender<ServerFrame>,
+        /// Lines of scrollback this client asked for when it attached.
+        /// Kept so a repaint taken on its behalf is serialized at the
+        /// depth it wanted rather than at a number invented here.
+        scrollback: u32,
     },
+}
+
+impl Subscriber {
+    pub fn claim(&self) -> ViewportClaim {
+        match self {
+            Subscriber::Local(_) => ViewportClaim::Primary,
+            Subscriber::Remote { .. } => ViewportClaim::Secondary,
+        }
+    }
+}
+
+/// One attached client: its id, where its bytes go, and the grid it says it
+/// is painting into.
+struct SubscriberEntry {
+    id: SubscriberId,
+    sink: Subscriber,
+    /// None until the client has declared one. A subscriber with no
+    /// viewport never influences the decision.
+    viewport: Option<Viewport>,
+    /// The tab's claim counter at the moment this subscriber last
+    /// declared, or 0 while it never has. Declaring is claiming, so this
+    /// is what decides who owns the width.
+    claim_seq: u64,
+}
+
+impl SubscriberEntry {
+    fn new(id: SubscriberId, sink: Subscriber) -> Self {
+        Self {
+            id,
+            sink,
+            viewport: None,
+            claim_seq: 0,
+        }
+    }
 }
 
 struct TabState {
     next_seq: AtomicU64,
     ring: Mutex<RingBuffer>,
-    subscribers: Mutex<Vec<(SubscriberId, Subscriber)>>,
+    subscribers: Mutex<Vec<SubscriberEntry>>,
     next_sub_id: AtomicU64,
+    /// Handed out by `declare_viewport`, so the newest declaration for
+    /// this tab always carries the highest value. Starts at 1 because 0
+    /// is the "never claimed" marker on a subscriber entry.
+    next_claim_seq: AtomicU64,
     // Last-known terminal size. `resize_tab` updates this; future
     // `subscribe_remote` will read it to know what dimensions to ask the
     // sidecar to serialise.
     cols: AtomicU16,
     rows: AtomicU16,
+    /// The viewport last handed to the sink, so an unchanged decision can
+    /// be skipped: the pointless same-size ioctl is also the phone's
+    /// soft-keyboard churn, which raises and dismisses several times a
+    /// minute.
+    decided: Mutex<Option<Viewport>>,
 }
 
 impl TabState {
+    /// The size a just-attached client has to start from: the tab's
+    /// current dimensions rather than the decision, so a client that
+    /// attaches before anyone has declared anything still learns the grid
+    /// its PTY was born at. Takes the state directly because callers hold
+    /// the subscribers lock and must not reach back into the tab map.
+    fn size(&self) -> Viewport {
+        Viewport {
+            cols: self.cols.load(Ordering::Acquire),
+            rows: self.rows.load(Ordering::Acquire),
+        }
+    }
+
     fn new(cols: u16, rows: u16, ring_cap_bytes: usize) -> Self {
         Self {
             next_seq: AtomicU64::new(0),
             ring: Mutex::new(RingBuffer::new(ring_cap_bytes)),
             subscribers: Mutex::new(Vec::new()),
             next_sub_id: AtomicU64::new(1),
+            next_claim_seq: AtomicU64::new(1),
             cols: AtomicU16::new(cols),
             rows: AtomicU16::new(rows),
+            decided: Mutex::new(None),
         }
     }
 }
@@ -145,21 +288,205 @@ impl RingBuffer {
     }
 }
 
+/// The ring entries a snapshot taken at `sidecar_seq` does not already
+/// cover. The single definition of "newer than the snapshot", shared by
+/// the remote catch-up and the local resume so the two cannot drift: a
+/// desktop rebuilding its screen and a phone rebuilding its screen are
+/// answering the same question and must answer it the same way.
+fn entries_after(
+    ring: &RingBuffer,
+    sidecar_seq: Option<u64>,
+) -> impl Iterator<Item = &(u64, Vec<u8>)> {
+    ring.entries.iter().filter(move |(seq, _)| match sidecar_seq {
+        Some(covered) => *seq > covered,
+        None => true,
+    })
+}
+
+/// What a reattaching desktop webview needs to rebuild the screen it threw
+/// away when its window closed, in one write.
+pub struct LocalResume {
+    /// The sidecar's serialized screen followed by every ring byte newer
+    /// than it. Empty when there is neither.
+    pub payload: String,
+    /// Whether a sidecar snapshot is behind `payload`. False means the
+    /// payload is raw ring replay carrying the program's own absolute
+    /// cursor addressing rather than a rebuilt screen, so the program has
+    /// to be asked to draw one instead.
+    pub from_snapshot: bool,
+}
+
+/// Join a snapshot with the ring bytes it does not cover. Pure, so the
+/// assembly can be asserted without a sidecar process behind it.
+fn assemble_local_resume(
+    snapshot: String,
+    sidecar_seq: Option<u64>,
+    ring: &RingBuffer,
+) -> LocalResume {
+    let from_snapshot = !snapshot.is_empty();
+    let mut newer: Vec<u8> = Vec::new();
+    for (_, bytes) in entries_after(ring, sidecar_seq) {
+        newer.extend_from_slice(bytes);
+    }
+    // Decoded as one blob rather than per entry: a chunk boundary can land
+    // mid-codepoint, and rejoining the bytes first is what keeps a split
+    // sequence from decoding as two replacement characters.
+    let mut payload = snapshot;
+    payload.push_str(&String::from_utf8_lossy(&newer));
+    LocalResume {
+        payload,
+        from_snapshot,
+    }
+}
+
+/// Scrollback lines asked of the sidecar for a local reattach. Matches the
+/// sidecar's own default. The webview's Ghostty core died with the window,
+/// so this is the whole of the history it gets back.
+const LOCAL_RESUME_SCROLLBACK: u32 = 1000;
+
+/// A send whose outbox had already been dropped by its reader.
+struct OutboxClosed;
+
+/// Hand one remote client a whole screen: the serialized snapshot first,
+/// then every ring entry the snapshot does not already cover. Returns the
+/// highest seq actually delivered, which is what the subscriber's ack has
+/// to be set to.
+///
+/// The order is the protocol's whole consistency story. The client clears
+/// on a snapshot, so a snapshot arriving after newer bytes would wipe
+/// them; the snapshot carries the seq it was taken at and the bytes newer
+/// than that seq follow it. Shared by the attach path and the
+/// width-change repaint so neither can drift from the other.
+fn send_snapshot_then_catch_up(
+    tab_id: &str,
+    outbox: &mpsc::UnboundedSender<ServerFrame>,
+    payload: String,
+    sidecar_seq: Option<u64>,
+    ring: &RingBuffer,
+) -> std::result::Result<Option<u64>, OutboxClosed> {
+    // Snapshot's seq on the wire: sidecar_seq if known, else 0 with an
+    // empty payload. Client stores this for future resume requests.
+    if outbox
+        .send(ServerFrame::Snapshot {
+            tab_id: tab_id.to_string(),
+            seq: sidecar_seq.unwrap_or(0),
+            payload,
+        })
+        .is_err()
+    {
+        return Err(OutboxClosed);
+    }
+
+    let mut highest_delivered = sidecar_seq;
+    for (seq, bytes) in entries_after(ring, sidecar_seq) {
+        if outbox
+            .send(ServerFrame::Bytes {
+                tab_id: tab_id.to_string(),
+                seq: *seq,
+                data: B64.encode(bytes),
+            })
+            .is_err()
+        {
+            return Err(OutboxClosed);
+        }
+        highest_delivered = Some(*seq);
+    }
+    Ok(highest_delivered)
+}
+
+/// Repaint the named remote subscribers from a snapshot taken at the
+/// tab's new width.
+///
+/// Sync, and called only once the sidecar work it needs has already been
+/// awaited: it takes `subscribers` then `ring`, the hub's documented
+/// order, and no await happens under either.
+fn push_repaint(
+    state: &Arc<TabState>,
+    tab_id: &str,
+    targets: &[SubscriberId],
+    payload: &str,
+    sidecar_seq: Option<u64>,
+) {
+    let subs = state.subscribers.lock().expect("subscribers lock poisoned");
+    let ring = state.ring.lock().expect("ring lock poisoned");
+    for entry in subs.iter() {
+        if !targets.contains(&entry.id) {
+            continue;
+        }
+        let Subscriber::Remote {
+            last_acked_seq,
+            outbox,
+            ..
+        } = &entry.sink
+        else {
+            continue;
+        };
+        match send_snapshot_then_catch_up(
+            tab_id,
+            outbox,
+            payload.to_string(),
+            sidecar_seq,
+            &ring,
+        ) {
+            // The repaint re-sends seqs the client may already hold. That
+            // is deliberate (it cleared its screen on the snapshot) and
+            // the ack moves forward so the live fan-out does not send
+            // them a third time.
+            Ok(Some(seq)) => last_acked_seq.store(seq, Ordering::Release),
+            Ok(None) => {}
+            // Left in the list for `broadcast` to reap, exactly as a send
+            // failure during fan-out is.
+            Err(OutboxClosed) => {
+                eprintln!("[stream_hub] repaint({tab_id}): outbox closed mid-delivery");
+            }
+        }
+    }
+}
+
+/// Ask the sidecar for a serialize snapshot; degrade to an empty payload
+/// when the sidecar is absent or errors. Free-standing so the repaint task
+/// can reuse it holding nothing but the client.
+async fn snapshot_from(
+    sidecar: Option<&SidecarClient>,
+    tab_id: &str,
+    scrollback: u32,
+) -> (String, Option<u64>) {
+    match sidecar {
+        Some(sc) => match sc.serialize(tab_id, scrollback).await {
+            Ok(x) => x,
+            Err(e) => {
+                eprintln!("[stream_hub] sidecar.serialize({tab_id}) failed: {e}");
+                (String::new(), None)
+            }
+        },
+        None => (String::new(), None),
+    }
+}
+
 pub struct StreamHub {
     tabs: DashMap<String, Arc<TabState>>,
     sidecar: Option<Arc<SidecarClient>>,
+    viewport_sink: Arc<dyn ViewportSink>,
     ring_cap_bytes: usize,
 }
 
 impl StreamHub {
-    pub fn new(sidecar: Option<Arc<SidecarClient>>) -> Arc<Self> {
-        Self::with_ring_cap(sidecar, DEFAULT_RING_CAP_BYTES)
+    pub fn new(
+        sidecar: Option<Arc<SidecarClient>>,
+        viewport_sink: Arc<dyn ViewportSink>,
+    ) -> Arc<Self> {
+        Self::with_ring_cap(sidecar, viewport_sink, DEFAULT_RING_CAP_BYTES)
     }
 
-    pub fn with_ring_cap(sidecar: Option<Arc<SidecarClient>>, ring_cap_bytes: usize) -> Arc<Self> {
+    pub fn with_ring_cap(
+        sidecar: Option<Arc<SidecarClient>>,
+        viewport_sink: Arc<dyn ViewportSink>,
+        ring_cap_bytes: usize,
+    ) -> Arc<Self> {
         Arc::new(Self {
             tabs: DashMap::new(),
             sidecar,
+            viewport_sink,
             ring_cap_bytes,
         })
     }
@@ -196,7 +523,8 @@ impl StreamHub {
             .subscribers
             .lock()
             .expect("subscribers lock poisoned")
-            .push((id, Subscriber::Local(channel)));
+            .push(SubscriberEntry::new(id, Subscriber::Local(channel)));
+        self.renegotiate(tab_id);
         id
     }
 
@@ -206,9 +534,250 @@ impl StreamHub {
                 .subscribers
                 .lock()
                 .expect("subscribers lock poisoned")
-                .retain(|(id, _)| *id != sub_id);
+                .retain(|entry| entry.id != sub_id);
+        }
+        // A client leaving is a membership change like any other: whoever
+        // is left gets the PTY sized for them, which is the re-assert
+        // nothing used to do on detach.
+        self.renegotiate(tab_id);
+    }
+
+    /// Every attached subscriber that has declared a viewport, with the
+    /// weight and the recency its declaration carries.
+    pub fn viewport_claims(&self, tab_id: &str) -> Vec<ViewportBid> {
+        let Some(state) = self.tabs.get(tab_id) else {
+            return Vec::new();
+        };
+        let claims = state
+            .subscribers
+            .lock()
+            .expect("subscribers lock poisoned")
+            .iter()
+            .filter_map(|entry| {
+                entry.viewport.map(|viewport| ViewportBid {
+                    id: entry.id,
+                    claim: entry.sink.claim(),
+                    viewport,
+                    claim_seq: entry.claim_seq,
+                })
+            })
+            .collect();
+        claims
+    }
+
+    /// Record a subscriber's viewport and re-decide the tab's size. This is
+    /// the only way a client influences the PTY: it declares, the hub
+    /// decides.
+    ///
+    /// The declaration is also a claim on the width, stamped with the
+    /// tab's next claim sequence. A client that stops declaring keeps
+    /// whatever it last claimed until somebody else claims over it.
+    pub fn declare_viewport(&self, tab_id: &str, sub_id: SubscriberId, viewport: Viewport) {
+        {
+            let Some(state) = self.tabs.get(tab_id) else {
+                return;
+            };
+            let claim_seq = state.next_claim_seq.fetch_add(1, Ordering::Relaxed);
+            let mut subs = state.subscribers.lock().expect("subscribers lock poisoned");
+            let Some(entry) = subs.iter_mut().find(|entry| entry.id == sub_id) else {
+                return;
+            };
+            entry.viewport = Some(viewport);
+            entry.claim_seq = claim_seq;
+        }
+        self.renegotiate(tab_id);
+    }
+
+    /// Re-claim the width for the desktop on every tab it is attached to.
+    ///
+    /// Called when the desktop window gains focus or is brought back into
+    /// view. It re-asserts the grid the webview is already painting rather
+    /// than inventing a new one, so the only thing that moves is who owns
+    /// the width. There is deliberately no inverse: losing focus is not a
+    /// release, because handing the width to a phone nobody is holding is
+    /// how an agent's full-screen frame ends up reflowing on every window
+    /// switch.
+    pub fn reclaim_local_viewports(&self) {
+        // Keys are collected first: `renegotiate` reaches back into the
+        // tab map, and holding a DashMap iterator across that is how a
+        // shard deadlocks against itself.
+        let tab_ids: Vec<String> = self.tabs.iter().map(|entry| entry.key().clone()).collect();
+        for tab_id in tab_ids {
+            self.reclaim_local_viewport(&tab_id);
         }
     }
+
+    fn reclaim_local_viewport(&self, tab_id: &str) {
+        {
+            let Some(state) = self.tabs.get(tab_id) else {
+                return;
+            };
+            let mut subs = state.subscribers.lock().expect("subscribers lock poisoned");
+            let mut claimed = false;
+            for entry in subs.iter_mut() {
+                if matches!(entry.sink, Subscriber::Local(_)) && entry.viewport.is_some() {
+                    entry.claim_seq = state.next_claim_seq.fetch_add(1, Ordering::Relaxed);
+                    claimed = true;
+                }
+            }
+            if !claimed {
+                return;
+            }
+        }
+        self.renegotiate(tab_id);
+    }
+
+    /// The size the hub has settled on for this tab, or None while no
+    /// attached client has declared anything.
+    pub fn decided_viewport(&self, tab_id: &str) -> Option<Viewport> {
+        let state = self.tabs.get(tab_id)?;
+        let decided = *state.decided.lock().expect("decided lock poisoned");
+        decided
+    }
+
+    /// Decide, apply only if the decision changed, and keep the sidecar
+    /// shadow in step. Called from `declare_viewport`,
+    /// `reclaim_local_viewports`, `subscribe_local`, `subscribe_remote`,
+    /// `resume_remote` and `unsubscribe`, so a membership change cannot
+    /// leave a stale size behind: the event that used to be missing is
+    /// now one nobody has to remember.
+    fn renegotiate(&self, tab_id: &str) {
+        self.renegotiate_without(tab_id, None);
+    }
+
+    /// `renegotiate`, with one subscriber held out of the repaint.
+    ///
+    /// A client that attaches triggers a renegotiation of its own, and it
+    /// is already being handed a snapshot by the attach itself. Repainting
+    /// it as well would clear the screen it has just been given and draw
+    /// it twice.
+    fn renegotiate_without(&self, tab_id: &str, attaching: Option<SubscriberId>) {
+        let claims = self.viewport_claims(tab_id);
+        let Some(decided) = decide_viewport(&claims) else {
+            return;
+        };
+
+        // The subscribers lock is already released, and the `decided` lock
+        // is released before the sink runs: the sink reaches for the
+        // PtyMap, and holding a hub lock across it would invert the
+        // documented order.
+        {
+            let Some(state) = self.tabs.get(tab_id) else {
+                return;
+            };
+            let mut current = state.decided.lock().expect("decided lock poisoned");
+            if *current == Some(decided) {
+                return;
+            }
+            *current = Some(decided);
+        }
+
+        self.viewport_sink.apply(tab_id, decided);
+        // One shadow serves every remote snapshot, so it is sized to the
+        // authoritative viewport rather than to whoever asked last.
+        self.resize_tab(tab_id, decided.cols, decided.rows);
+        self.announce_size(tab_id, decided);
+        self.repaint_remotes(tab_id, decided, attaching);
+    }
+
+    /// Give every already-attached remote client its screen back, rebuilt
+    /// at the width the hub has just decided.
+    ///
+    /// A serialize payload is width-bound: its cursor moves and its
+    /// forced-wrap padding were computed for the grid it was taken at.
+    /// Replaying one at a different width lands those moves on the wrong
+    /// cells, which is a phone showing its own scrambled history the
+    /// moment it claims the terminal from a wider desktop. The screen the
+    /// client is already holding has to be replaced with one taken at the
+    /// new size, and the hub has to do it, because nothing in the stream
+    /// will redraw lines a program has already finished writing.
+    ///
+    /// Asynchronous out of necessity: the shadow's resize has to be
+    /// confirmed before the serialize, and `renegotiate` is reached from
+    /// sync callers (`declare_viewport`, `subscribe_local`, `unsubscribe`,
+    /// and a window-focus callback that is not on the runtime at all).
+    /// The work is handed to a task so none of them has to become async.
+    fn repaint_remotes(
+        &self,
+        tab_id: &str,
+        viewport: Viewport,
+        attaching: Option<SubscriberId>,
+    ) {
+        // With no sidecar there is no shadow to serialize, and a snapshot
+        // with an empty payload would only clear the client to blank.
+        let Some(sidecar) = self.sidecar.clone() else {
+            return;
+        };
+        let Some(state) = self.tabs.get(tab_id).map(|s| Arc::clone(&s)) else {
+            return;
+        };
+
+        // Membership is read here, synchronously, so the task repaints
+        // the clients that were holding a screen at the OLD width and
+        // nobody else. Anyone attaching later gets their own snapshot.
+        let (targets, scrollback) = {
+            let subs = state.subscribers.lock().expect("subscribers lock poisoned");
+            let mut targets: Vec<SubscriberId> = Vec::new();
+            let mut deepest = 0u32;
+            for entry in subs.iter() {
+                let Subscriber::Remote { scrollback, .. } = &entry.sink else {
+                    continue;
+                };
+                if Some(entry.id) == attaching {
+                    continue;
+                }
+                targets.push(entry.id);
+                deepest = deepest.max(*scrollback);
+            }
+            (targets, deepest)
+        };
+        if targets.is_empty() {
+            return;
+        }
+
+        let tab_id = tab_id.to_string();
+        // Not `tokio::spawn`: the desktop reclaims the width from a window
+        // focus callback, which runs off the runtime and would panic there.
+        tauri::async_runtime::spawn(async move {
+            // The same size again, awaited. The sidecar answers its lines
+            // in arrival order, so a reply to this one is proof that the
+            // fire-and-forget resize queued by `resize_tab` has landed.
+            // Serializing before that would hand back a screen still laid
+            // out at the width this repaint exists to replace.
+            if let Err(e) = sidecar.resize(&tab_id, viewport.cols, viewport.rows).await {
+                eprintln!("[stream_hub] repaint({tab_id}): shadow resize failed: {e}");
+                return;
+            }
+            let (payload, sidecar_seq) =
+                snapshot_from(Some(&sidecar), &tab_id, scrollback).await;
+            if payload.is_empty() {
+                return;
+            }
+            // Nothing above is held across this point: the locks are taken
+            // inside `push_repaint`, after every await is done.
+            push_repaint(&state, &tab_id, &targets, &payload, sidecar_seq);
+        });
+    }
+
+    /// Tell every remote client what the grid actually is, so a phone can
+    /// render the authoritative width instead of the one it asked for.
+    /// Dead outboxes are left for `broadcast` to reap.
+    fn announce_size(&self, tab_id: &str, viewport: Viewport) {
+        let Some(state) = self.tabs.get(tab_id) else {
+            return;
+        };
+        let subs = state.subscribers.lock().expect("subscribers lock poisoned");
+        for entry in subs.iter() {
+            if let Subscriber::Remote { outbox, .. } = &entry.sink {
+                let _ = outbox.send(ServerFrame::Resized {
+                    tab_id: tab_id.to_string(),
+                    cols: viewport.cols,
+                    rows: viewport.rows,
+                });
+            }
+        }
+    }
+
 
     /// Broadcast one chunk of PTY output. Local subscribers receive the
     /// UTF-8 decoded string (matches the `PtyDataPayload { data: String }`
@@ -265,8 +834,8 @@ impl StreamHub {
         let mut dead: Vec<SubscriberId> = Vec::new();
         let mut encoded: Option<String> = None;
 
-        for (sid, sub) in subs.iter() {
-            match sub {
+        for entry in subs.iter() {
+            match &entry.sink {
                 Subscriber::Local(shared) => {
                     if decoded_str.is_empty() {
                         continue;
@@ -299,6 +868,7 @@ impl StreamHub {
                 Subscriber::Remote {
                     last_acked_seq,
                     outbox,
+                    ..
                 } => {
                     // Remotes only get non-empty raw bytes; a decoded-only
                     // broadcast (EOF flush case) isn't representable on the
@@ -319,13 +889,13 @@ impl StreamHub {
                         data,
                     }) {
                         Ok(()) => last_acked_seq.store(seq, Ordering::Release),
-                        Err(_) => dead.push(*sid),
+                        Err(_) => dead.push(entry.id),
                     }
                 }
             }
         }
         if !dead.is_empty() {
-            subs.retain(|(id, _)| !dead.contains(id));
+            subs.retain(|entry| !dead.contains(&entry.id));
         }
     }
 
@@ -354,7 +924,18 @@ impl StreamHub {
             .clone();
 
         let (payload, sidecar_seq) = self.fetch_snapshot(tab_id, scrollback).await;
-        self.attach_remote_and_catch_up(&state, tab_id, outbox, payload, sidecar_seq)
+        let id = self.attach_remote_and_catch_up(
+            &state,
+            tab_id,
+            outbox,
+            payload,
+            sidecar_seq,
+            scrollback,
+        );
+        if let Some(id) = id {
+            self.renegotiate_without(tab_id, Some(id));
+        }
+        id
     }
 
     /// Reconnect path: client's last-known seq is `last_seq`. If the ring
@@ -397,8 +978,26 @@ impl StreamHub {
             }
         };
 
-        if can_replay {
+        let id = if can_replay {
             let mut subs = state.subscribers.lock().expect("subscribers lock poisoned");
+            // The grid goes out before the bytes do. These bytes were laid
+            // out against the size the hub holds now, which is not
+            // necessarily the size this client had when it detached: the
+            // desktop may have claimed the width in between. Replaying
+            // them first would parse width-dependent cursor moves against
+            // the client's stale grid, which is what turns resumed history
+            // into junk.
+            let resumed_size = state.size();
+            if outbox
+                .send(ServerFrame::Resized {
+                    tab_id: tab_id.to_string(),
+                    cols: resumed_size.cols,
+                    rows: resumed_size.rows,
+                })
+                .is_err()
+            {
+                return None;
+            }
             let ring = state.ring.lock().expect("ring lock poisoned");
             let mut highest_delivered = last_seq;
             // Track outbox health across every ring-replay send. If the
@@ -431,18 +1030,30 @@ impl StreamHub {
                 return None;
             }
             let id = SubscriberId(state.next_sub_id.fetch_add(1, Ordering::Relaxed));
-            subs.push((
+            subs.push(SubscriberEntry::new(
                 id,
                 Subscriber::Remote {
                     last_acked_seq: Arc::new(AtomicU64::new(highest_delivered)),
                     outbox,
+                    scrollback,
                 },
             ));
             Some(id)
         } else {
             let (payload, sidecar_seq) = self.fetch_snapshot(tab_id, scrollback).await;
-            self.attach_remote_and_catch_up(&state, tab_id, outbox, payload, sidecar_seq)
+            self.attach_remote_and_catch_up(
+                &state,
+                tab_id,
+                outbox,
+                payload,
+                sidecar_seq,
+                scrollback,
+            )
+        };
+        if let Some(id) = id {
+            self.renegotiate_without(tab_id, Some(id));
         }
+        id
     }
 
     /// Sync helper shared by `subscribe_remote` and `resume_remote`'s
@@ -457,55 +1068,41 @@ impl StreamHub {
         outbox: mpsc::UnboundedSender<ServerFrame>,
         payload: String,
         sidecar_seq: Option<u64>,
+        scrollback: u32,
     ) -> Option<SubscriberId> {
+        // A client that attaches is only ever told the grid when the
+        // decision CHANGES, so one joining a tab whose size is already
+        // settled would keep the width it was constructed with and draw
+        // the session's wider lines on top of each other. Tell it the
+        // current grid up front, before anything is painted into it.
+        if let Some(decided) = *state.decided.lock().expect("decided lock poisoned") {
+            if outbox
+                .send(ServerFrame::Resized {
+                    tab_id: tab_id.to_string(),
+                    cols: decided.cols,
+                    rows: decided.rows,
+                })
+                .is_err()
+            {
+                return None;
+            }
+        }
+
         let mut subs = state.subscribers.lock().expect("subscribers lock poisoned");
         let ring = state.ring.lock().expect("ring lock poisoned");
 
-        // Snapshot's seq on the wire: sidecar_seq if known, else 0 with an
-        // empty payload. Client stores this for future resume requests.
-        let snapshot_seq_on_wire = sidecar_seq.unwrap_or(0);
-        if outbox
-            .send(ServerFrame::Snapshot {
-                tab_id: tab_id.to_string(),
-                seq: snapshot_seq_on_wire,
-                payload,
-            })
-            .is_err()
-        {
-            eprintln!(
-                "[stream_hub] subscribe_remote({tab_id}): outbox closed \
-                 before Snapshot delivery; skipping subscriber registration"
-            );
-            return None;
-        }
-
-        // Replay ring entries newer than the snapshot's coverage. Closes
+        // Snapshot, then the ring entries newer than it. The replay closes
         // the race where a broadcast landed between subscribe's serialize
         // call and this lock acquisition.
-        let mut highest_delivered = sidecar_seq;
-        for (seq, bytes) in ring.entries.iter() {
-            let should_replay = match sidecar_seq {
-                Some(t) => *seq > t,
-                None => true,
-            };
-            if should_replay {
-                if outbox
-                    .send(ServerFrame::Bytes {
-                        tab_id: tab_id.to_string(),
-                        seq: *seq,
-                        data: B64.encode(bytes),
-                    })
-                    .is_err()
-                {
-                    eprintln!(
-                        "[stream_hub] subscribe_remote({tab_id}): outbox closed \
-                         mid-replay; skipping subscriber registration"
-                    );
-                    return None;
-                }
-                highest_delivered = Some(*seq);
-            }
-        }
+        let Ok(highest_delivered) =
+            send_snapshot_then_catch_up(tab_id, &outbox, payload, sidecar_seq, &ring)
+        else {
+            eprintln!(
+                "[stream_hub] subscribe_remote({tab_id}): outbox closed \
+                 during initial delivery; skipping subscriber registration"
+            );
+            return None;
+        };
         drop(ring);
 
         // Initial ack: highest seq we actually delivered, or the "unset"
@@ -513,15 +1110,72 @@ impl StreamHub {
         // empty ring — first broadcast will pass the dedup gate).
         let initial_ack = highest_delivered.unwrap_or(REMOTE_ACK_UNSET);
 
+        // The client has the screen; now tell it what width that screen
+        // is. It follows the replay so the dimensions describe the state
+        // the client has just taken on.
+        let size = state.size();
+        let _ = outbox.send(ServerFrame::Resized {
+            tab_id: tab_id.to_string(),
+            cols: size.cols,
+            rows: size.rows,
+        });
+
         let id = SubscriberId(state.next_sub_id.fetch_add(1, Ordering::Relaxed));
-        subs.push((
+        subs.push(SubscriberEntry::new(
             id,
             Subscriber::Remote {
                 last_acked_seq: Arc::new(AtomicU64::new(initial_ack)),
                 outbox,
+                scrollback,
             },
         ));
         Some(id)
+    }
+
+    /// The current screen for a local re-attach: the sidecar snapshot plus
+    /// any ring bytes newer than it. Empty when there is neither.
+    ///
+    /// `subscribe_remote` has fetched a snapshot and replayed the newer
+    /// ring since it was written; `subscribe_local` only ever registered a
+    /// channel, which is why a reopened window came back blank. Same
+    /// assembly, same `entries_after` cut, one caller apart.
+    ///
+    /// Async because the sidecar reply is awaited, which is also why the
+    /// caller builds this BEFORE taking the channel lock.
+    pub async fn local_resume_payload(&self, tab_id: &str) -> LocalResume {
+        let (snapshot, sidecar_seq) =
+            self.fetch_snapshot(tab_id, LOCAL_RESUME_SCROLLBACK).await;
+        let Some(state) = self.tabs.get(tab_id) else {
+            return assemble_local_resume(snapshot, sidecar_seq, &RingBuffer::new(0));
+        };
+        let ring = state.ring.lock().expect("ring lock poisoned");
+        assemble_local_resume(snapshot, sidecar_seq, &ring)
+    }
+
+    /// Force the program to repaint by resizing one row short and straight
+    /// back. TIOCSWINSZ only signals on an actual change and the decided
+    /// viewport has not moved, so `renegotiate` has nothing to apply: this
+    /// is the only way to make a full-screen program redraw a screen we
+    /// could not rebuild for it.
+    pub fn nudge_repaint(&self, tab_id: &str) {
+        let viewport = {
+            let Some(state) = self.tabs.get(tab_id) else {
+                return;
+            };
+            let decided = *state.decided.lock().expect("decided lock poisoned");
+            decided.unwrap_or_else(|| state.size())
+        }; // Tab ref released before the sink reaches for the PtyMap.
+        if viewport.rows < 2 {
+            return;
+        }
+        self.viewport_sink.apply(
+            tab_id,
+            Viewport {
+                cols: viewport.cols,
+                rows: viewport.rows - 1,
+            },
+        );
+        self.viewport_sink.apply(tab_id, viewport);
     }
 
     /// Ask the sidecar for a serialize snapshot; degrade to empty payload
@@ -531,16 +1185,7 @@ impl StreamHub {
         tab_id: &str,
         scrollback: u32,
     ) -> (String, Option<u64>) {
-        match self.sidecar.as_ref() {
-            Some(sc) => match sc.serialize(tab_id, scrollback).await {
-                Ok(x) => x,
-                Err(e) => {
-                    eprintln!("[stream_hub] sidecar.serialize({tab_id}) failed: {e}");
-                    (String::new(), None)
-                }
-            },
-            None => (String::new(), None),
-        }
+        snapshot_from(self.sidecar.as_deref(), tab_id, scrollback).await
     }
 
     /// Update the tab's known size and tell the sidecar to resize its
@@ -616,11 +1261,440 @@ mod tests {
     use super::*;
 
     fn new_hub() -> Arc<StreamHub> {
-        StreamHub::new(None)
+        StreamHub::new(None, Arc::new(NoopViewportSink))
     }
 
     fn new_hub_with_cap(cap: usize) -> Arc<StreamHub> {
-        StreamHub::with_ring_cap(None, cap)
+        StreamHub::with_ring_cap(None, Arc::new(NoopViewportSink), cap)
+    }
+
+    /// Sink that remembers every viewport it was handed, in order, so a
+    /// test can assert both what was applied and what was not.
+    #[derive(Default)]
+    struct RecordingSink {
+        applied: Mutex<Vec<Viewport>>,
+    }
+
+    impl RecordingSink {
+        fn applied(&self) -> Vec<Viewport> {
+            self.applied.lock().expect("applied lock poisoned").clone()
+        }
+    }
+
+    impl ViewportSink for RecordingSink {
+        fn apply(&self, _tab_id: &str, viewport: Viewport) {
+            self.applied
+                .lock()
+                .expect("applied lock poisoned")
+                .push(viewport);
+        }
+    }
+
+    fn new_recording_hub() -> (Arc<StreamHub>, Arc<RecordingSink>) {
+        let sink = Arc::new(RecordingSink::default());
+        let hub = StreamHub::new(None, Arc::clone(&sink) as Arc<dyn ViewportSink>);
+        (hub, sink)
+    }
+
+    fn vp(cols: u16, rows: u16) -> Viewport {
+        Viewport { cols, rows }
+    }
+
+    const DESKTOP: Viewport = Viewport { cols: 180, rows: 45 };
+    const PHONE: Viewport = Viewport { cols: 57, rows: 20 };
+
+    /// A bid nobody has claimed with yet: the fallback ordering's input.
+    fn unclaimed(id: u64, claim: ViewportClaim, viewport: Viewport) -> ViewportBid {
+        ViewportBid {
+            id: SubscriberId(id),
+            claim,
+            viewport,
+            claim_seq: 0,
+        }
+    }
+
+    /// A bid stamped as the `seq`-th declaration on its tab.
+    fn claimed(id: u64, claim: ViewportClaim, viewport: Viewport, seq: u64) -> ViewportBid {
+        ViewportBid {
+            id: SubscriberId(id),
+            claim,
+            viewport,
+            claim_seq: seq,
+        }
+    }
+
+    // ---- Viewport arbitration ----
+
+    #[test]
+    fn decide_viewport_with_nothing_attached_is_none() {
+        assert_eq!(decide_viewport(&[]), None);
+    }
+
+    #[test]
+    fn decide_viewport_desktop_only_is_the_desktop() {
+        let claims = [claimed(1, ViewportClaim::Primary, DESKTOP, 1)];
+        assert_eq!(decide_viewport(&claims), Some(DESKTOP));
+    }
+
+    #[test]
+    fn decide_viewport_hands_the_width_to_the_most_recent_claim() {
+        // The headline case, and the one this policy replaced: the
+        // desktop no longer wins by being the desktop. A phone that has
+        // just been picked up declared last, so it is the phone's grid
+        // the agent paints into. Otherwise the phone renders a 180
+        // column screen at three points per character.
+        let claims = [
+            claimed(1, ViewportClaim::Primary, DESKTOP, 1),
+            claimed(2, ViewportClaim::Secondary, PHONE, 2),
+        ];
+        assert_eq!(decide_viewport(&claims), Some(PHONE));
+        // Order within the list must not matter; recency is what does.
+        let reversed = [claims[1], claims[0]];
+        assert_eq!(decide_viewport(&reversed), Some(PHONE));
+    }
+
+    #[test]
+    fn decide_viewport_lets_the_desktop_take_the_width_back() {
+        // The same two clients, with the desktop's focus arriving after
+        // the phone's. Ownership is not one-way.
+        let claims = [
+            claimed(2, ViewportClaim::Secondary, PHONE, 7),
+            claimed(1, ViewportClaim::Primary, DESKTOP, 8),
+        ];
+        assert_eq!(decide_viewport(&claims), Some(DESKTOP));
+    }
+
+    #[test]
+    fn decide_viewport_phone_only_is_the_phone() {
+        // Mobile-first spawn: no desktop window has ever sized this tab,
+        // so the phone's grid beats the 80x24 the PTY was born at.
+        let claims = [claimed(7, ViewportClaim::Secondary, PHONE, 1)];
+        assert_eq!(decide_viewport(&claims), Some(PHONE));
+    }
+
+    #[test]
+    fn decide_viewport_before_any_claim_still_prefers_the_desktop() {
+        // The fallback leg. Nothing has been claimed, so the desktop is
+        // the better guess at whose screen this is.
+        let claims = [
+            unclaimed(5, ViewportClaim::Secondary, PHONE),
+            unclaimed(6, ViewportClaim::Primary, DESKTOP),
+        ];
+        assert_eq!(decide_viewport(&claims), Some(DESKTOP));
+    }
+
+    #[test]
+    fn decide_viewport_unclaimed_takes_the_largest_then_the_lowest_id() {
+        let bigger = vp(90, 30);
+        let claims = [
+            unclaimed(4, ViewportClaim::Secondary, PHONE),
+            unclaimed(5, ViewportClaim::Secondary, bigger),
+        ];
+        assert_eq!(decide_viewport(&claims), Some(bigger));
+
+        // Same cols, taller wins.
+        let claims = [
+            unclaimed(4, ViewportClaim::Secondary, vp(57, 20)),
+            unclaimed(5, ViewportClaim::Secondary, vp(57, 40)),
+        ];
+        assert_eq!(decide_viewport(&claims), Some(vp(57, 40)));
+
+        // Identical grids: the lowest subscriber id breaks the tie so the
+        // decision is stable rather than list-order dependent.
+        let tied = [
+            unclaimed(9, ViewportClaim::Secondary, PHONE),
+            unclaimed(3, ViewportClaim::Secondary, PHONE),
+        ];
+        assert_eq!(decide_viewport(&tied), Some(PHONE));
+        let tied_reversed = [tied[1], tied[0]];
+        assert_eq!(decide_viewport(&tied_reversed), Some(PHONE));
+    }
+
+    #[test]
+    fn decide_viewport_breaks_a_claim_tie_the_same_way_as_no_claim() {
+        // Two declarations stamped alike cannot happen through the hub's
+        // counter, but the ordering still has to be total rather than
+        // list-order dependent.
+        let tied = [
+            claimed(9, ViewportClaim::Secondary, PHONE, 4),
+            claimed(3, ViewportClaim::Secondary, PHONE, 4),
+        ];
+        assert_eq!(decide_viewport(&tied), Some(PHONE));
+        let tied_reversed = [tied[1], tied[0]];
+        assert_eq!(decide_viewport(&tied_reversed), Some(PHONE));
+    }
+
+    #[tokio::test]
+    async fn a_phone_claiming_takes_the_width_and_leaving_hands_it_back() {
+        // What the companion is for: the session you opened on your phone
+        // is readable on your phone. The desktop gets its grid back the
+        // moment the phone detaches, which is what the companion does
+        // when it goes to the background.
+        let (hub, sink) = new_recording_hub();
+        hub.ensure_tab("t1", 80, 24);
+        let local = hub.subscribe_local("t1", Arc::new(Mutex::new(None)));
+        hub.declare_viewport("t1", local, DESKTOP);
+        assert_eq!(sink.applied(), vec![DESKTOP]);
+
+        let (tx, _rx) = mpsc::unbounded_channel::<ServerFrame>();
+        let remote = hub
+            .subscribe_remote("t1", tx, 500)
+            .await
+            .expect("remote subscribed");
+        hub.declare_viewport("t1", remote, PHONE);
+        assert_eq!(
+            sink.applied(),
+            vec![DESKTOP, PHONE],
+            "the surface that just declared owns the width"
+        );
+
+        hub.unsubscribe("t1", remote);
+        assert_eq!(
+            sink.applied(),
+            vec![DESKTOP, PHONE, DESKTOP],
+            "and detaching hands it back to the only client left"
+        );
+        assert_eq!(hub.decided_viewport("t1"), Some(DESKTOP));
+    }
+
+    #[tokio::test]
+    async fn the_desktop_reclaims_the_width_when_its_window_is_focused() {
+        // Focus is the claim. `reclaim_local_viewports` re-asserts the
+        // grid the webview is already painting; nothing about the
+        // declaration itself changed.
+        let (hub, sink) = new_recording_hub();
+        hub.ensure_tab("t1", 80, 24);
+        let local = hub.subscribe_local("t1", Arc::new(Mutex::new(None)));
+        hub.declare_viewport("t1", local, DESKTOP);
+
+        let (tx, _rx) = mpsc::unbounded_channel::<ServerFrame>();
+        let remote = hub
+            .subscribe_remote("t1", tx, 500)
+            .await
+            .expect("remote subscribed");
+        hub.declare_viewport("t1", remote, PHONE);
+        assert_eq!(hub.decided_viewport("t1"), Some(PHONE));
+
+        hub.reclaim_local_viewports();
+        assert_eq!(hub.decided_viewport("t1"), Some(DESKTOP));
+        assert_eq!(sink.applied(), vec![DESKTOP, PHONE, DESKTOP]);
+    }
+
+    #[tokio::test]
+    async fn losing_focus_alone_hands_the_width_to_nobody() {
+        // The anti-thrash property, and the reason there is no release
+        // call to pair with the reclaim above. Alt-tabbing from the
+        // desktop to a browser must leave the grid exactly where it is:
+        // the phone never gained focus, so it never gained the width,
+        // and an agent's full-screen frame does not reflow because a
+        // window was switched.
+        let (hub, sink) = new_recording_hub();
+        hub.ensure_tab("t1", 80, 24);
+        let local = hub.subscribe_local("t1", Arc::new(Mutex::new(None)));
+        hub.declare_viewport("t1", local, DESKTOP);
+
+        let (tx, _rx) = mpsc::unbounded_channel::<ServerFrame>();
+        let remote = hub
+            .subscribe_remote("t1", tx, 500)
+            .await
+            .expect("remote subscribed");
+        hub.declare_viewport("t1", remote, PHONE);
+        hub.reclaim_local_viewports();
+        let settled = sink.applied();
+        assert_eq!(hub.decided_viewport("t1"), Some(DESKTOP));
+
+        // The desktop window is deactivated here. Nothing is sent,
+        // because blur is not a release. The phone is still attached and
+        // still has a viewport on file, and neither of those is a claim.
+        assert_eq!(hub.decided_viewport("t1"), Some(DESKTOP));
+        assert_eq!(
+            sink.applied(),
+            settled,
+            "a blur must not reach the PTY at all"
+        );
+
+        // And a phone that keeps re-declaring the same grid it already
+        // declared still takes the width, because declaring is the claim.
+        hub.declare_viewport("t1", remote, PHONE);
+        assert_eq!(hub.decided_viewport("t1"), Some(PHONE));
+    }
+
+    #[test]
+    fn reclaiming_before_the_desktop_declared_anything_is_silent() {
+        let (hub, sink) = new_recording_hub();
+        hub.ensure_tab("t1", 80, 24);
+        hub.subscribe_local("t1", Arc::new(Mutex::new(None)));
+        hub.reclaim_local_viewports();
+        assert!(sink.applied().is_empty());
+        assert_eq!(hub.decided_viewport("t1"), None);
+    }
+
+    #[test]
+    fn unchanged_decision_does_not_reach_the_sink() {
+        // Re-declaring the same grid is what a phone's soft keyboard does
+        // several times a minute. It must not turn into an ioctl.
+        let (hub, sink) = new_recording_hub();
+        hub.ensure_tab("t1", 80, 24);
+        let local = hub.subscribe_local("t1", Arc::new(Mutex::new(None)));
+        hub.declare_viewport("t1", local, DESKTOP);
+        hub.declare_viewport("t1", local, DESKTOP);
+        hub.declare_viewport("t1", local, DESKTOP);
+        assert_eq!(sink.applied(), vec![DESKTOP]);
+    }
+
+    #[test]
+    fn a_subscriber_that_never_declared_decides_nothing() {
+        let (hub, sink) = new_recording_hub();
+        hub.ensure_tab("t1", 80, 24);
+        hub.subscribe_local("t1", Arc::new(Mutex::new(None)));
+        assert!(sink.applied().is_empty());
+        assert_eq!(hub.decided_viewport("t1"), None);
+    }
+
+    #[tokio::test]
+    async fn a_detach_that_changes_the_decision_re_applies_the_survivor() {
+        // Nothing re-asserted the size when a client left, which is why a
+        // desktop stayed phone-shaped after the phone disconnected. With
+        // no desktop viewport in play, two phones make the same shape
+        // reachable: the larger one leaves and the smaller one's grid has
+        // to be re-applied by the detach itself.
+        let (hub, sink) = new_recording_hub();
+        hub.ensure_tab("t1", 80, 24);
+
+        let (tx_small, _rx_small) = mpsc::unbounded_channel::<ServerFrame>();
+        let small = hub
+            .subscribe_remote("t1", tx_small, 500)
+            .await
+            .expect("subscribed");
+        hub.declare_viewport("t1", small, PHONE);
+
+        let bigger = vp(120, 40);
+        let (tx_big, _rx_big) = mpsc::unbounded_channel::<ServerFrame>();
+        let big = hub
+            .subscribe_remote("t1", tx_big, 500)
+            .await
+            .expect("subscribed");
+        hub.declare_viewport("t1", big, bigger);
+        assert_eq!(sink.applied(), vec![PHONE, bigger]);
+
+        hub.unsubscribe("t1", big);
+        assert_eq!(
+            sink.applied(),
+            vec![PHONE, bigger, PHONE],
+            "the survivor's viewport must be re-applied on detach"
+        );
+        assert_eq!(hub.decided_viewport("t1"), Some(PHONE));
+    }
+
+    #[test]
+    fn declaring_against_an_unknown_subscriber_is_silent() {
+        let (hub, sink) = new_recording_hub();
+        hub.ensure_tab("t1", 80, 24);
+        hub.declare_viewport("t1", SubscriberId(42), DESKTOP);
+        hub.declare_viewport("ghost", SubscriberId(1), DESKTOP);
+        assert!(sink.applied().is_empty());
+    }
+
+    // ---- Local resume ----
+
+    fn ring_of(entries: &[(u64, &str)]) -> RingBuffer {
+        let mut ring = RingBuffer::new(DEFAULT_RING_CAP_BYTES);
+        for (seq, bytes) in entries {
+            ring.push(*seq, bytes.as_bytes().to_vec());
+        }
+        ring
+    }
+
+    #[test]
+    fn local_resume_is_the_snapshot_plus_only_the_ring_newer_than_it() {
+        // The same cut the remote path makes. A byte the snapshot already
+        // contains must not be replayed on top of it.
+        let ring = ring_of(&[(1, "one"), (2, "two"), (3, "three"), (4, "four")]);
+        let resume = assemble_local_resume("SCREEN".to_string(), Some(2), &ring);
+        assert_eq!(resume.payload, "SCREENthreefour");
+        assert!(resume.from_snapshot);
+    }
+
+    #[test]
+    fn local_resume_without_a_snapshot_replays_the_whole_ring() {
+        // No sidecar: every ring byte is newer than a snapshot that does
+        // not exist, and the caller is told so it can nudge a repaint.
+        let ring = ring_of(&[(0, "a"), (1, "b")]);
+        let resume = assemble_local_resume(String::new(), None, &ring);
+        assert_eq!(resume.payload, "ab");
+        assert!(!resume.from_snapshot);
+    }
+
+    #[test]
+    fn local_resume_rejoins_a_codepoint_split_across_two_chunks() {
+        // The reader thread's decoder spans chunks; the ring does not, so
+        // decoding entry by entry would turn one character into two
+        // replacement marks.
+        let heart = "💜".as_bytes();
+        let mut ring = RingBuffer::new(DEFAULT_RING_CAP_BYTES);
+        ring.push(0, heart[..2].to_vec());
+        ring.push(1, heart[2..].to_vec());
+        let resume = assemble_local_resume(String::new(), None, &ring);
+        assert_eq!(resume.payload, "💜");
+    }
+
+    #[tokio::test]
+    async fn local_resume_is_empty_with_no_sidecar_and_no_ring() {
+        // Empty is the signal `try_reattach` reads to keep the
+        // [Reconnected] banner, which is the only case it belongs in.
+        let hub = new_hub();
+        hub.ensure_tab("t1", 80, 24);
+        let resume = hub.local_resume_payload("t1").await;
+        assert!(resume.payload.is_empty());
+        assert!(!resume.from_snapshot);
+
+        let unknown = hub.local_resume_payload("ghost").await;
+        assert!(unknown.payload.is_empty());
+        assert!(!unknown.from_snapshot);
+    }
+
+    #[tokio::test]
+    async fn local_resume_without_a_sidecar_hands_back_the_live_ring() {
+        let hub = new_hub();
+        hub.ensure_tab("t1", 80, 24);
+        hub.broadcast("t1", b"hello ", "hello ");
+        hub.broadcast("t1", b"world", "world");
+        let resume = hub.local_resume_payload("t1").await;
+        assert_eq!(resume.payload, "hello world");
+        assert!(!resume.from_snapshot);
+    }
+
+    #[test]
+    fn nudge_repaint_resizes_one_row_short_and_straight_back() {
+        // The fallback when there is no screen to restore. The decided
+        // size has not moved, so only a real winsize change raises the
+        // SIGWINCH that makes the program draw itself.
+        let (hub, sink) = new_recording_hub();
+        hub.ensure_tab("t1", 80, 24);
+        let local = hub.subscribe_local("t1", Arc::new(Mutex::new(None)));
+        hub.declare_viewport("t1", local, DESKTOP);
+        hub.nudge_repaint("t1");
+        assert_eq!(
+            sink.applied(),
+            vec![DESKTOP, vp(DESKTOP.cols, DESKTOP.rows - 1), DESKTOP],
+        );
+    }
+
+    #[test]
+    fn nudge_repaint_falls_back_to_the_tabs_own_size_before_any_declaration() {
+        let (hub, sink) = new_recording_hub();
+        hub.ensure_tab("t1", 80, 24);
+        hub.nudge_repaint("t1");
+        assert_eq!(sink.applied(), vec![vp(80, 23), vp(80, 24)]);
+    }
+
+    #[test]
+    fn nudge_repaint_is_silent_for_a_grid_too_short_to_shrink() {
+        let (hub, sink) = new_recording_hub();
+        hub.ensure_tab("t1", 80, 1);
+        hub.nudge_repaint("t1");
+        hub.nudge_repaint("ghost");
+        assert!(sink.applied().is_empty());
     }
 
     #[test]
@@ -800,6 +1874,23 @@ mod tests {
     }
 
     #[test]
+    fn subscribers_start_with_no_declared_viewport() {
+        let hub = new_hub();
+        let _id = hub.subscribe_local("t1", Arc::new(Mutex::new(None)));
+        assert_eq!(hub.subscriber_count("t1"), Some(1));
+        assert!(
+            hub.viewport_claims("t1").is_empty(),
+            "a subscriber that never declared must not influence any decision"
+        );
+    }
+
+    #[test]
+    fn viewport_claims_of_unknown_tab_is_empty() {
+        let hub = new_hub();
+        assert!(hub.viewport_claims("ghost").is_empty());
+    }
+
+    #[test]
     fn unsubscribe_unknown_tab_is_silent() {
         let hub = new_hub();
         hub.unsubscribe("ghost", SubscriberId(99));
@@ -857,7 +1948,7 @@ mod tests {
         let (tx, mut rx) = mpsc::unbounded_channel::<ServerFrame>();
         let _id = hub.subscribe_remote("t1", tx, 500).await;
         let frames = drain(&mut rx);
-        assert_eq!(frames.len(), 1, "exactly one Snapshot frame on subscribe");
+        assert_eq!(frames.len(), 2, "a Snapshot, then the grid it describes");
         match &frames[0] {
             ServerFrame::Snapshot {
                 tab_id,
@@ -872,6 +1963,61 @@ mod tests {
             }
             other => panic!("expected Snapshot, got {other:?}"),
         }
+        match &frames[1] {
+            ServerFrame::Resized { tab_id, cols, rows } => {
+                assert_eq!(tab_id, "t1");
+                assert_eq!((*cols, *rows), (80, 24));
+            }
+            other => panic!("expected Resized, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn a_changed_decision_reaches_the_remote_outbox() {
+        // The frame has been on the wire protocol and routed by the
+        // companion all along; nothing on this side ever constructed it,
+        // so a phone could only ever guess at the real grid.
+        let hub = new_hub();
+        hub.ensure_tab("t1", 80, 24);
+        let (tx, mut rx) = mpsc::unbounded_channel::<ServerFrame>();
+        let remote = hub
+            .subscribe_remote("t1", tx, 500)
+            .await
+            .expect("subscribed");
+        let _ = drain(&mut rx);
+
+        let local = hub.subscribe_local("t1", Arc::new(Mutex::new(None)));
+        hub.declare_viewport("t1", local, DESKTOP);
+
+        let frames = drain(&mut rx);
+        assert_eq!(frames.len(), 1);
+        match &frames[0] {
+            ServerFrame::Resized { tab_id, cols, rows } => {
+                assert_eq!(tab_id, "t1");
+                assert_eq!((*cols, *rows), (DESKTOP.cols, DESKTOP.rows));
+            }
+            other => panic!("expected Resized, got {other:?}"),
+        }
+
+        // The remote declares next, so the remote now owns the width and
+        // is told the grid it just claimed.
+        hub.declare_viewport("t1", remote, PHONE);
+        let frames = drain(&mut rx);
+        assert_eq!(frames.len(), 1);
+        match &frames[0] {
+            ServerFrame::Resized { cols, rows, .. } => {
+                assert_eq!((*cols, *rows), (PHONE.cols, PHONE.rows));
+            }
+            other => panic!("expected Resized, got {other:?}"),
+        }
+
+        // Re-declaring what it already declared is a fresh claim but not
+        // a fresh decision, which is the soft keyboard's churn.
+        hub.declare_viewport("t1", remote, PHONE);
+        assert!(
+            drain(&mut rx).is_empty(),
+            "an unchanged decision is not re-announced"
+        );
     }
 
     #[tokio::test]
@@ -1095,5 +2241,250 @@ mod tests {
         // observe in-process. Its presence (subscriber_count=2 after
         // subscribe and no reaping) plus the "no panic / no lock
         // contention" success of the broadcast is the regression pin.
+    }
+
+    // ---- Repaint on a width change ----
+    //
+    // These need a sidecar, because the whole point is the payload that
+    // comes back from one. The stub below is the echo sidecar with a
+    // memory: it answers `serialize` with the grid it was last resized
+    // to, so a test can tell a screen taken at the new width from one
+    // taken at the old.
+
+    /// A sidecar stub that reports the width it currently holds. Returns
+    /// None when neither node nor bun is on PATH, matching the skip
+    /// behaviour of the other sidecar-backed tests.
+    async fn stub_sidecar() -> Option<SidecarClient> {
+        let runtime = which::which("node").or_else(|_| which::which("bun")).ok()?;
+        let mut cmd = tokio::process::Command::new(runtime);
+        cmd.arg("-e").arg(
+            r#"
+            const rl = require('node:readline').createInterface({ input: process.stdin });
+            let cols = 0;
+            let lastSeq = null;
+            rl.on('line', (line) => {
+                let m;
+                try { m = JSON.parse(line) } catch { return }
+                const args = m.args || {};
+                if (m.verb === 'open' || m.verb === 'resize') cols = args.cols;
+                if (m.verb === 'write' && typeof args.seq === 'number') lastSeq = args.seq;
+                if (m.id == null) return;
+                const body = m.verb === 'serialize'
+                    ? { ok: true, payload: 'screen@' + cols, last_seq: lastSeq }
+                    : { ok: true, payload: '' };
+                process.stdout.write(JSON.stringify({ id: m.id, ...body }) + '\n');
+            });
+            rl.on('close', () => process.exit(0));
+            "#,
+        );
+        SidecarClient::spawn(cmd).await.ok()
+    }
+
+    async fn hub_with_stub_sidecar() -> Option<Arc<StreamHub>> {
+        let sidecar = stub_sidecar().await?;
+        Some(StreamHub::new(
+            Some(Arc::new(sidecar)),
+            Arc::new(NoopViewportSink),
+        ))
+    }
+
+    /// How long a test waits for a repaint that should arrive, and how
+    /// long it waits to be convinced one never will.
+    const REPAINT_TIMEOUT: tokio::time::Duration = tokio::time::Duration::from_secs(5);
+    const SETTLE: tokio::time::Duration = tokio::time::Duration::from_millis(400);
+
+    /// Every frame that lands within `window`. Unlike `drain`, this gives
+    /// the spawned repaint task time to actually run.
+    async fn frames_within(
+        rx: &mut mpsc::UnboundedReceiver<ServerFrame>,
+        window: tokio::time::Duration,
+    ) -> Vec<ServerFrame> {
+        let mut out = Vec::new();
+        let _ = tokio::time::timeout(window, async {
+            while let Some(frame) = rx.recv().await {
+                out.push(frame);
+            }
+        })
+        .await;
+        out
+    }
+
+    /// Block until a Snapshot arrives, or give up. Returns its seq and
+    /// payload plus every frame seen on the way.
+    async fn await_snapshot(
+        rx: &mut mpsc::UnboundedReceiver<ServerFrame>,
+    ) -> Option<(u64, String, Vec<ServerFrame>)> {
+        let mut seen = Vec::new();
+        tokio::time::timeout(REPAINT_TIMEOUT, async {
+            while let Some(frame) = rx.recv().await {
+                if let ServerFrame::Snapshot { seq, payload, .. } = &frame {
+                    return Some((*seq, payload.clone(), std::mem::take(&mut seen)));
+                }
+                seen.push(frame);
+            }
+            None
+        })
+        .await
+        .ok()
+        .flatten()
+    }
+
+    fn snapshot_count(frames: &[ServerFrame]) -> usize {
+        frames
+            .iter()
+            .filter(|f| matches!(f, ServerFrame::Snapshot { .. }))
+            .count()
+    }
+
+    #[tokio::test]
+    async fn a_changed_decision_repaints_an_already_attached_remote() {
+        // The device bug, in one assertion. The phone is holding a screen
+        // serialized at the desktop's 180 columns; the moment it takes
+        // the width, replaying that screen into a 57 column grid lands
+        // every width-relative cursor move on the wrong cell. So it is
+        // handed a screen taken at 57 instead.
+        let Some(hub) = hub_with_stub_sidecar().await else {
+            eprintln!("[test] skipping: no node/bun on PATH");
+            return;
+        };
+        hub.ensure_tab("t1", DESKTOP.cols, DESKTOP.rows);
+        let local = hub.subscribe_local("t1", Arc::new(Mutex::new(None)));
+        hub.declare_viewport("t1", local, DESKTOP);
+
+        let (tx, mut rx) = mpsc::unbounded_channel::<ServerFrame>();
+        let remote = hub
+            .subscribe_remote("t1", tx, 500)
+            .await
+            .expect("remote subscribed");
+        let (_, attach_payload, _) = await_snapshot(&mut rx)
+            .await
+            .expect("the attach hands over a screen");
+        assert_eq!(
+            attach_payload, "screen@180",
+            "attaching to a desktop-owned tab takes the desktop's grid"
+        );
+        hub.broadcast("t1", b"hello", "hello");
+        let _ = frames_within(&mut rx, SETTLE).await;
+
+        hub.declare_viewport("t1", remote, PHONE);
+        let (seq, payload, before) = await_snapshot(&mut rx)
+            .await
+            .expect("a changed decision repaints the attached remote");
+        assert_eq!(
+            payload, "screen@57",
+            "the repaint must be serialized at the width just decided"
+        );
+        assert_eq!(
+            seq, 0,
+            "the snapshot carries the seq its payload already covers"
+        );
+        assert!(
+            before
+                .iter()
+                .any(|f| matches!(f, ServerFrame::Resized { cols, .. } if *cols == PHONE.cols)),
+            "the grid is announced before the screen drawn into it"
+        );
+        // Nothing follows it: the only ring entry is seq 0, which the
+        // snapshot already covers, so replaying it would write bytes the
+        // payload has drawn twice.
+        let after = frames_within(&mut rx, SETTLE).await;
+        assert!(
+            after.is_empty(),
+            "a snapshot must not be chased by bytes it already covers: {after:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_unchanged_decision_repaints_nobody() {
+        // The phone's soft keyboard re-declares the same grid several
+        // times a minute. Serializing and clearing the screen on each of
+        // those would be a flicker with no cause.
+        let Some(hub) = hub_with_stub_sidecar().await else {
+            eprintln!("[test] skipping: no node/bun on PATH");
+            return;
+        };
+        hub.ensure_tab("t1", 80, 24);
+        let (tx, mut rx) = mpsc::unbounded_channel::<ServerFrame>();
+        let remote = hub
+            .subscribe_remote("t1", tx, 500)
+            .await
+            .expect("remote subscribed");
+        // The attach's own screen, out of the way, so what follows can
+        // only have come from a renegotiation.
+        assert_eq!(
+            snapshot_count(&frames_within(&mut rx, SETTLE).await),
+            1,
+            "the attach hands over exactly one screen"
+        );
+
+        hub.declare_viewport("t1", remote, PHONE);
+        let (_, payload, _) = await_snapshot(&mut rx)
+            .await
+            .expect("the first claim repaints");
+        assert_eq!(payload, "screen@57");
+        let _ = frames_within(&mut rx, SETTLE).await;
+
+        hub.declare_viewport("t1", remote, PHONE);
+        hub.declare_viewport("t1", remote, PHONE);
+        let frames = frames_within(&mut rx, SETTLE).await;
+        assert!(
+            frames.is_empty(),
+            "re-declaring the decided grid must reach nobody: {frames:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_attaching_subscriber_is_not_repainted_by_its_own_renegotiation() {
+        // A subscribe delivers a screen and then renegotiates on the new
+        // client's behalf. That client must come away holding exactly one
+        // screen: a second one would clear the first and draw it again.
+        let Some(hub) = hub_with_stub_sidecar().await else {
+            eprintln!("[test] skipping: no node/bun on PATH");
+            return;
+        };
+        hub.ensure_tab("t1", DESKTOP.cols, DESKTOP.rows);
+        let local = hub.subscribe_local("t1", Arc::new(Mutex::new(None)));
+        hub.declare_viewport("t1", local, DESKTOP);
+
+        let (tx, mut rx) = mpsc::unbounded_channel::<ServerFrame>();
+        let _remote = hub
+            .subscribe_remote("t1", tx, 500)
+            .await
+            .expect("remote subscribed");
+        let frames = frames_within(&mut rx, SETTLE).await;
+        assert_eq!(
+            snapshot_count(&frames),
+            1,
+            "an attach is one screen, not two: {frames:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_changed_decision_with_no_sidecar_repaints_nothing() {
+        // No shadow means no screen to rebuild from. Sending the empty
+        // payload anyway would clear the client to blank, which is worse
+        // than the scrambled history it is holding.
+        let hub = new_hub();
+        hub.ensure_tab("t1", 80, 24);
+        let (tx, mut rx) = mpsc::unbounded_channel::<ServerFrame>();
+        let remote = hub
+            .subscribe_remote("t1", tx, 500)
+            .await
+            .expect("remote subscribed");
+        let _ = frames_within(&mut rx, SETTLE).await;
+
+        hub.declare_viewport("t1", remote, PHONE);
+        let frames = frames_within(&mut rx, SETTLE).await;
+        assert_eq!(
+            snapshot_count(&frames),
+            0,
+            "no sidecar, no snapshot: {frames:?}"
+        );
+        assert!(
+            frames
+                .iter()
+                .any(|f| matches!(f, ServerFrame::Resized { .. })),
+            "the grid is still announced"
+        );
     }
 }

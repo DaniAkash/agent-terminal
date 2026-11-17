@@ -1,9 +1,15 @@
 import { useStore } from '@nanostores/react'
 import { Redirect, useFocusEffect, useLocalSearchParams } from 'expo-router'
 import { useCallback } from 'react'
+import { AppState } from 'react-native'
 import { clearVisibleTab, noteVisibleTab } from '@/modules/push'
 import { $activeDevice } from '@/modules/stores/$devices'
 import { noteActiveSession } from '@/modules/stores/$lastSession'
+import { reclaimViewport } from '@/modules/wss/client'
+import {
+  shouldClaimOnFocus,
+  toAppStateStatus,
+} from '@/modules/wss/lifecycle.helpers'
 import { TabScreen } from '@/screens/tab/TabScreen'
 import { composedTabId, terminalRouteAction } from '@/screens/tab/tab.helpers'
 
@@ -18,6 +24,7 @@ export default function TabRoute() {
   // Above the early return: a hook after a conditional return changes
   // hook order between renders.
   useVisibleTab(composed)
+  useViewportClaim(composed)
 
   if (terminalRouteAction(device) === 'pair') {
     return <Redirect href="/pair" />
@@ -45,6 +52,26 @@ function useVisibleTab(composed: string): void {
     useCallback(() => {
       noteVisibleTab(composed)
       return () => clearVisibleTab(composed)
+    }, [composed]),
+  )
+}
+
+/**
+ * Claim the terminal width for this phone while this session is the one
+ * on screen.
+ *
+ * The desktop sizes the PTY for whichever surface declared last, so
+ * looking at a session here has to say so or it arrives at the desktop's
+ * column count, which on a phone is unreadable. Deliberately no blur
+ * half: giving the width up on blur would reflow a full-screen agent
+ * every time a window changed, and the desktop reclaims it by being
+ * focused rather than by this screen going away.
+ */
+function useViewportClaim(composed: string): void {
+  useFocusEffect(
+    useCallback(() => {
+      if (!shouldClaimOnFocus(toAppStateStatus(AppState.currentState))) return
+      reclaimViewport(composed)
     }, [composed]),
   )
 }

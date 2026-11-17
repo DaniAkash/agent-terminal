@@ -5,8 +5,7 @@ use crate::projects_cache::{ProjectsCache, StoredProject};
 use crate::protocol::ServerFrame;
 use crate::wss_server::{MobileOpInboxes, PairedConnMap};
 use crate::pty_manager::{spawn_pty, try_reattach, PtyDataPayload, PtyMap, ReattachResult};
-use crate::stream_hub::StreamHub;
-use portable_pty::PtySize;
+use crate::stream_hub::{StreamHub, Viewport};
 use serde::Serialize;
 use std::io::Write;
 use std::sync::Arc;
@@ -37,8 +36,8 @@ pub async fn open_tab(
     on_data: Channel<PtyDataPayload>,
 ) -> Result<bool, String> {
     // Returns true  → new PTY spawned; frontend waits for the initial prompt.
-    // Returns false → existing PTY (live or just reattached); frontend sends \r
-    //                 to make the shell redraw its prompt.
+    // Returns false → existing PTY (live or just reattached); the screen it
+    //                 was showing has already been written into the channel.
     //
     // Three cases handled before falling through to spawn_pty:
     //
@@ -52,6 +51,25 @@ pub async fn open_tab(
     //
     // 3. Expired / NotFound — child exited or no entry. Fall through to a fresh
     //    spawn_pty. Returns true.
+
+    // The webview took its terminal and all of its scrollback with it when
+    // its window closed; the PTY, the ring and the sidecar's parsed screen
+    // all survived. Rebuild the screen from those before touching the
+    // channel: this awaits the sidecar, and the channel lock is the one
+    // every broadcast needs. Skipped entirely when there is no PTY to
+    // reattach to, which is the fresh-spawn path below.
+    let has_pty = {
+        let map = pty_map.lock().unwrap();
+        map.contains_key(&tab_id)
+    };
+    let resume = if has_pty {
+        Some(hub.local_resume_payload(&tab_id).await)
+    } else {
+        None
+    };
+    let from_snapshot = resume.as_ref().is_some_and(|r| r.from_snapshot);
+    let resume_payload = resume.map(|r| r.payload).unwrap_or_default();
+
     match try_reattach(
         app.clone(),
         &pty_map,
@@ -60,9 +78,17 @@ pub async fn open_tab(
         Arc::clone(&hub),
         &tab_id,
         on_data.clone(),
+        resume_payload,
     ) {
         Ok(ReattachResult::ChannelUpdated) | Ok(ReattachResult::Reattached) => {
-            // The [Reconnected] banner is written directly to the data channel
+            // Without a sidecar there is no rebuilt screen, only raw ring
+            // bytes carrying the old cursor addressing, so the program is
+            // asked to draw a fresh one instead. Also covers the tab whose
+            // ring and snapshot are both empty, where the banner went out.
+            if !from_snapshot {
+                hub.nudge_repaint(&tab_id);
+            }
+            // The restored screen is written directly to the data channel
             // inside try_reattach — no listener timing gap. This event is emitted
             // for any future consumers that want to react to reconnects without
             // rendering text (e.g. status bar state, telemetry).
@@ -113,30 +139,25 @@ pub async fn write_pty(
     Ok(())
 }
 
+/// The desktop webview declares the grid it is painting into. It no longer
+/// writes the PTY's winsize: the hub arbitrates between every attached
+/// client and applies the result.
 #[tauri::command]
 pub async fn resize_pty(
     pty_map: State<'_, PtyMap>,
-    mod_engine: State<'_, ModEngine>,
     hub: State<'_, Arc<StreamHub>>,
     tab_id: String,
     cols: u16,
     rows: u16,
 ) -> Result<(), String> {
-    {
+    let sub_id = {
         let map = pty_map.lock().unwrap();
-        if let Some(handle) = map.get(&tab_id) {
-            handle
-                .master
-                .resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
-                .map_err(|e| e.to_string())?;
-        } else {
-            return Ok(()); // Tab already closed — no-op, not an error.
+        match map.get(&tab_id) {
+            Some(handle) => handle.local_sub_id,
+            None => return Ok(()), // Tab already closed — no-op, not an error.
         }
-    } // Lock released before dispatching to MOD engine.
-    mod_engine.handle().on_resize(&tab_id, cols, rows);
-    // Keep the sidecar's shadow xterm in sync so its future serialize
-    // payload reflects the right viewport dimensions. Fire-and-forget.
-    hub.resize_tab(&tab_id, cols, rows);
+    }; // Lock released before the hub may reach back into the PtyMap.
+    hub.declare_viewport(&tab_id, sub_id, Viewport { cols, rows });
     Ok(())
 }
 

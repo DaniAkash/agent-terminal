@@ -20,12 +20,14 @@ function hasActiveWork(): boolean {
  * Hold the app open when leaving would kill live work.
  *
  * Two routes in, because macOS has two. Closing the window raises the
- * window's own close-requested event. On Linux, quit explicitly while the
- * webview is still alive rather than leaving an exit request without a listener.
- * Cmd+Q, the menubar Quit and the dock terminate the application
+ * window's own close-requested event, which hides the window everywhere
+ * but Linux. On Linux, quit explicitly while the webview is still alive
+ * rather than leaving an exit request without a listener.
+ * Cmd+Q, the menubar Quit, the dock and the tray terminate the application
  * instead and never reach that event at all, so Rust holds those back
  * and hands them here; nothing closes on that path unless this calls
- * `exit`, including when there is no work to protect.
+ * `exit`. Confirmation depends on there being live work to lose, not on
+ * which route asked.
  */
 export function useQuitGuard(): void {
   // Two external event sources that have to outlive every render, which
@@ -42,6 +44,7 @@ export function useQuitGuard(): void {
       .onCloseRequested((event) => {
         handleCloseRequest(isLinux, hasActiveWork(), {
           preventClose: () => event.preventDefault(),
+          hide: () => getCurrentWindow().hide(),
           confirmQuit: () => requestInterrupt({ kind: 'quit' }),
           quit: quitApp,
         })
@@ -49,6 +52,10 @@ export function useQuitGuard(): void {
       .then(keep)
 
     void listen(QUIT_REQUESTED, () => {
+      // Nothing is running, so there is nothing to confirm. Asking here
+      // produces a dialog about work that does not exist, and the route
+      // the quit arrived from does not change that: every route that
+      // holds a quit back already shows the window before emitting.
       if (!hasActiveWork()) {
         void quitApp().catch(() => requestInterrupt({ kind: 'quit' }))
         return
