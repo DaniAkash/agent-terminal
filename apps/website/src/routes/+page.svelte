@@ -288,9 +288,9 @@ async function copyInstall() {
         <div class="section-kicker">THE MOBILE COMPANION</div>
         <h2>Your terminal,<br><em>in your pocket.</em></h2>
         <p>
-          Pair your phone with your desktop over your local network. See your
-          projects, open a terminal, and keep working with your agents from
-          wherever you are.
+          Android and iOS companions are coming soon, with plans to pair your
+          phone with your desktop and access terminal sessions over your local
+          network.
         </p>
         <div class="mobile-details">
           <span>QR code pairing</span><span>Live terminal sessions</span
@@ -451,9 +451,9 @@ async function copyInstall() {
           >
         </summary>
         <p>
-          Yes. The mobile companion pairs with your desktop over your local
-          network so you can access projects and terminal sessions from your
-          phone.
+          Android and iOS companion apps are coming soon. They are designed to
+          pair with your desktop over your local network for access to projects
+          and terminal sessions.
         </p>
       </details>
     </div>

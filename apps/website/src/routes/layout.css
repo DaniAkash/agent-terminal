@@ -5081,6 +5081,153 @@ body:has(.home-page) .site-footer {
   border-left: 1px solid #ddd;
   margin-left: -1px;
 }
+.docs-sidebar nav a[aria-current='page'] {
+  color: #fff;
+  border-left: 2px solid #e3e6df;
+  margin-left: -1px;
+  background: #1c1e1b;
+}
+.docs-nav-group {
+  padding: 20px 0 8px 16px;
+  color: #8d9389;
+  font:
+    10px 'DM Mono',
+    monospace;
+  letter-spacing: 0.08em;
+}
+.docs-nav-group:first-child {
+  padding-top: 0;
+}
+.docs-article-intro {
+  padding-bottom: 42px;
+}
+.docs-article-intro h1 {
+  font-size: clamp(38px, 4vw, 54px);
+  overflow-wrap: anywhere;
+}
+.docs-article-intro + .docs-section {
+  padding-top: 32px;
+}
+.docs-toc {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 18px;
+}
+.docs-toc a {
+  display: block;
+  margin: 0;
+  font-size: 12px;
+}
+.docs-toc a:hover {
+  color: #fff;
+}
+.docs-section h3 {
+  scroll-margin-top: 105px;
+}
+.docs-welcome {
+  padding: 52px 0;
+}
+.docs-welcome h2 {
+  margin: 15px 0 24px;
+  font-size: 27px;
+}
+.docs-welcome-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.docs-welcome-grid a {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  min-height: 120px;
+  padding: 20px;
+  border: 1px solid #3d413b;
+  border-radius: 6px;
+  color: #e4e7e0;
+}
+.docs-welcome-grid a:hover,
+.docs-welcome-grid a:focus-visible {
+  border-color: #aeb5a9;
+  background: #1c1e1b;
+}
+.docs-welcome-grid span {
+  color: #a8ada4;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.docs-pagination {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 36px 0 80px;
+}
+.docs-pagination a {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  padding: 16px;
+  border: 1px solid #3d413b;
+  border-radius: 5px;
+  color: #e4e7e0;
+  font-size: 13px;
+}
+.docs-pagination a:last-child {
+  text-align: right;
+}
+.docs-pagination small {
+  color: #92988e;
+  font:
+    10px 'DM Mono',
+    monospace;
+}
+@media (max-width: 700px) {
+  .docs-article-intro h1 {
+    font-size: clamp(34px, 9vw, 48px);
+  }
+  .docs-mobile-nav {
+    display: block;
+    overflow: visible;
+  }
+  .docs-mobile-nav summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 44px;
+    cursor: pointer;
+    color: #e4e7e0;
+    font-size: 13px;
+  }
+  .docs-mobile-nav summary span {
+    color: #999e95;
+  }
+  .docs-mobile-nav nav {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding-top: 10px;
+  }
+  .docs-mobile-nav nav a {
+    white-space: normal;
+    min-height: 40px;
+  }
+  .docs-mobile-nav nav a[aria-current='page'] {
+    color: #fff;
+    background: #252823;
+  }
+  .docs-welcome-grid {
+    grid-template-columns: 1fr;
+  }
+  .docs-pagination {
+    flex-wrap: wrap;
+  }
+  .docs-pagination a {
+    min-width: 140px;
+  }
+}
 .docs-section kbd.command-key {
   font-size: 14px;
 }

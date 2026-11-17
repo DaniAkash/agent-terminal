@@ -165,6 +165,16 @@ function asset(patterns: RegExp[]) {
         </div>
         <span class="build-link muted">Coming soon</span>
       </div>
+      <div class="build-row">
+        <div class="build-platform">
+          <span>Mobile</span><small>COMPANION</small>
+        </div>
+        <div class="build-name">
+          <h3>iOS</h3>
+          <p>Pair with your desktop · App Store</p>
+        </div>
+        <span class="build-link muted">Coming soon</span>
+      </div>
     </div>
     {#if release}
       <p class="download-note">
@@ -203,7 +213,9 @@ function asset(patterns: RegExp[]) {
         <p>
           Launch your account’s default shell and install your preferred coding
           agent separately.
-          <a href="/docs#installation">Read the installation guide ↗</a>
+          <a href="/docs/linux-installation"
+            >Read the Linux installation guide ↗</a
+          >
         </p>
         <p>
           For an AppImage, make the downloaded file executable before opening it

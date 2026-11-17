@@ -29,7 +29,8 @@ let active = $derived(
       ? 'Downloads'
       : page.url.pathname === '/changelog'
         ? 'Changelog'
-        : page.url.pathname === '/docs'
+        : page.url.pathname === '/docs' ||
+            page.url.pathname.startsWith('/docs/')
           ? 'Docs'
           : 'Features',
 )
