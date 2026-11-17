@@ -14,7 +14,7 @@
     },
     "apps/companion": {
       "name": "companion",
-      "version": "1.4.0",
+      "version": "1.5.0",
       "dependencies": {
         "@agent-terminal/core-ui": "workspace:*",
         "@expo/metro-runtime": "~58.0.17",
@@ -70,7 +70,7 @@
     },
     "apps/desktop": {
       "name": "@agent-terminal/desktop",
-      "version": "0.7.0",
+      "version": "0.8.0",
       "dependencies": {
         "@agent-terminal/core-ui": "workspace:*",
         "@base-ui/react": "^1.9.0",
