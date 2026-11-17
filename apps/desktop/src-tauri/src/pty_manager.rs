@@ -351,6 +351,19 @@ fn respawn_in_place(ctx: &ReaderCtx) -> Result<RespawnOutcome, String> {
     Ok(RespawnOutcome::Respawned)
 }
 
+/// Reconnect a webview to a PTY that outlived it.
+///
+/// `resume_payload` is the screen the hub rebuilt for this tab, assembled
+/// by the caller before it got here because that assembly awaits the
+/// sidecar and this function holds locks. It is written into the fresh
+/// channel under the same lock as the channel swap, which is safe for one
+/// specific reason: `broadcast` assigns the seq, pushes the ring and only
+/// then takes the subscribers lock, with nothing awaiting in between. A
+/// byte racing this reattach is therefore either already in the ring the
+/// payload replayed or arrives strictly after this send.
+// Every argument is a distinct collaborator the reattach has to reach:
+// bundling them into a struct would only move the list somewhere else.
+#[allow(clippy::too_many_arguments)]
 pub fn try_reattach(
     app: AppHandle,
     pty_map: &PtyMap,
@@ -359,6 +372,7 @@ pub fn try_reattach(
     hub: Arc<StreamHub>,
     tab_id: &str,
     on_data: Channel<PtyDataPayload>,
+    resume_payload: String,
 ) -> Result<ReattachResult, String> {
     let mut map = pty_map.lock().unwrap();
 
@@ -377,15 +391,20 @@ pub fn try_reattach(
         let mut ch = handle.channel.lock().unwrap();
         *ch = Some(on_data);
 
-        // Send the reconnect banner via the data channel, not a Tauri event:
-        // the channel's onmessage handler is registered before invoke()
-        // resolves, so this send has no listener-timing gap. listen() does.
+        // Sent via the data channel, not a Tauri event: the channel's
+        // onmessage handler is registered before invoke() resolves, so this
+        // send has no listener-timing gap. listen() does.
+        //
+        // The banner is the empty-payload case only. Written over a
+        // restored frame it would not reassure anyone, it would corrupt the
+        // screen that was just rebuilt.
         if let Some(ch_ref) = ch.as_ref() {
-            ch_ref
-                .send(PtyDataPayload {
-                    data: "\r\n\x1b[2m[Reconnected]\x1b[0m\r\n".to_string(),
-                })
-                .ok();
+            let data = if resume_payload.is_empty() {
+                "\r\n\x1b[2m[Reconnected]\x1b[0m\r\n".to_string()
+            } else {
+                resume_payload
+            };
+            ch_ref.send(PtyDataPayload { data }).ok();
         }
     }
 

@@ -74,8 +74,8 @@ export const TerminalPane = React.memo(function TerminalPane({
   //     false if one is already running for this tabKey.
   //   - If a call is already in-flight for this tabKey (StrictMode fires
   //     onReady twice on dev), skip it.
-  //   - If the pty is already running (reconnect path), send \r to make
-  //     the shell re-display the prompt.
+  //   - On the reconnect path the backend writes the screen the pty was
+  //     showing into the channel, so there is nothing to poke here.
   //
   // Data arrives via the per-tab Channel passed to openTab — no global event
   // bus listener, no fan-out to other tabs.
@@ -90,7 +90,7 @@ export const TerminalPane = React.memo(function TerminalPane({
       IPC.openTab(tabKey, cwd, (data) => {
         handleRef.current?.write(data)
       })
-        .then((isNew) => {
+        .then(() => {
           pendingOpens.delete(tabKey)
           // The terminal measures itself and reports its grid before this
           // call spawns the PTY, and `resize_pty` is a no-op for a tab that
@@ -99,9 +99,6 @@ export const TerminalPane = React.memo(function TerminalPane({
           const size = handleRef.current?.getSize()
           if (size) {
             IPC.resizePty(tabKey, size.cols, size.rows).catch(() => {})
-          }
-          if (!isNew) {
-            IPC.writePty(tabKey, '\r').catch(() => {})
           }
         })
         .catch(() => {

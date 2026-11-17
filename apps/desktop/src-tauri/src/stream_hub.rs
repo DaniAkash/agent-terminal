@@ -255,6 +255,62 @@ impl RingBuffer {
     }
 }
 
+/// The ring entries a snapshot taken at `sidecar_seq` does not already
+/// cover. The single definition of "newer than the snapshot", shared by
+/// the remote catch-up and the local resume so the two cannot drift: a
+/// desktop rebuilding its screen and a phone rebuilding its screen are
+/// answering the same question and must answer it the same way.
+fn entries_after(
+    ring: &RingBuffer,
+    sidecar_seq: Option<u64>,
+) -> impl Iterator<Item = &(u64, Vec<u8>)> {
+    ring.entries.iter().filter(move |(seq, _)| match sidecar_seq {
+        Some(covered) => *seq > covered,
+        None => true,
+    })
+}
+
+/// What a reattaching desktop webview needs to rebuild the screen it threw
+/// away when its window closed, in one write.
+pub struct LocalResume {
+    /// The sidecar's serialized screen followed by every ring byte newer
+    /// than it. Empty when there is neither.
+    pub payload: String,
+    /// Whether a sidecar snapshot is behind `payload`. False means the
+    /// payload is raw ring replay carrying the program's own absolute
+    /// cursor addressing rather than a rebuilt screen, so the program has
+    /// to be asked to draw one instead.
+    pub from_snapshot: bool,
+}
+
+/// Join a snapshot with the ring bytes it does not cover. Pure, so the
+/// assembly can be asserted without a sidecar process behind it.
+fn assemble_local_resume(
+    snapshot: String,
+    sidecar_seq: Option<u64>,
+    ring: &RingBuffer,
+) -> LocalResume {
+    let from_snapshot = !snapshot.is_empty();
+    let mut newer: Vec<u8> = Vec::new();
+    for (_, bytes) in entries_after(ring, sidecar_seq) {
+        newer.extend_from_slice(bytes);
+    }
+    // Decoded as one blob rather than per entry: a chunk boundary can land
+    // mid-codepoint, and rejoining the bytes first is what keeps a split
+    // sequence from decoding as two replacement characters.
+    let mut payload = snapshot;
+    payload.push_str(&String::from_utf8_lossy(&newer));
+    LocalResume {
+        payload,
+        from_snapshot,
+    }
+}
+
+/// Scrollback lines asked of the sidecar for a local reattach. Matches the
+/// sidecar's own default. The webview's Ghostty core died with the window,
+/// so this is the whole of the history it gets back.
+const LOCAL_RESUME_SCROLLBACK: u32 = 1000;
+
 pub struct StreamHub {
     tabs: DashMap<String, Arc<TabState>>,
     sidecar: Option<Arc<SidecarClient>>,
@@ -722,28 +778,22 @@ impl StreamHub {
         // the race where a broadcast landed between subscribe's serialize
         // call and this lock acquisition.
         let mut highest_delivered = sidecar_seq;
-        for (seq, bytes) in ring.entries.iter() {
-            let should_replay = match sidecar_seq {
-                Some(t) => *seq > t,
-                None => true,
-            };
-            if should_replay {
-                if outbox
-                    .send(ServerFrame::Bytes {
-                        tab_id: tab_id.to_string(),
-                        seq: *seq,
-                        data: B64.encode(bytes),
-                    })
-                    .is_err()
-                {
-                    eprintln!(
-                        "[stream_hub] subscribe_remote({tab_id}): outbox closed \
-                         mid-replay; skipping subscriber registration"
-                    );
-                    return None;
-                }
-                highest_delivered = Some(*seq);
+        for (seq, bytes) in entries_after(&ring, sidecar_seq) {
+            if outbox
+                .send(ServerFrame::Bytes {
+                    tab_id: tab_id.to_string(),
+                    seq: *seq,
+                    data: B64.encode(bytes),
+                })
+                .is_err()
+            {
+                eprintln!(
+                    "[stream_hub] subscribe_remote({tab_id}): outbox closed \
+                     mid-replay; skipping subscriber registration"
+                );
+                return None;
             }
+            highest_delivered = Some(*seq);
         }
         drop(ring);
 
@@ -771,6 +821,52 @@ impl StreamHub {
             },
         ));
         Some(id)
+    }
+
+    /// The current screen for a local re-attach: the sidecar snapshot plus
+    /// any ring bytes newer than it. Empty when there is neither.
+    ///
+    /// `subscribe_remote` has fetched a snapshot and replayed the newer
+    /// ring since it was written; `subscribe_local` only ever registered a
+    /// channel, which is why a reopened window came back blank. Same
+    /// assembly, same `entries_after` cut, one caller apart.
+    ///
+    /// Async because the sidecar reply is awaited, which is also why the
+    /// caller builds this BEFORE taking the channel lock.
+    pub async fn local_resume_payload(&self, tab_id: &str) -> LocalResume {
+        let (snapshot, sidecar_seq) =
+            self.fetch_snapshot(tab_id, LOCAL_RESUME_SCROLLBACK).await;
+        let Some(state) = self.tabs.get(tab_id) else {
+            return assemble_local_resume(snapshot, sidecar_seq, &RingBuffer::new(0));
+        };
+        let ring = state.ring.lock().expect("ring lock poisoned");
+        assemble_local_resume(snapshot, sidecar_seq, &ring)
+    }
+
+    /// Force the program to repaint by resizing one row short and straight
+    /// back. TIOCSWINSZ only signals on an actual change and the decided
+    /// viewport has not moved, so `renegotiate` has nothing to apply: this
+    /// is the only way to make a full-screen program redraw a screen we
+    /// could not rebuild for it.
+    pub fn nudge_repaint(&self, tab_id: &str) {
+        let viewport = {
+            let Some(state) = self.tabs.get(tab_id) else {
+                return;
+            };
+            let decided = *state.decided.lock().expect("decided lock poisoned");
+            decided.unwrap_or_else(|| state.size())
+        }; // Tab ref released before the sink reaches for the PtyMap.
+        if viewport.rows < 2 {
+            return;
+        }
+        self.viewport_sink.apply(
+            tab_id,
+            Viewport {
+                cols: viewport.cols,
+                rows: viewport.rows - 1,
+            },
+        );
+        self.viewport_sink.apply(tab_id, viewport);
     }
 
     /// Ask the sidecar for a serialize snapshot; degrade to empty payload
@@ -1064,6 +1160,108 @@ mod tests {
         hub.ensure_tab("t1", 80, 24);
         hub.declare_viewport("t1", SubscriberId(42), DESKTOP);
         hub.declare_viewport("ghost", SubscriberId(1), DESKTOP);
+        assert!(sink.applied().is_empty());
+    }
+
+    // ---- Local resume ----
+
+    fn ring_of(entries: &[(u64, &str)]) -> RingBuffer {
+        let mut ring = RingBuffer::new(DEFAULT_RING_CAP_BYTES);
+        for (seq, bytes) in entries {
+            ring.push(*seq, bytes.as_bytes().to_vec());
+        }
+        ring
+    }
+
+    #[test]
+    fn local_resume_is_the_snapshot_plus_only_the_ring_newer_than_it() {
+        // The same cut the remote path makes. A byte the snapshot already
+        // contains must not be replayed on top of it.
+        let ring = ring_of(&[(1, "one"), (2, "two"), (3, "three"), (4, "four")]);
+        let resume = assemble_local_resume("SCREEN".to_string(), Some(2), &ring);
+        assert_eq!(resume.payload, "SCREENthreefour");
+        assert!(resume.from_snapshot);
+    }
+
+    #[test]
+    fn local_resume_without_a_snapshot_replays_the_whole_ring() {
+        // No sidecar: every ring byte is newer than a snapshot that does
+        // not exist, and the caller is told so it can nudge a repaint.
+        let ring = ring_of(&[(0, "a"), (1, "b")]);
+        let resume = assemble_local_resume(String::new(), None, &ring);
+        assert_eq!(resume.payload, "ab");
+        assert!(!resume.from_snapshot);
+    }
+
+    #[test]
+    fn local_resume_rejoins_a_codepoint_split_across_two_chunks() {
+        // The reader thread's decoder spans chunks; the ring does not, so
+        // decoding entry by entry would turn one character into two
+        // replacement marks.
+        let heart = "💜".as_bytes();
+        let mut ring = RingBuffer::new(DEFAULT_RING_CAP_BYTES);
+        ring.push(0, heart[..2].to_vec());
+        ring.push(1, heart[2..].to_vec());
+        let resume = assemble_local_resume(String::new(), None, &ring);
+        assert_eq!(resume.payload, "💜");
+    }
+
+    #[tokio::test]
+    async fn local_resume_is_empty_with_no_sidecar_and_no_ring() {
+        // Empty is the signal `try_reattach` reads to keep the
+        // [Reconnected] banner, which is the only case it belongs in.
+        let hub = new_hub();
+        hub.ensure_tab("t1", 80, 24);
+        let resume = hub.local_resume_payload("t1").await;
+        assert!(resume.payload.is_empty());
+        assert!(!resume.from_snapshot);
+
+        let unknown = hub.local_resume_payload("ghost").await;
+        assert!(unknown.payload.is_empty());
+        assert!(!unknown.from_snapshot);
+    }
+
+    #[tokio::test]
+    async fn local_resume_without_a_sidecar_hands_back_the_live_ring() {
+        let hub = new_hub();
+        hub.ensure_tab("t1", 80, 24);
+        hub.broadcast("t1", b"hello ", "hello ");
+        hub.broadcast("t1", b"world", "world");
+        let resume = hub.local_resume_payload("t1").await;
+        assert_eq!(resume.payload, "hello world");
+        assert!(!resume.from_snapshot);
+    }
+
+    #[test]
+    fn nudge_repaint_resizes_one_row_short_and_straight_back() {
+        // The fallback when there is no screen to restore. The decided
+        // size has not moved, so only a real winsize change raises the
+        // SIGWINCH that makes the program draw itself.
+        let (hub, sink) = new_recording_hub();
+        hub.ensure_tab("t1", 80, 24);
+        let local = hub.subscribe_local("t1", Arc::new(Mutex::new(None)));
+        hub.declare_viewport("t1", local, DESKTOP);
+        hub.nudge_repaint("t1");
+        assert_eq!(
+            sink.applied(),
+            vec![DESKTOP, vp(DESKTOP.cols, DESKTOP.rows - 1), DESKTOP],
+        );
+    }
+
+    #[test]
+    fn nudge_repaint_falls_back_to_the_tabs_own_size_before_any_declaration() {
+        let (hub, sink) = new_recording_hub();
+        hub.ensure_tab("t1", 80, 24);
+        hub.nudge_repaint("t1");
+        assert_eq!(sink.applied(), vec![vp(80, 23), vp(80, 24)]);
+    }
+
+    #[test]
+    fn nudge_repaint_is_silent_for_a_grid_too_short_to_shrink() {
+        let (hub, sink) = new_recording_hub();
+        hub.ensure_tab("t1", 80, 1);
+        hub.nudge_repaint("t1");
+        hub.nudge_repaint("ghost");
         assert!(sink.applied().is_empty());
     }
 
