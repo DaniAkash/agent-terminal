@@ -17,8 +17,7 @@ import {
 export interface TerminalHandle {
   write: (data: string) => void
   clear: () => void
-  /** Adopt the grid the desktop decided on. The only way the grid moves. */
-  resize: (cols: number, rows: number) => void
+  fit: () => void
   /** Drop focus so the next tap on the terminal can take it again. */
   blurInput: () => void
 }
@@ -81,11 +80,9 @@ export default function TerminalDom({
         `window.__terminal_bridge.clear(); true;`,
       )
     },
-    resize: (cols: number, rows: number) => {
-      // Coerced rather than trusted: this is interpolated into injected
-      // source, and the values arrive off the wire.
+    fit: () => {
       webviewRef.current?.injectJavaScript(
-        `window.__terminal_bridge.resize(${Number(cols)}, ${Number(rows)}); true;`,
+        `window.__terminal_bridge.fit(); true;`,
       )
     },
     blurInput: () => {
