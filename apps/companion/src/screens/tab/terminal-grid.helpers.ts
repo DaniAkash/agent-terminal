@@ -87,3 +87,85 @@ export function gridSizeForContainer(
     rows: Math.max(1, Math.floor(containerHeight / rowHeight)),
   }
 }
+
+/**
+ * What an incoming grid asks of the renderer: nothing at all when the size
+ * is not yet measurable, a relayout alone when the grid already matches, a
+ * resize otherwise. Separating the three keeps a re-sent identical grid from
+ * rebuilding the screen while still letting it re-fit to the viewport.
+ */
+export type GridApplication = 'ignore' | 'relayout' | 'resize'
+
+export function gridApplication(
+  requested: GridSize,
+  current: GridSize,
+): GridApplication {
+  if (!(requested.cols > 0) || !(requested.rows > 0)) return 'ignore'
+  if (requested.cols === current.cols && requested.rows === current.rows) {
+    return 'relayout'
+  }
+  return 'resize'
+}
+
+export interface TouchPoint {
+  x: number
+  y: number
+}
+
+/** A touch's position, or the origin when the list handed back nothing. */
+export function touchPoint(
+  touch: { clientX: number; clientY: number } | null | undefined,
+): TouchPoint {
+  if (!touch) return { x: 0, y: 0 }
+  return { x: touch.clientX, y: touch.clientY }
+}
+
+/** A pinch is only live once touchstart measured the starting spread. */
+export function isPinchGesture(
+  touchCount: number,
+  pinchStartDistance: number,
+): boolean {
+  return touchCount === 2 && pinchStartDistance > 0
+}
+
+/** How far a finger may wander and still end as a tap rather than a drag. */
+export const TAP_SLOP_PX = 16
+
+/** Window in which a second tap counts as a double tap. */
+export const DOUBLE_TAP_MS = 300
+
+export function movedBeyondTapSlop(from: TouchPoint, to: TouchPoint): boolean {
+  return (
+    Math.abs(to.x - from.x) > TAP_SLOP_PX ||
+    Math.abs(to.y - from.y) > TAP_SLOP_PX
+  )
+}
+
+export interface TouchEndState {
+  /** Fingers still down after this one lifted. */
+  remainingTouches: number
+  pinchStartDistance: number
+  tapMoved: boolean
+  /** Milliseconds since the last tap that armed the double-tap window. */
+  sinceLastTap: number
+}
+
+export type TouchEndOutcome =
+  | 'ignore'
+  | 'end-pinch'
+  | 'reset-tap'
+  | 'toggle-zoom'
+  | 'arm-tap'
+
+/**
+ * What lifting a finger means. A gesture only resolves once the last finger
+ * is up; a pinch and a drag both end by disarming the double-tap window, so
+ * the only tap that toggles zoom is a second still one inside it.
+ */
+export function touchEndOutcome(state: TouchEndState): TouchEndOutcome {
+  if (state.remainingTouches > 0) return 'ignore'
+  if (state.pinchStartDistance > 0) return 'end-pinch'
+  if (state.tapMoved) return 'reset-tap'
+  if (state.sinceLastTap < DOUBLE_TAP_MS) return 'toggle-zoom'
+  return 'arm-tap'
+}

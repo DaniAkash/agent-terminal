@@ -17,10 +17,15 @@ import {
 import {
   fitWidthScale,
   FULL_TERMINAL_SCALE,
+  gridApplication,
   gridSizeForContainer,
   INITIAL_TERMINAL_COLS,
   INITIAL_TERMINAL_ROWS,
+  isPinchGesture,
+  movedBeyondTapSlop,
   pinchScale,
+  touchEndOutcome,
+  touchPoint,
 } from './terminal-grid.helpers'
 
 type Args = Parameters<DOMImperativeFactory[string]>
@@ -48,9 +53,6 @@ const CLEAR_SEQUENCE = '\x1b[2J\x1b[3J\x1b[H'
 // columns a phone shows, covering the 2,000 lines xterm was configured
 // for here. The default is 10,000 bytes, about 1,260 rows at that width.
 const SCROLLBACK_BYTES = 2_000_000
-
-const DOUBLE_TAP_MS = 300
-const TAP_SLOP_PX = 16
 
 const THEME = {
   background: 0x0e0f10,
@@ -135,7 +137,6 @@ interface PanZoom {
  * rest. Also measures the screen in cells and hands that up as a
  * declaration, which only decides anything when no desktop is attached.
  */
-// fallow-ignore-next-line complexity
 function createPanZoom(
   pan: HTMLElement,
   zoom: HTMLElement,
@@ -169,8 +170,12 @@ function createPanZoom(
   }
 
   function applyGrid(cols: number, rows: number): void {
-    if (!(cols > 0) || !(rows > 0)) return
-    if (cols !== term.cols || rows !== term.rows) term.resize(cols, rows)
+    const application = gridApplication(
+      { cols, rows },
+      { cols: term.cols, rows: term.rows },
+    )
+    if (application === 'ignore') return
+    if (application === 'resize') term.resize(cols, rows)
     relayout()
   }
 
@@ -198,14 +203,14 @@ function createPanZoom(
       pinchStartScale = scale
       return
     }
-    const touch = e.touches.item(0)
-    tapX = touch?.clientX ?? 0
-    tapY = touch?.clientY ?? 0
+    const point = touchPoint(e.touches.item(0))
+    tapX = point.x
+    tapY = point.y
     tapMoved = false
   }
 
   function onTouchMove(e: TouchEvent): void {
-    if (e.touches.length === 2 && pinchStartDistance > 0) {
+    if (isPinchGesture(e.touches.length, pinchStartDistance)) {
       e.preventDefault()
       fitting = false
       scale = pinchScale(
@@ -218,32 +223,23 @@ function createPanZoom(
     }
     const touch = e.touches.item(0)
     if (!touch) return
-    if (
-      Math.abs(touch.clientX - tapX) > TAP_SLOP_PX ||
-      Math.abs(touch.clientY - tapY) > TAP_SLOP_PX
-    ) {
+    if (movedBeyondTapSlop({ x: tapX, y: tapY }, touchPoint(touch))) {
       tapMoved = true
     }
   }
 
   function onTouchEnd(e: TouchEvent): void {
-    if (e.touches.length > 0) return
-    if (pinchStartDistance > 0) {
-      pinchStartDistance = 0
-      lastTapAt = 0
-      return
-    }
-    if (tapMoved) {
-      lastTapAt = 0
-      return
-    }
     const now = Date.now()
-    if (now - lastTapAt < DOUBLE_TAP_MS) {
-      lastTapAt = 0
-      toggleZoom()
-      return
-    }
-    lastTapAt = now
+    const outcome = touchEndOutcome({
+      remainingTouches: e.touches.length,
+      pinchStartDistance,
+      tapMoved,
+      sinceLastTap: now - lastTapAt,
+    })
+    if (outcome === 'ignore') return
+    pinchStartDistance = 0
+    lastTapAt = outcome === 'arm-tap' ? now : 0
+    if (outcome === 'toggle-zoom') toggleZoom()
   }
 
   pan.addEventListener('touchstart', onTouchStart, { passive: true })
