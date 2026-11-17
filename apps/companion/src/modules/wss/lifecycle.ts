@@ -5,11 +5,18 @@ import { AppState } from 'react-native'
 import type { DeviceRecord } from '@/modules/stores/$devices'
 import { $activeDevice } from '@/modules/stores/$devices'
 import { $session } from '@/modules/stores/$session'
-import { autoConnect, forceCloseFromLifecycle, probeConnection } from './client'
+import {
+  autoConnect,
+  forceCloseFromLifecycle,
+  probeConnection,
+  reclaimTabSubscriptions,
+  releaseTabSubscriptions,
+} from './client'
 import {
   classifyAppStateTransition,
   classifyNetInfoChange,
   decideForegroundAction,
+  decideForegroundReattach,
   executeForegroundAction,
   executeNetInfoAction,
   type LifecycleDeps,
@@ -76,6 +83,11 @@ function handleAppStateChange(next: AppStateStatus): void {
   if (transition === 'background') {
     backgroundedAt = Date.now()
     console.log('[wss.lifecycle] backgrounded')
+    // Giving the terminal width back. The desktop moves it only when
+    // another client claims it, so a phone in a pocket would otherwise
+    // keep a 57 column grid on a screen nobody is looking at; detaching
+    // leaves the desktop as the only client to size for.
+    releaseTabSubscriptions()
     return
   }
   if (transition === 'foreground') {
@@ -93,7 +105,10 @@ async function handleForegroundResume(elapsedMs: number): Promise<void> {
   const status = $session.get().status as SessionStatusHint
   const action = decideForegroundAction(elapsedMs, status, record !== null)
   console.log('[wss.lifecycle] resume action:', action, { elapsedMs, status })
-  await executeForegroundAction(action, record, deps)
+  const outcome = await executeForegroundAction(action, record, deps)
+  if (decideForegroundReattach(outcome) === 'reclaim') {
+    reclaimTabSubscriptions()
+  }
 }
 
 function handleNetInfoChange(net: NetInfoState): void {

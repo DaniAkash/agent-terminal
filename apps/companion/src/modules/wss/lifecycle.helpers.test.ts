@@ -3,8 +3,10 @@ import {
   classifyAppStateTransition,
   classifyNetInfoChange,
   decideForegroundAction,
+  decideForegroundReattach,
   executeForegroundAction,
   executeNetInfoAction,
+  shouldClaimOnFocus,
   toAppStateStatus,
   TRUSTED_BACKGROUND_MS,
 } from './lifecycle.helpers'
@@ -200,6 +202,47 @@ describe('executeForegroundAction', () => {
     await executeForegroundAction('probe', null, deps)
     expect(probes).toBe(0)
     expect(calls).toEqual([])
+  })
+
+  test('reports what it actually did, not what it set out to do', async () => {
+    const { deps } = makeDeps()
+    expect(await executeForegroundAction('skip', record, deps)).toBe('skipped')
+    expect(await executeForegroundAction('probe', null, deps)).toBe('skipped')
+    expect(await executeForegroundAction('reconnect', record, deps)).toBe(
+      'reconnected',
+    )
+    expect(await executeForegroundAction('probe', record, deps)).toBe('alive')
+
+    const dead = makeDeps({ probeConnection: async () => 'dead' })
+    expect(await executeForegroundAction('probe', record, dead.deps)).toBe(
+      'reconnected',
+    )
+  })
+})
+
+describe('decideForegroundReattach', () => {
+  test('a socket that survived the background is re-attached by hand', () => {
+    expect(decideForegroundReattach('alive')).toBe('reclaim')
+  })
+
+  test('a reconnect re-attaches itself, so asking again is skipped', () => {
+    expect(decideForegroundReattach('reconnected')).toBe('skip')
+  })
+
+  test('a foreground that did nothing has nothing to re-attach', () => {
+    expect(decideForegroundReattach('skipped')).toBe('skip')
+  })
+})
+
+describe('shouldClaimOnFocus', () => {
+  test('a session in view on an active app claims the terminal width', () => {
+    expect(shouldClaimOnFocus('active')).toBe(true)
+  })
+
+  test('focus firing on the way out of the app claims nothing', () => {
+    expect(shouldClaimOnFocus('background')).toBe(false)
+    expect(shouldClaimOnFocus('inactive')).toBe(false)
+    expect(shouldClaimOnFocus('unknown')).toBe(false)
   })
 })
 
