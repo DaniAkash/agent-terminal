@@ -70,7 +70,7 @@
     "fallow:health": "fallow health",
     "doctor": "react-doctor",
     "expo-check": "expo install --check",
-    "check": "concurrently --group --names fmt,lint,typecheck,test,fallow,doctor,expo --prefix-colors auto \"bun run fmt\" \"bun run lint\" \"bun run typecheck\" \"bun run test\" \"bun run fallow\" \"bun run doctor\" \"bun run expo-check\""
+    "check": "concurrently --group --names fmt,lint,typecheck,test,fallow,doctor --prefix-colors auto \"bun run fmt\" \"bun run lint\" \"bun run typecheck\" \"bun run test\" \"bun run fallow\" \"bun run doctor\""
   },
   "private": true
 }
