@@ -517,6 +517,7 @@ pub fn run() {
                         };
                         let pairing_window = Arc::new(PairingWindow::new());
                         let paired_conns = Arc::new(PairedConnMap::new());
+                        let pairing_approvals = Arc::new(pairing::PairingApprovals::new());
 
                         // Phone escalation. Lives here rather than beside
                         // NotificationService because it needs the paired
@@ -557,6 +558,7 @@ pub fn run() {
                             app.manage(Arc::clone(&paired_tokens));
                             app.manage(Arc::clone(&pairing_window));
                             app.manage(Arc::clone(&paired_conns));
+                            app.manage(Arc::clone(&pairing_approvals));
                             app.manage(auth);
                             break 'wss_setup;
                         }
@@ -636,6 +638,7 @@ pub fn run() {
                         app.manage(Arc::clone(&paired_tokens));
                         app.manage(Arc::clone(&pairing_window));
                         app.manage(Arc::clone(&paired_conns));
+                        app.manage(Arc::clone(&pairing_approvals));
 
                         let server_state = Arc::new(ServerState {
                             hub: hub_for_wss,
@@ -649,6 +652,7 @@ pub fn run() {
                             paired_tokens,
                             pairing_window,
                             paired_conns,
+                            pairing_approvals,
                             push: Some(push_service),
                         });
                         app.manage(auth);
@@ -731,6 +735,7 @@ pub fn run() {
             commands::get_pairing_qr_payload,
             commands::list_paired_devices,
             commands::revoke_paired_device,
+            commands::respond_pairing_approval,
             notifications::notif_set_projects,
             notifications::notif_set_active_tab,
             notifications::notif_set_app_focus,

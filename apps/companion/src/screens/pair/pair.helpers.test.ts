@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test'
 import {
   buildPairingAttemptUrls,
   formatFingerprintForVisualCompare,
+  pairingRefusal,
   pairingUrlHost,
   parsePairingCompleteFrame,
   parsePairingQr,
@@ -189,5 +190,25 @@ describe('pairingUrlHost', () => {
 
   it('returns null for any other shape', () => {
     expect(pairingUrlHost('https://example.com/')).toBeNull()
+  })
+})
+
+describe('pairingRefusal', () => {
+  it('reads the code the desktop puts in its auth_fail reason', () => {
+    expect(pairingRefusal('pairing_declined: the request was declined')).toBe(
+      'declined',
+    )
+    expect(pairingRefusal('pairing_timeout: not approved in time')).toBe(
+      'timeout',
+    )
+    expect(pairingRefusal('pairing_canceled: window closed')).toBe('canceled')
+  })
+
+  it('is null for failures that are worth another endpoint', () => {
+    expect(pairingRefusal('pairing timeout at wss://x:1/stream')).toBeNull()
+    expect(
+      pairingRefusal('socket closed before pairing_complete: 1006'),
+    ).toBeNull()
+    expect(pairingRefusal('pairing_start timeout: not received')).toBeNull()
   })
 })

@@ -30,4 +30,6 @@ export type PairError =
   | { kind: 'fingerprint-mismatch' }
   | { kind: 'pairing-token-expired' }
   | { kind: 'timeout' }
+  | { kind: 'declined' }
+  | { kind: 'not-approved' }
   | { kind: 'unknown'; reason: string }

@@ -195,6 +195,10 @@ function describeError(error: PairError): string {
       return 'The pairing window expired. Open the Companion dialog on the desktop again to get a fresh QR.'
     case 'timeout':
       return 'Pairing timed out. Check that the desktop is on the same Wi-Fi and try again.'
+    case 'declined':
+      return 'The pairing request was declined on the desktop.'
+    case 'not-approved':
+      return 'The desktop did not approve the request. Open the Companion dialog on the desktop and try again.'
     case 'unknown':
       return error.reason
   }

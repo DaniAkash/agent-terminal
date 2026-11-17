@@ -1,6 +1,6 @@
 use crate::mod_engine::ModEngine;
 use crate::net;
-use crate::pairing::{PairedDevice, PairedTokens, PairingWindow};
+use crate::pairing::{PairedDevice, PairedTokens, PairingApprovals, PairingWindow};
 use crate::projects_cache::{ProjectsCache, StoredProject};
 use crate::protocol::ServerFrame;
 use crate::wss_server::{MobileOpInboxes, PairedConnMap};
@@ -463,6 +463,7 @@ pub async fn open_pairing_window(
     fingerprint: State<'_, TlsFingerprint>,
     net: State<'_, BoundNet>,
     window: State<'_, Arc<PairingWindow>>,
+    approvals: State<'_, Arc<PairingApprovals>>,
 ) -> Result<PairingQrPayload, String> {
     if net.port == 0 {
         return Err("WSS bind failed at startup; restart the desktop".into());
@@ -471,6 +472,8 @@ pub async fn open_pairing_window(
         .0
         .clone()
         .ok_or_else(|| "TLS fingerprint unavailable; cannot pair".to_string())?;
+    // A new window replaces the old token, so requests made under it end.
+    approvals.cancel_all();
     let pairing_token = window.open();
     let current = net.current().await;
     Ok(PairingQrPayload {
@@ -491,8 +494,10 @@ pub async fn open_pairing_window(
 #[tauri::command]
 pub async fn close_pairing_window(
     window: State<'_, Arc<PairingWindow>>,
+    approvals: State<'_, Arc<PairingApprovals>>,
 ) -> Result<(), String> {
     window.close();
+    approvals.cancel_all();
     Ok(())
 }
 
@@ -561,6 +566,16 @@ pub async fn revoke_paired_device(
     }
     let closed = conns.revoke_and_close(&device_id);
     Ok(closed)
+}
+
+/// Respond to a pending mobile pairing approval request.
+#[tauri::command]
+pub async fn respond_pairing_approval(
+    approvals: State<'_, Arc<PairingApprovals>>,
+    request_id: String,
+    approved: bool,
+) -> Result<bool, String> {
+    Ok(approvals.respond(&request_id, approved))
 }
 
 /// Derive the "Dani's MacBook Pro"-style hint from a `.local` hostname

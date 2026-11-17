@@ -5,6 +5,7 @@ import { saveDeviceToSecureStore } from '@/modules/stores/$devices'
 import { PinnedWebSocket } from '../../../modules/pinned-websocket'
 import {
   buildPairingAttemptUrls,
+  pairingRefusal,
   pairingUrlHost,
   parsePairingCompleteFrame,
 } from './pair.helpers'
@@ -63,6 +64,9 @@ export async function completePairing(
       return record
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
+      // The desktop answered no. Trying the next endpoint would only
+      // prompt the user again for a request they already settled.
+      if (pairingRefusal(msg)) throw e
       failures.push(`${maskUrl(url)}: ${msg}`)
       console.warn(`[pair] attempt failed at ${maskUrl(url)}: ${msg}`)
     }
@@ -104,10 +108,18 @@ interface DeviceMeta {
 
 /**
  * Open a WSS socket, send the auth + pairing frames, and resolve
- * with the minted device token. Bounded 15s total timeout so a
- * misbehaved server (or wrong URL) fails fast enough that the
- * next endpoint attempt still has budget.
+ * with the minted device token.
+ *
+ * Two timeouts. Reaching the desktop is bounded to 15s so a wrong URL
+ * fails fast enough that the next endpoint still has budget. Once the
+ * desktop has accepted the pairing token it asks its user to approve,
+ * which takes as long as a person takes: that wait runs up to the
+ * desktop's own 60s limit plus a margin, so the desktop, not the phone,
+ * decides when an unanswered request ends.
  */
+const CONNECT_TIMEOUT_MS = 15_000
+const APPROVAL_TIMEOUT_MS = 75_000
+
 function runPairingSocket(
   url: string,
   pairingToken: string,
@@ -123,12 +135,13 @@ function runPairingSocket(
       reject(e instanceof Error ? e : new Error(String(e)))
       return
     }
-    const timer = setTimeout(() => {
+    const onTimeout = () => {
       if (settled) return
       settled = true
       ws.close()
       reject(new Error(`pairing timeout at ${url}`))
-    }, 15_000)
+    }
+    let timer = setTimeout(onTimeout, CONNECT_TIMEOUT_MS)
     const done = (fn: () => void) => {
       if (settled) return
       settled = true
@@ -166,6 +179,8 @@ function runPairingSocket(
         return
       }
       if (frame.op === 'auth_ok') {
+        clearTimeout(timer)
+        timer = setTimeout(onTimeout, APPROVAL_TIMEOUT_MS)
         // Send our metadata so the server can mint the token.
         ws.send(
           JSON.stringify({

@@ -32,6 +32,22 @@ export function pairingUrlHost(url: string): string | null {
 }
 
 /**
+ * How the desktop refused a pairing request, read from an `auth_fail`
+ * reason. The desktop prefixes its answer with one of these codes
+ * (`wss_server.rs` `pairing_flow`). Null for every other failure.
+ *
+ * A refusal is the desktop's final answer, so the caller must stop and
+ * not try the next endpoint: each further attempt would raise a fresh
+ * approval prompt for a request the user already settled.
+ */
+export function pairingRefusal(
+  reason: string,
+): 'declined' | 'timeout' | 'canceled' | null {
+  const code = /pairing_(declined|timeout|canceled)\b/.exec(reason)?.[1]
+  return (code as 'declined' | 'timeout' | 'canceled' | undefined) ?? null
+}
+
+/**
  * Parse the JSON body of a `pairing_complete` server frame. Returns
  * null when the shape is wrong so the caller can raise a distinct
  * error (rather than treating a malformed reply as a socket close).
