@@ -235,6 +235,14 @@ fn show_main_window(app: &tauri::AppHandle) {
     if let Err(error) = window.set_focus() {
         eprintln!("[tray] failed to focus main window: {error}");
     }
+    // Coming back into view is the desktop saying it is the surface being
+    // looked at, so it takes the terminal width back from whatever phone
+    // last claimed it. `set_focus` above usually raises a Focused event
+    // that does the same thing; this covers the platforms and the races
+    // where it does not.
+    if let Some(hub) = app.try_state::<Arc<StreamHub>>() {
+        hub.reclaim_local_viewports();
+    }
 }
 
 /// Menu-bar presence, so a window put away by its close button is still
@@ -415,6 +423,7 @@ pub fn run() {
             });
             let hub = StreamHub::new(sidecar, viewport_sink);
             let hub_for_wss = Arc::clone(&hub);
+            let hub_for_focus = Arc::clone(&hub);
             app.manage(hub);
 
             // Projects cache: replaces the pre-Phase-A ProjectRegistry.
@@ -694,6 +703,14 @@ pub fn run() {
                 window.on_window_event(move |event| {
                     if let tauri::WindowEvent::Focused(focused) = event {
                         svc.set_app_focus(*focused);
+                        // Focus is also a claim on the terminal width.
+                        // Only the gain: losing focus must hand nothing to
+                        // a phone nobody is holding, or an agent's
+                        // full-screen frame reflows on every window
+                        // switch.
+                        if *focused {
+                            hub_for_focus.reclaim_local_viewports();
+                        }
                     }
                 });
             }

@@ -75,41 +75,60 @@ pub struct Viewport {
     pub rows: u16,
 }
 
-/// How much say a subscriber's viewport has. Local is the desktop webview,
-/// which is the workstation; a phone attaches to check on an agent, not to
-/// reshape its workspace.
+/// Which kind of surface a subscriber is. Only used to break a tie
+/// between clients that have never claimed the width, where the desktop
+/// is the better guess; it no longer buys the desktop a standing
+/// advantage.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ViewportClaim {
     Primary,
     Secondary,
 }
 
-/// Decide the PTY size from every attached viewport. Primary (the desktop
-/// webview) wins whenever it has one, including while its window is
-/// hidden: an agent's frame should not reflow because somebody glanced at
-/// a phone. With no primary, the largest secondary wins, tie-broken by
-/// cols, then rows, then subscriber id, so the choice is deterministic
+/// One attached client's bid for the PTY's size: the grid it says it is
+/// painting into, and when it last said so.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct ViewportBid {
+    pub id: SubscriberId,
+    pub claim: ViewportClaim,
+    pub viewport: Viewport,
+    /// Hub-assigned, per tab, monotonically increasing: the higher value
+    /// is the more recent declaration. `0` means this subscriber has
+    /// never declared, which only the fallback ordering ever sees.
+    pub claim_seq: u64,
+}
+
+/// Decide the PTY size from every attached viewport: the most recent
+/// claim wins.
+///
+/// A client declaring a viewport is claiming the width, and a client that
+/// has gone quiet is not giving it up. That asymmetry is the whole
+/// policy: ownership moves when somebody else actually asks for it, so
+/// switching away from a window cannot reflow an agent's full-screen
+/// frame, while picking up a phone and looking at a session can.
+///
+/// With nothing claimed yet the order falls back to the Primary (desktop)
+/// subscriber, then the larger grid, then the lowest subscriber id, so a
+/// decision taken before anyone has declared is still deterministic
 /// however the clients happened to arrive.
 ///
 /// Pure on purpose: a real `openpty` is impractical in a hermetic test, so
 /// the arbitration has to be assertable without one.
-pub fn decide_viewport(claims: &[(SubscriberId, ViewportClaim, Viewport)]) -> Option<Viewport> {
-    let largest = |want: ViewportClaim| -> Option<Viewport> {
-        claims
-            .iter()
-            .filter(|(_, claim, _)| *claim == want)
-            .fold(None, |best, (id, _, vp)| match best {
-                None => Some((*id, *vp)),
-                Some((best_id, best_vp)) => {
-                    let wins = (vp.cols, vp.rows) > (best_vp.cols, best_vp.rows)
-                        || ((vp.cols, vp.rows) == (best_vp.cols, best_vp.rows)
-                            && id.0 < best_id.0);
-                    Some(if wins { (*id, *vp) } else { (best_id, best_vp) })
-                }
-            })
-            .map(|(_, vp)| vp)
-    };
-    largest(ViewportClaim::Primary).or_else(|| largest(ViewportClaim::Secondary))
+pub fn decide_viewport(bids: &[ViewportBid]) -> Option<Viewport> {
+    bids.iter()
+        .max_by_key(|bid| {
+            (
+                bid.claim_seq,
+                bid.claim == ViewportClaim::Primary,
+                bid.viewport.cols,
+                bid.viewport.rows,
+                // Subscriber ids are unique within a tab, so this last
+                // term makes the ordering total: no two bids can tie and
+                // leave the winner down to list order.
+                std::cmp::Reverse(bid.id.0),
+            )
+        })
+        .map(|bid| bid.viewport)
 }
 
 /// Applies a decided viewport to the real PTY. Injected so the hub can own
@@ -170,6 +189,10 @@ struct SubscriberEntry {
     /// None until the client has declared one. A subscriber with no
     /// viewport never influences the decision.
     viewport: Option<Viewport>,
+    /// The tab's claim counter at the moment this subscriber last
+    /// declared, or 0 while it never has. Declaring is claiming, so this
+    /// is what decides who owns the width.
+    claim_seq: u64,
 }
 
 impl SubscriberEntry {
@@ -178,6 +201,7 @@ impl SubscriberEntry {
             id,
             sink,
             viewport: None,
+            claim_seq: 0,
         }
     }
 }
@@ -187,6 +211,10 @@ struct TabState {
     ring: Mutex<RingBuffer>,
     subscribers: Mutex<Vec<SubscriberEntry>>,
     next_sub_id: AtomicU64,
+    /// Handed out by `declare_viewport`, so the newest declaration for
+    /// this tab always carries the highest value. Starts at 1 because 0
+    /// is the "never claimed" marker on a subscriber entry.
+    next_claim_seq: AtomicU64,
     // Last-known terminal size. `resize_tab` updates this; future
     // `subscribe_remote` will read it to know what dimensions to ask the
     // sidecar to serialise.
@@ -218,6 +246,7 @@ impl TabState {
             ring: Mutex::new(RingBuffer::new(ring_cap_bytes)),
             subscribers: Mutex::new(Vec::new()),
             next_sub_id: AtomicU64::new(1),
+            next_claim_seq: AtomicU64::new(1),
             cols: AtomicU16::new(cols),
             rows: AtomicU16::new(rows),
             decided: Mutex::new(None),
@@ -390,12 +419,9 @@ impl StreamHub {
         self.renegotiate(tab_id);
     }
 
-    /// Every attached subscriber that has declared a viewport, paired with
-    /// the weight its declaration carries.
-    pub fn viewport_claims(
-        &self,
-        tab_id: &str,
-    ) -> Vec<(SubscriberId, ViewportClaim, Viewport)> {
+    /// Every attached subscriber that has declared a viewport, with the
+    /// weight and the recency its declaration carries.
+    pub fn viewport_claims(&self, tab_id: &str) -> Vec<ViewportBid> {
         let Some(state) = self.tabs.get(tab_id) else {
             return Vec::new();
         };
@@ -405,9 +431,12 @@ impl StreamHub {
             .expect("subscribers lock poisoned")
             .iter()
             .filter_map(|entry| {
-                entry
-                    .viewport
-                    .map(|vp| (entry.id, entry.sink.claim(), vp))
+                entry.viewport.map(|viewport| ViewportBid {
+                    id: entry.id,
+                    claim: entry.sink.claim(),
+                    viewport,
+                    claim_seq: entry.claim_seq,
+                })
             })
             .collect();
         claims
@@ -416,16 +445,61 @@ impl StreamHub {
     /// Record a subscriber's viewport and re-decide the tab's size. This is
     /// the only way a client influences the PTY: it declares, the hub
     /// decides.
+    ///
+    /// The declaration is also a claim on the width, stamped with the
+    /// tab's next claim sequence. A client that stops declaring keeps
+    /// whatever it last claimed until somebody else claims over it.
     pub fn declare_viewport(&self, tab_id: &str, sub_id: SubscriberId, viewport: Viewport) {
         {
             let Some(state) = self.tabs.get(tab_id) else {
                 return;
             };
+            let claim_seq = state.next_claim_seq.fetch_add(1, Ordering::Relaxed);
             let mut subs = state.subscribers.lock().expect("subscribers lock poisoned");
             let Some(entry) = subs.iter_mut().find(|entry| entry.id == sub_id) else {
                 return;
             };
             entry.viewport = Some(viewport);
+            entry.claim_seq = claim_seq;
+        }
+        self.renegotiate(tab_id);
+    }
+
+    /// Re-claim the width for the desktop on every tab it is attached to.
+    ///
+    /// Called when the desktop window gains focus or is brought back into
+    /// view. It re-asserts the grid the webview is already painting rather
+    /// than inventing a new one, so the only thing that moves is who owns
+    /// the width. There is deliberately no inverse: losing focus is not a
+    /// release, because handing the width to a phone nobody is holding is
+    /// how an agent's full-screen frame ends up reflowing on every window
+    /// switch.
+    pub fn reclaim_local_viewports(&self) {
+        // Keys are collected first: `renegotiate` reaches back into the
+        // tab map, and holding a DashMap iterator across that is how a
+        // shard deadlocks against itself.
+        let tab_ids: Vec<String> = self.tabs.iter().map(|entry| entry.key().clone()).collect();
+        for tab_id in tab_ids {
+            self.reclaim_local_viewport(&tab_id);
+        }
+    }
+
+    fn reclaim_local_viewport(&self, tab_id: &str) {
+        {
+            let Some(state) = self.tabs.get(tab_id) else {
+                return;
+            };
+            let mut subs = state.subscribers.lock().expect("subscribers lock poisoned");
+            let mut claimed = false;
+            for entry in subs.iter_mut() {
+                if matches!(entry.sink, Subscriber::Local(_)) && entry.viewport.is_some() {
+                    entry.claim_seq = state.next_claim_seq.fetch_add(1, Ordering::Relaxed);
+                    claimed = true;
+                }
+            }
+            if !claimed {
+                return;
+            }
         }
         self.renegotiate(tab_id);
     }
@@ -439,10 +513,11 @@ impl StreamHub {
     }
 
     /// Decide, apply only if the decision changed, and keep the sidecar
-    /// shadow in step. Called from `declare_viewport`, `subscribe_local`,
-    /// `subscribe_remote`, `resume_remote` and `unsubscribe`, so a
-    /// membership change cannot leave a stale size behind: the event that
-    /// used to be missing is now one nobody has to remember.
+    /// shadow in step. Called from `declare_viewport`,
+    /// `reclaim_local_viewports`, `subscribe_local`, `subscribe_remote`,
+    /// `resume_remote` and `unsubscribe`, so a membership change cannot
+    /// leave a stale size behind: the event that used to be missing is
+    /// now one nobody has to remember.
     fn renegotiate(&self, tab_id: &str) {
         let claims = self.viewport_claims(tab_id);
         let Some(decided) = decide_viewport(&claims) else {
@@ -1003,6 +1078,26 @@ mod tests {
     const DESKTOP: Viewport = Viewport { cols: 180, rows: 45 };
     const PHONE: Viewport = Viewport { cols: 57, rows: 20 };
 
+    /// A bid nobody has claimed with yet: the fallback ordering's input.
+    fn unclaimed(id: u64, claim: ViewportClaim, viewport: Viewport) -> ViewportBid {
+        ViewportBid {
+            id: SubscriberId(id),
+            claim,
+            viewport,
+            claim_seq: 0,
+        }
+    }
+
+    /// A bid stamped as the `seq`-th declaration on its tab.
+    fn claimed(id: u64, claim: ViewportClaim, viewport: Viewport, seq: u64) -> ViewportBid {
+        ViewportBid {
+            id: SubscriberId(id),
+            claim,
+            viewport,
+            claim_seq: seq,
+        }
+    }
+
     // ---- Viewport arbitration ----
 
     #[test]
@@ -1012,53 +1107,92 @@ mod tests {
 
     #[test]
     fn decide_viewport_desktop_only_is_the_desktop() {
-        let claims = [(SubscriberId(1), ViewportClaim::Primary, DESKTOP)];
+        let claims = [claimed(1, ViewportClaim::Primary, DESKTOP, 1)];
         assert_eq!(decide_viewport(&claims), Some(DESKTOP));
     }
 
     #[test]
-    fn decide_viewport_desktop_and_phone_is_the_desktop() {
-        // The headline case: a phone attaching must not reshape the
-        // workstation's grid, however much smaller it is.
+    fn decide_viewport_hands_the_width_to_the_most_recent_claim() {
+        // The headline case, and the one this policy replaced: the
+        // desktop no longer wins by being the desktop. A phone that has
+        // just been picked up declared last, so it is the phone's grid
+        // the agent paints into. Otherwise the phone renders a 180
+        // column screen at three points per character.
         let claims = [
-            (SubscriberId(1), ViewportClaim::Primary, DESKTOP),
-            (SubscriberId(2), ViewportClaim::Secondary, PHONE),
+            claimed(1, ViewportClaim::Primary, DESKTOP, 1),
+            claimed(2, ViewportClaim::Secondary, PHONE, 2),
+        ];
+        assert_eq!(decide_viewport(&claims), Some(PHONE));
+        // Order within the list must not matter; recency is what does.
+        let reversed = [claims[1], claims[0]];
+        assert_eq!(decide_viewport(&reversed), Some(PHONE));
+    }
+
+    #[test]
+    fn decide_viewport_lets_the_desktop_take_the_width_back() {
+        // The same two clients, with the desktop's focus arriving after
+        // the phone's. Ownership is not one-way.
+        let claims = [
+            claimed(2, ViewportClaim::Secondary, PHONE, 7),
+            claimed(1, ViewportClaim::Primary, DESKTOP, 8),
         ];
         assert_eq!(decide_viewport(&claims), Some(DESKTOP));
-        // Order of arrival must not matter.
-        let reversed = [claims[1], claims[0]];
-        assert_eq!(decide_viewport(&reversed), Some(DESKTOP));
     }
 
     #[test]
     fn decide_viewport_phone_only_is_the_phone() {
         // Mobile-first spawn: no desktop window has ever sized this tab,
         // so the phone's grid beats the 80x24 the PTY was born at.
-        let claims = [(SubscriberId(7), ViewportClaim::Secondary, PHONE)];
+        let claims = [claimed(7, ViewportClaim::Secondary, PHONE, 1)];
         assert_eq!(decide_viewport(&claims), Some(PHONE));
     }
 
     #[test]
-    fn decide_viewport_two_phones_takes_the_largest_then_the_lowest_id() {
+    fn decide_viewport_before_any_claim_still_prefers_the_desktop() {
+        // The fallback leg. Nothing has been claimed, so the desktop is
+        // the better guess at whose screen this is.
+        let claims = [
+            unclaimed(5, ViewportClaim::Secondary, PHONE),
+            unclaimed(6, ViewportClaim::Primary, DESKTOP),
+        ];
+        assert_eq!(decide_viewport(&claims), Some(DESKTOP));
+    }
+
+    #[test]
+    fn decide_viewport_unclaimed_takes_the_largest_then_the_lowest_id() {
         let bigger = vp(90, 30);
         let claims = [
-            (SubscriberId(4), ViewportClaim::Secondary, PHONE),
-            (SubscriberId(5), ViewportClaim::Secondary, bigger),
+            unclaimed(4, ViewportClaim::Secondary, PHONE),
+            unclaimed(5, ViewportClaim::Secondary, bigger),
         ];
         assert_eq!(decide_viewport(&claims), Some(bigger));
 
         // Same cols, taller wins.
         let claims = [
-            (SubscriberId(4), ViewportClaim::Secondary, vp(57, 20)),
-            (SubscriberId(5), ViewportClaim::Secondary, vp(57, 40)),
+            unclaimed(4, ViewportClaim::Secondary, vp(57, 20)),
+            unclaimed(5, ViewportClaim::Secondary, vp(57, 40)),
         ];
         assert_eq!(decide_viewport(&claims), Some(vp(57, 40)));
 
         // Identical grids: the lowest subscriber id breaks the tie so the
         // decision is stable rather than list-order dependent.
         let tied = [
-            (SubscriberId(9), ViewportClaim::Secondary, PHONE),
-            (SubscriberId(3), ViewportClaim::Secondary, PHONE),
+            unclaimed(9, ViewportClaim::Secondary, PHONE),
+            unclaimed(3, ViewportClaim::Secondary, PHONE),
+        ];
+        assert_eq!(decide_viewport(&tied), Some(PHONE));
+        let tied_reversed = [tied[1], tied[0]];
+        assert_eq!(decide_viewport(&tied_reversed), Some(PHONE));
+    }
+
+    #[test]
+    fn decide_viewport_breaks_a_claim_tie_the_same_way_as_no_claim() {
+        // Two declarations stamped alike cannot happen through the hub's
+        // counter, but the ordering still has to be total rather than
+        // list-order dependent.
+        let tied = [
+            claimed(9, ViewportClaim::Secondary, PHONE, 4),
+            claimed(3, ViewportClaim::Secondary, PHONE, 4),
         ];
         assert_eq!(decide_viewport(&tied), Some(PHONE));
         let tied_reversed = [tied[1], tied[0]];
@@ -1066,10 +1200,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_phone_attaching_and_leaving_never_moves_the_desktop_size() {
-        // The phone's declaration is ignored while the desktop has one,
-        // and its departure leaves the desktop's grid exactly where it
-        // was.
+    async fn a_phone_claiming_takes_the_width_and_leaving_hands_it_back() {
+        // What the companion is for: the session you opened on your phone
+        // is readable on your phone. The desktop gets its grid back the
+        // moment the phone detaches, which is what the companion does
+        // when it goes to the background.
         let (hub, sink) = new_recording_hub();
         hub.ensure_tab("t1", 80, 24);
         let local = hub.subscribe_local("t1", Arc::new(Mutex::new(None)));
@@ -1084,17 +1219,89 @@ mod tests {
         hub.declare_viewport("t1", remote, PHONE);
         assert_eq!(
             sink.applied(),
-            vec![DESKTOP],
-            "a phone declaring must not resize the PTY out from under the desktop"
+            vec![DESKTOP, PHONE],
+            "the surface that just declared owns the width"
         );
 
         hub.unsubscribe("t1", remote);
         assert_eq!(
             sink.applied(),
-            vec![DESKTOP],
-            "and its departure must leave the desktop's grid untouched"
+            vec![DESKTOP, PHONE, DESKTOP],
+            "and detaching hands it back to the only client left"
         );
         assert_eq!(hub.decided_viewport("t1"), Some(DESKTOP));
+    }
+
+    #[tokio::test]
+    async fn the_desktop_reclaims_the_width_when_its_window_is_focused() {
+        // Focus is the claim. `reclaim_local_viewports` re-asserts the
+        // grid the webview is already painting; nothing about the
+        // declaration itself changed.
+        let (hub, sink) = new_recording_hub();
+        hub.ensure_tab("t1", 80, 24);
+        let local = hub.subscribe_local("t1", Arc::new(Mutex::new(None)));
+        hub.declare_viewport("t1", local, DESKTOP);
+
+        let (tx, _rx) = mpsc::unbounded_channel::<ServerFrame>();
+        let remote = hub
+            .subscribe_remote("t1", tx, 500)
+            .await
+            .expect("remote subscribed");
+        hub.declare_viewport("t1", remote, PHONE);
+        assert_eq!(hub.decided_viewport("t1"), Some(PHONE));
+
+        hub.reclaim_local_viewports();
+        assert_eq!(hub.decided_viewport("t1"), Some(DESKTOP));
+        assert_eq!(sink.applied(), vec![DESKTOP, PHONE, DESKTOP]);
+    }
+
+    #[tokio::test]
+    async fn losing_focus_alone_hands_the_width_to_nobody() {
+        // The anti-thrash property, and the reason there is no release
+        // call to pair with the reclaim above. Alt-tabbing from the
+        // desktop to a browser must leave the grid exactly where it is:
+        // the phone never gained focus, so it never gained the width,
+        // and an agent's full-screen frame does not reflow because a
+        // window was switched.
+        let (hub, sink) = new_recording_hub();
+        hub.ensure_tab("t1", 80, 24);
+        let local = hub.subscribe_local("t1", Arc::new(Mutex::new(None)));
+        hub.declare_viewport("t1", local, DESKTOP);
+
+        let (tx, _rx) = mpsc::unbounded_channel::<ServerFrame>();
+        let remote = hub
+            .subscribe_remote("t1", tx, 500)
+            .await
+            .expect("remote subscribed");
+        hub.declare_viewport("t1", remote, PHONE);
+        hub.reclaim_local_viewports();
+        let settled = sink.applied();
+        assert_eq!(hub.decided_viewport("t1"), Some(DESKTOP));
+
+        // The desktop window is deactivated here. Nothing is sent,
+        // because blur is not a release. The phone is still attached and
+        // still has a viewport on file, and neither of those is a claim.
+        assert_eq!(hub.decided_viewport("t1"), Some(DESKTOP));
+        assert_eq!(
+            sink.applied(),
+            settled,
+            "a blur must not reach the PTY at all"
+        );
+
+        // And a phone that keeps re-declaring the same grid it already
+        // declared still takes the width, because declaring is the claim.
+        hub.declare_viewport("t1", remote, PHONE);
+        assert_eq!(hub.decided_viewport("t1"), Some(PHONE));
+    }
+
+    #[test]
+    fn reclaiming_before_the_desktop_declared_anything_is_silent() {
+        let (hub, sink) = new_recording_hub();
+        hub.ensure_tab("t1", 80, 24);
+        hub.subscribe_local("t1", Arc::new(Mutex::new(None)));
+        hub.reclaim_local_viewports();
+        assert!(sink.applied().is_empty());
+        assert_eq!(hub.decided_viewport("t1"), None);
     }
 
     #[test]
@@ -1567,8 +1774,20 @@ mod tests {
             other => panic!("expected Resized, got {other:?}"),
         }
 
-        // The remote's own declaration loses, and it is told so rather
-        // than left believing the grid is its own.
+        // The remote declares next, so the remote now owns the width and
+        // is told the grid it just claimed.
+        hub.declare_viewport("t1", remote, PHONE);
+        let frames = drain(&mut rx);
+        assert_eq!(frames.len(), 1);
+        match &frames[0] {
+            ServerFrame::Resized { cols, rows, .. } => {
+                assert_eq!((*cols, *rows), (PHONE.cols, PHONE.rows));
+            }
+            other => panic!("expected Resized, got {other:?}"),
+        }
+
+        // Re-declaring what it already declared is a fresh claim but not
+        // a fresh decision, which is the soft keyboard's churn.
         hub.declare_viewport("t1", remote, PHONE);
         assert!(
             drain(&mut rx).is_empty(),
