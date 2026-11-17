@@ -18,6 +18,7 @@ const base = {
   projectsLoaded: true,
   projects,
   lastTabId: null,
+  removed: false,
 }
 
 describe('resolveLanding', () => {
@@ -27,6 +28,12 @@ describe('resolveLanding', () => {
 
   test('sends an unpaired phone to pairing', () => {
     expect(resolveLanding({ ...base, hasDevice: false })).toBe('/pair')
+  })
+
+  test('a phone the desktop removed lands on home, which says so', () => {
+    expect(resolveLanding({ ...base, hasDevice: false, removed: true })).toBe(
+      '/home',
+    )
   })
 
   test('waits while the socket is still coming up', () => {

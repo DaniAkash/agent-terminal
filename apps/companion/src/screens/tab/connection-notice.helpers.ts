@@ -1,10 +1,10 @@
 /**
- * What the terminal should say when the connection changes under it.
+ * What the terminal's scrollback says when the connection changes under it.
  *
- * Printed into the scrollback rather than shown as a banner: the user is
- * already looking there, and permanent chrome is the one thing this screen
- * cannot afford. The desktop's own snapshot overwrites these lines when the
- * session resumes, so they clean themselves up.
+ * One line when an outage starts and one when it ends. The live state
+ * (reconnecting, unreachable, how many keystrokes wait) is the banner's
+ * job; the scrollback only keeps a record of the outage, and the
+ * desktop's own snapshot overwrites these lines when the session resumes.
  */
 export type ConnectionNotice = {
   text: string
@@ -38,10 +38,11 @@ export const INITIAL_NOTICE_STATE: NoticeState = { last: null, warned: false }
 /**
  * Advance the narration for a new status.
  *
- * Only transitions speak, and an outage speaks once. The resolver ladder
- * cycles `connecting` and `unreachable` while it retries, so keying purely
- * off "the status changed" prints the same warning on every attempt and
- * buries the scrollback the user was trying to read.
+ * Only transitions speak, and an outage speaks once: "connection lost"
+ * when a working connection drops, then nothing while the resolver ladder
+ * cycles `connecting` and `unreachable`, then "reconnected" when it is
+ * back. Unreachable and refused have no line of their own any more: the
+ * banner and the Removed screen say those.
  *
  * The first status seen is silent too: arriving at a working terminal
  * should not announce "reconnected" at someone who never left.
@@ -55,14 +56,12 @@ export function nextNotice(
   if (last === null) return { state: { last: next, warned }, notice: null }
   if (last === next) return { state, notice: null }
 
-  const moved: NoticeState = { last: next, warned }
-
   if (next === 'connected') {
     const notice: ConnectionNotice | null = warned
       ? {
           text:
             queued > 0
-              ? `reconnected, sending ${queued} queued keystrokes`
+              ? `reconnected, sent ${queued} queued keystrokes`
               : 'reconnected',
           tone: 'dim',
         }
@@ -70,28 +69,11 @@ export function nextNotice(
     return { state: { last: next, warned: false }, notice }
   }
 
-  if (warned) return { state: moved, notice: null }
-
-  if (next === 'unreachable') {
+  if (last === 'connected' && !warned) {
     return {
       state: { last: next, warned: true },
-      notice: { text: 'desktop unreachable, still retrying', tone: 'alarm' },
+      notice: { text: 'connection lost, keystrokes are queued', tone: 'dim' },
     }
   }
-  if (next === 'auth_failed') {
-    return {
-      state: { last: next, warned: true },
-      notice: { text: 'desktop refused this device', tone: 'alarm' },
-    }
-  }
-  if (last === 'connected') {
-    return {
-      state: { last: next, warned: true },
-      notice: {
-        text: 'connection lost, keystrokes will be queued',
-        tone: 'dim',
-      },
-    }
-  }
-  return { state: moved, notice: null }
+  return { state: { last: next, warned }, notice: null }
 }

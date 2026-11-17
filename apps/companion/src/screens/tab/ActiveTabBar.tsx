@@ -1,5 +1,6 @@
 import type { TabVisual } from '@agent-terminal/core-ui'
 import { Pressable, Text, View } from 'react-native'
+import { ConnectionStatus } from '@/components/ui/ConnectionStatus'
 import { Icon } from '@/components/ui/Icon'
 import { agentName } from '@/screens/switcher/switcher.helpers'
 import { DangerBadge } from './DangerBadge'
@@ -57,6 +58,7 @@ export function ActiveTabBar({
         {projectName}
       </Text>
       {visual.showDanger && <DangerBadge />}
+      <ConnectionStatus size="chip" />
       <Icon name="chevron-up" size={13} />
     </Pressable>
   )

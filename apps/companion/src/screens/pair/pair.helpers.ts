@@ -1,9 +1,18 @@
+import { type Route, routeOfHost } from '@/modules/wss/route.helpers'
 import type { PairingQrPayload } from './pair.types'
 
 /**
- * Build the sequence of pairing URLs the mobile tries against a
- * scanned QR. Prefers the `.local` hostname first because it survives
- * IP shifts, then walks the primary + secondary IPs. Every candidate
+ * Longest one pairing attempt spends reaching the desktop: every address
+ * in the QR together, from Confirm until the desktop has accepted the
+ * pairing token. Waiting for a person to approve is not part of it; the
+ * desktop's own 60 s limit ends that.
+ */
+export const PAIRING_CONNECT_CAP_MS = 15_000
+
+/**
+ * Build the pairing URLs the mobile tries against a scanned QR: the
+ * Tailscale name, the `.local` name, then every address. They are tried
+ * together, not in turn (see {@link raceToFirstOpen}). Every candidate
  * is `wss://` because the native PinnedWebSocket rejects any other
  * scheme; there is no cleartext fallback.
  *
@@ -31,20 +40,167 @@ export function pairingUrlHost(url: string): string | null {
   return /^wss:\/\/(.+):\d+\/stream$/.exec(url)?.[1] ?? null
 }
 
+/** Why the desktop refused a pairing request, in the design's names. */
+export type PairingRefusal =
+  /** Decline on the desktop. */
+  | 'declined'
+  /** The dialog was closed (or a newer request replaced this one). */
+  | 'canceled'
+  /** Nobody answered within the desktop's 60 s. */
+  | 'timed-out'
+  /** The QR's token is no longer the open window's: QR expired. */
+  | 'expired'
+  /** Any other answer from the desktop. */
+  | 'refused'
+
 /**
- * How the desktop refused a pairing request, read from an `auth_fail`
- * reason. The desktop prefixes its answer with one of these codes
- * (`wss_server.rs` `pairing_flow`). Null for every other failure.
+ * Read an `auth_fail` reason from a pairing attempt.
  *
- * A refusal is the desktop's final answer, so the caller must stop and
- * not try the next endpoint: each further attempt would raise a fresh
- * approval prompt for a request the user already settled.
+ * Every `auth_fail` is the desktop's final answer: it was reached and it
+ * said no, so the attempt ends there and no other address is tried. Each
+ * further attempt would only meet the same answer, or raise a fresh
+ * approval prompt for a request the user already settled. The desktop
+ * prefixes the approval outcomes with a code (`wss_server.rs`
+ * `pairing_flow`); the window errors are plain text.
  */
-export function pairingRefusal(
-  reason: string,
-): 'declined' | 'timeout' | 'canceled' | null {
+export function pairingRefusal(reason: string): PairingRefusal {
   const code = /pairing_(declined|timeout|canceled)\b/.exec(reason)?.[1]
-  return (code as 'declined' | 'timeout' | 'canceled' | undefined) ?? null
+  if (code === 'declined') return 'declined'
+  if (code === 'canceled') return 'canceled'
+  if (code === 'timeout') return 'timed-out'
+  if (/token mismatch|no pairing window|window expired/i.test(reason)) {
+    return 'expired'
+  }
+  return 'refused'
+}
+
+/** One address of the QR as the Reaching sheet shows it. */
+export interface PairTry {
+  host: string
+  route: Route
+  state: 'connecting' | 'no-answer' | 'connected'
+}
+
+/** The addresses being tried, all connecting, in QR order. */
+export function initialTries(urls: readonly string[]): PairTry[] {
+  return urls.map((url) => {
+    const host = pairingUrlHost(url) ?? url
+    return { host, route: routeOfHost(host), state: 'connecting' }
+  })
+}
+
+/** A socket being opened, as {@link raceToFirstOpen} drives it. */
+export interface Dial<S> {
+  /** Resolves when the socket is open; rejects when it cannot be. */
+  opened: Promise<S>
+  /** Give up on this socket: close it, open or not. */
+  cancel: () => void
+}
+
+/** Every address failed, or none answered within the cap. */
+export class UnreachableError extends Error {
+  constructor(readonly tries: PairTry[]) {
+    super('no address in the QR answered')
+  }
+}
+
+/** The person canceled the attempt. */
+export class CanceledError extends Error {
+  constructor() {
+    super('pairing canceled on this phone')
+  }
+}
+
+/**
+ * Open every URL at once and keep the first socket that opens; the rest
+ * are closed. Rejects with {@link UnreachableError} when all of them fail
+ * or `capMs` passes first, and with {@link CanceledError} when `signal`
+ * aborts. `onUpdate` sees each change to the per-address state.
+ *
+ * Racing instead of walking is what keeps an attempt inside the cap: run
+ * 3's QR carried 15 addresses at 10 s each, two and a half minutes of
+ * "Pairing with…" for a desktop that had answered on the first.
+ */
+export function raceToFirstOpen<S>(
+  urls: readonly string[],
+  dial: (url: string) => Dial<S>,
+  options: {
+    capMs: number
+    signal?: AbortSignal
+    onUpdate?: (tries: PairTry[]) => void
+  },
+): Promise<{ url: string; socket: S; tries: PairTry[] }> {
+  return new Promise((resolve, reject) => {
+    const tries = initialTries(urls)
+    const dials: Dial<S>[] = []
+    let settled = false
+    const finish = (fn: () => void) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      options.signal?.removeEventListener('abort', onAbort)
+      fn()
+    }
+    const cancelAll = (except?: Dial<S>) => {
+      for (const d of dials) if (d !== except) d.cancel()
+    }
+    const update = (i: number, state: PairTry['state']) => {
+      const t = tries[i]
+      if (t) tries[i] = { ...t, state }
+      options.onUpdate?.([...tries])
+    }
+    const onAbort = () =>
+      finish(() => {
+        cancelAll()
+        reject(new CanceledError())
+      })
+    const timer = setTimeout(
+      () =>
+        finish(() => {
+          cancelAll()
+          const ended = tries.map((t) =>
+            t.state === 'connecting'
+              ? { ...t, state: 'no-answer' as const }
+              : t,
+          )
+          reject(new UnreachableError(ended))
+        }),
+      options.capMs,
+    )
+    if (options.signal?.aborted) {
+      onAbort()
+      return
+    }
+    options.signal?.addEventListener('abort', onAbort)
+    if (urls.length === 0) {
+      finish(() => reject(new UnreachableError([])))
+      return
+    }
+    urls.forEach((url, i) => {
+      const d = dial(url)
+      dials.push(d)
+      d.opened.then(
+        (socket) => {
+          if (settled) {
+            d.cancel()
+            return
+          }
+          update(i, 'connected')
+          finish(() => {
+            cancelAll(d)
+            resolve({ url, socket, tries: [...tries] })
+          })
+        },
+        () => {
+          if (settled) return
+          update(i, 'no-answer')
+          if (tries.every((t) => t.state === 'no-answer')) {
+            finish(() => reject(new UnreachableError([...tries])))
+          }
+        },
+      )
+    })
+  })
 }
 
 /**

@@ -5,6 +5,7 @@ import { AppState } from 'react-native'
 import { clearVisibleTab, noteVisibleTab } from '@/modules/push'
 import { $activeDevice } from '@/modules/stores/$devices'
 import { noteActiveSession } from '@/modules/stores/$lastSession'
+import { $removal } from '@/modules/stores/$removal'
 import { reclaimViewport } from '@/modules/wss/client'
 import {
   shouldClaimOnFocus,
@@ -15,6 +16,7 @@ import { composedTabId, terminalRouteAction } from '@/screens/tab/tab.helpers'
 
 export default function TabRoute() {
   const device = useStore($activeDevice)
+  const removal = useStore($removal)
   const { projectId, tabId } = useLocalSearchParams<{
     projectId: string
     tabId: string
@@ -26,9 +28,8 @@ export default function TabRoute() {
   useVisibleTab(composed)
   useViewportClaim(composed)
 
-  if (terminalRouteAction(device) === 'pair') {
-    return <Redirect href="/pair" />
-  }
+  const action = terminalRouteAction(device, removal !== null)
+  if (action !== 'render') return <Redirect href={`/${action}`} />
 
   // Remembered during render rather than in an effect: it is a plain
   // store write with no subscription or teardown, and doing it here means

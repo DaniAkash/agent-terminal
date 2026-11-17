@@ -48,7 +48,7 @@ export function tabHref(projectId: string, wireTabId: string): Href {
   return `/tab/${projectId}/${rawTabId(projectId, wireTabId)}` as Href
 }
 
-export type TerminalRouteAction = 'pair' | 'render'
+export type TerminalRouteAction = 'pair' | 'home' | 'render'
 
 /**
  * What the terminal route should do for the current device state.
@@ -61,9 +61,14 @@ export type TerminalRouteAction = 'pair' | 'render'
  * devices are still being read, rendering is the better guess, since the
  * common case by far is that one is about to arrive.
  */
-export function terminalRouteAction(device: {
-  loaded: boolean
-  record: unknown | null
-}): TerminalRouteAction {
-  return device.loaded && !device.record ? 'pair' : 'render'
+export function terminalRouteAction(
+  device: {
+    loaded: boolean
+    record: unknown | null
+  },
+  removed = false,
+): TerminalRouteAction {
+  if (!device.loaded || device.record) return 'render'
+  // A phone the desktop removed is told so on home, not sent to the scanner.
+  return removed ? 'home' : 'pair'
 }

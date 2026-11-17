@@ -5,6 +5,7 @@ import {
 } from '@/modules/stores/$devices'
 import { migrateDevicesV1ToV2 } from '@/modules/stores/$devices.migrate'
 import { loadLastSessions } from '@/modules/stores/$lastSession'
+import { noteRemoval } from '@/modules/stores/$removal'
 import { $session } from '@/modules/stores/$session'
 import { decideDeviceAction } from './bootstrap.helpers'
 import { autoConnect, disconnect } from './client'
@@ -99,6 +100,9 @@ export async function initWssBootstrap(): Promise<void> {
     console.log(
       `[wss] auth_failed "${state.lastError}"; unpairing locally (desktop revoked / token invalid)`,
     )
+    // Keep who ended it, so the phone says "Removed on the desktop"
+    // rather than dropping to the first-run screen as if it never paired.
+    noteRemoval($activeDevice.get().record?.deviceHint ?? 'the desktop')
     disconnect()
     void clearDevice()
   })

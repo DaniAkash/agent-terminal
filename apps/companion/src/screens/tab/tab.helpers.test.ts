@@ -68,6 +68,12 @@ describe('terminalRouteAction', () => {
     expect(terminalRouteAction({ loaded: true, record: null })).toBe('pair')
   })
 
+  test('sends a phone the desktop removed home, where it is told why', () => {
+    expect(terminalRouteAction({ loaded: true, record: null }, true)).toBe(
+      'home',
+    )
+  })
+
   test('renders while the stored devices are still being read', () => {
     // A flash of the pairing screen on every cold start would be worse
     // than a moment of an empty terminal that is about to fill.

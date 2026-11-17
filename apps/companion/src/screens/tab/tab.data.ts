@@ -14,6 +14,7 @@ import { applyAlt, applyCtrl } from './extra-keys.helpers'
 import type { TerminalHandle } from './TerminalDom'
 import {
   useActiveTabInfo,
+  useClosedTab,
   useConnectionNotices,
   useNoteRecency,
 } from './tab.hooks'
@@ -150,7 +151,10 @@ export function useTabData(projectId: string, tabId: string) {
   }, [])
   useConnectionNotices(tabId, writeToTerminal)
 
-  const active = useActiveTabInfo(projectId, tabId)
+  const info = useActiveTabInfo(projectId, tabId)
+  const closedTab = useClosedTab(projectId, tabId)
+  // A tab the tree has dropped keeps the name it had, not its raw id.
+  const active = { ...info, label: closedTab.label ?? info.label }
   useNoteRecency(tabId)
 
   return {
@@ -166,5 +170,6 @@ export function useTabData(projectId: string, tabId: string) {
     toggleAlt,
     active,
     connected,
+    closedTab,
   }
 }

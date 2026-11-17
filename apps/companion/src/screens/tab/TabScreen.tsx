@@ -2,7 +2,9 @@ import { useRouter } from 'expo-router'
 import { Animated, View } from 'react-native'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { ConnectionStatus } from '@/components/ui/ConnectionStatus'
 import { ActiveTabBar } from './ActiveTabBar'
+import { ClosedTabSheet } from './ClosedTabSheet'
 import { ExtraKeysBar } from './ExtraKeysBar'
 import { useKeyboardBar } from './keyboard-bar.hooks'
 import TerminalDom from './TerminalDom'
@@ -14,6 +16,9 @@ import { useTabData } from './tab.data'
 // opposite, because its viewport only moved when the hosting surface was
 // itself scrollable.
 const DOM_PROPS = { scrollEnabled: false, hideKeyboardAccessoryView: true }
+
+// A closed tab's output stays readable but no longer looks live.
+const DEAD = { opacity: 0.45 }
 
 interface TabScreenProps {
   projectId: string
@@ -36,6 +41,7 @@ export function TabScreen({ projectId, tabId }: TabScreenProps) {
     toggleAlt,
     active,
     connected,
+    closedTab,
   } = useTabData(projectId, tabId)
   const insets = useSafeAreaInsets()
   const { spacerHeight, barReveal, measureBar } = useKeyboardBar(
@@ -66,7 +72,9 @@ export function TabScreen({ projectId, tabId }: TabScreenProps) {
             onPress={openSwitcher}
           />
         </View>
-        <View className="flex-1">
+        {/* The live state while the link is down; nothing otherwise. */}
+        <ConnectionStatus size="banner" />
+        <View className="flex-1" style={closedTab.closed ? DEAD : undefined}>
           <TerminalDom
             ref={terminalRef}
             onData={onData}
@@ -97,6 +105,12 @@ export function TabScreen({ projectId, tabId }: TabScreenProps) {
           </View>
         </Animated.View>
         <Animated.View style={{ height: spacerHeight }} />
+        {closedTab.closed && (
+          <ClosedTabSheet
+            label={active.label}
+            remaining={closedTab.remaining}
+          />
+        )}
       </View>
     </GestureHandlerRootView>
   )

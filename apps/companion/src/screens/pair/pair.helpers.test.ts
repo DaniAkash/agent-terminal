@@ -1,12 +1,15 @@
-import { describe, expect, it } from 'bun:test'
+import { describe, expect, it, mock } from 'bun:test'
 import {
   buildPairingAttemptUrls,
+  CanceledError,
   formatFingerprintForVisualCompare,
   pairingRefusal,
   pairingUrlHost,
   parsePairingCompleteFrame,
   parsePairingQr,
+  raceToFirstOpen,
   shouldOfferPush,
+  UnreachableError,
 } from './pair.helpers'
 
 describe('parsePairingQr', () => {
@@ -199,16 +202,130 @@ describe('pairingRefusal', () => {
       'declined',
     )
     expect(pairingRefusal('pairing_timeout: not approved in time')).toBe(
-      'timeout',
+      'timed-out',
     )
     expect(pairingRefusal('pairing_canceled: window closed')).toBe('canceled')
   })
 
-  it('is null for failures that are worth another endpoint', () => {
-    expect(pairingRefusal('pairing timeout at wss://x:1/stream')).toBeNull()
-    expect(
-      pairingRefusal('socket closed before pairing_complete: 1006'),
-    ).toBeNull()
-    expect(pairingRefusal('pairing_start timeout: not received')).toBeNull()
+  it('names an old QR as expired, however the desktop worded it', () => {
+    expect(pairingRefusal('pairing token mismatch')).toBe('expired')
+    expect(pairingRefusal('no pairing window open on desktop')).toBe('expired')
+    expect(pairingRefusal('pairing window expired, reopen on desktop')).toBe(
+      'expired',
+    )
+  })
+
+  it('every other answer is still a refusal, not a reason to retry', () => {
+    expect(pairingRefusal('keychain write failed: denied')).toBe('refused')
+    expect(pairingRefusal('pairing_start timeout: not received')).toBe(
+      'refused',
+    )
+  })
+})
+
+/** A dial the test settles by hand. */
+function manualDial() {
+  let open: (s: string) => void = () => {}
+  let fail: (e: Error) => void = () => {}
+  const opened = new Promise<string>((res, rej) => {
+    open = res
+    fail = rej
+  })
+  // A dial nobody settles must not leave an unhandled rejection.
+  opened.catch(() => {})
+  const dial = { opened, cancel: mock(() => {}) }
+  return { dial, open, fail }
+}
+
+/** One manual dial per URL, looked up by URL or by index. */
+function dialsFor(urls: readonly string[]) {
+  const dials = urls.map(() => manualDial())
+  const at = (i: number) => {
+    const d = dials[i]
+    if (!d) throw new Error(`no dial ${i}`)
+    return d
+  }
+  return { all: dials, at, dial: (u: string) => at(urls.indexOf(u)).dial }
+}
+
+describe('raceToFirstOpen', () => {
+  const urls = [
+    'wss://desk.tail1234.ts.net:28617/stream',
+    'wss://10.0.0.42:28617/stream',
+    'wss://100.101.102.103:28617/stream',
+  ]
+
+  it('keeps the first socket that opens and closes the rest', async () => {
+    const dials = dialsFor(urls)
+    const race = raceToFirstOpen(urls, dials.dial, {
+      capMs: 15_000,
+    })
+    dials.at(2).open('third')
+    const won = await race
+    expect(won.url).toBe(urls[2] ?? '')
+    expect(won.socket).toBe('third')
+    expect(dials.at(0).dial.cancel).toHaveBeenCalled()
+    expect(dials.at(1).dial.cancel).toHaveBeenCalled()
+    expect(dials.at(2).dial.cancel).not.toHaveBeenCalled()
+    expect(won.tries.map((t) => t.route)).toEqual([
+      'tailscale',
+      'wifi',
+      'tailscale',
+    ])
+  })
+
+  it('ends as soon as every address has failed', async () => {
+    const dials = dialsFor(urls)
+    const race = raceToFirstOpen(urls, dials.dial, {
+      capMs: 15_000,
+    })
+    for (const d of dials.all) d.fail(new Error('refused'))
+    const err = await race.catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(UnreachableError)
+    expect((err as UnreachableError).tries.map((t) => t.state)).toEqual([
+      'no-answer',
+      'no-answer',
+      'no-answer',
+    ])
+  })
+
+  it('never runs past the cap, and closes what is still connecting', async () => {
+    const dials = dialsFor(urls)
+    const started = Date.now()
+    const err = await raceToFirstOpen(urls, dials.dial, { capMs: 40 }).catch(
+      (e: unknown) => e,
+    )
+    expect(Date.now() - started).toBeLessThan(1_000)
+    expect(err).toBeInstanceOf(UnreachableError)
+    for (const d of dials.all) expect(d.dial.cancel).toHaveBeenCalled()
+  })
+
+  it('stops at once when the person cancels', async () => {
+    const dials = dialsFor(urls)
+    const abort = new AbortController()
+    const race = raceToFirstOpen(urls, dials.dial, {
+      capMs: 15_000,
+      signal: abort.signal,
+    })
+    abort.abort()
+    expect(await race.catch((e: unknown) => e)).toBeInstanceOf(CanceledError)
+    for (const d of dials.all) expect(d.dial.cancel).toHaveBeenCalled()
+  })
+
+  it('reports each address as it changes', async () => {
+    const dials = dialsFor(urls)
+    const seen: string[][] = []
+    const race = raceToFirstOpen(urls, dials.dial, {
+      capMs: 15_000,
+      onUpdate: (tries) => seen.push(tries.map((t) => t.state)),
+    })
+    dials.at(0).fail(new Error('no route'))
+    await Promise.resolve()
+    dials.at(1).open('lan')
+    await race
+    expect(seen).toEqual([
+      ['no-answer', 'connecting', 'connecting'],
+      ['no-answer', 'connected', 'connecting'],
+    ])
   })
 })
