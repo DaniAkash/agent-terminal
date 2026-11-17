@@ -980,6 +980,24 @@ impl StreamHub {
 
         let id = if can_replay {
             let mut subs = state.subscribers.lock().expect("subscribers lock poisoned");
+            // The grid goes out before the bytes do. These bytes were laid
+            // out against the size the hub holds now, which is not
+            // necessarily the size this client had when it detached: the
+            // desktop may have claimed the width in between. Replaying
+            // them first would parse width-dependent cursor moves against
+            // the client's stale grid, which is what turns resumed history
+            // into junk.
+            let resumed_size = state.size();
+            if outbox
+                .send(ServerFrame::Resized {
+                    tab_id: tab_id.to_string(),
+                    cols: resumed_size.cols,
+                    rows: resumed_size.rows,
+                })
+                .is_err()
+            {
+                return None;
+            }
             let ring = state.ring.lock().expect("ring lock poisoned");
             let mut highest_delivered = last_seq;
             // Track outbox health across every ring-replay send. If the
@@ -1012,12 +1030,6 @@ impl StreamHub {
                 return None;
             }
             let id = SubscriberId(state.next_sub_id.fetch_add(1, Ordering::Relaxed));
-            let size = state.size();
-            let _ = outbox.send(ServerFrame::Resized {
-                tab_id: tab_id.to_string(),
-                cols: size.cols,
-                rows: size.rows,
-            });
             subs.push(SubscriberEntry::new(
                 id,
                 Subscriber::Remote {

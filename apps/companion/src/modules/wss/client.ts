@@ -37,6 +37,13 @@ export type TabHandlers = {
   onTabState?: (state: TabStateSummary) => void
 }
 
+/**
+ * Whether attaching should also restate this phone's viewport. A
+ * handshake replay keeps whatever the desktop decided, because it also
+ * fires for a socket that dropped while the app was backgrounded.
+ */
+type ViewportReclaim = 'reclaim' | 'keep'
+
 type TabSubscription = TabHandlers & {
   scrollback: number
   lastSeq: number | null
@@ -531,7 +538,11 @@ export function sendUnregisterPush(): Promise<void> {
   return sendPending(op_id, frame)
 }
 
-function sendSubscribeOrResume(tabId: string, sub: TabSubscription): void {
+function sendSubscribeOrResume(
+  tabId: string,
+  sub: TabSubscription,
+  reclaim: ViewportReclaim = 'reclaim',
+): void {
   if (sub.lastSeq !== null) {
     console.log('[wss.client] resume', { tabId, lastSeq: sub.lastSeq })
     send({
@@ -553,7 +564,12 @@ function sendSubscribeOrResume(tabId: string, sub: TabSubscription): void {
   // about the grid this phone is painting into and will size the session
   // for whoever claimed the width last. Restating it here is what keeps a
   // reconnect from coming back at the desktop's column count.
-  reclaimViewport(tabId)
+  //
+  // A handshake replay is the exception: it also runs for a socket that
+  // dropped while the app sat in the background, and taking the width
+  // there would undo the release that backgrounding just performed, for
+  // a screen nobody is looking at.
+  if (reclaim === 'reclaim') reclaimViewport(tabId)
 }
 
 function send(frame: ClientFrame): void {
@@ -828,7 +844,7 @@ function parseWssHostPort(url: string): { host: string; port: number } | null {
 
 function replayOpenSubscriptions(): void {
   for (const [tabId, sub] of subscriptions) {
-    sendSubscribeOrResume(tabId, sub)
+    sendSubscribeOrResume(tabId, sub, 'keep')
   }
 }
 

@@ -334,14 +334,19 @@ async fn resume_within_ring_replays_only_missing_bytes() {
         },
     )
     .await;
+    // The grid comes first. These bytes were laid out against the size the
+    // hub holds now, so a client that parsed them against its old size
+    // would mis-wrap exactly the history this replay exists to restore.
     let f1 = recv_frame(&mut ws).await;
     let f2 = recv_frame(&mut ws).await;
-    match (f1, f2) {
+    let f3 = recv_frame(&mut ws).await;
+    match (f1, f2, f3) {
         (
+            ServerFrame::Resized { cols: 80, rows: 24, .. },
             ServerFrame::Bytes { seq: 3, .. },
             ServerFrame::Bytes { seq: 4, .. },
         ) => {}
-        other => panic!("expected Bytes(3), Bytes(4); got {other:?}"),
+        other => panic!("expected Resized(80x24), Bytes(3), Bytes(4); got {other:?}"),
     }
 }
 
