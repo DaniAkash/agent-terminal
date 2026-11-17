@@ -9,6 +9,10 @@ import wasmAsset from '@wterm/ghostty/ghostty-vt.wasm'
 import type { DOMImperativeFactory, DOMProps } from 'expo/dom'
 import { useDOMImperativeHandle } from 'expo/dom'
 import { type Ref, useEffect, useRef } from 'react'
+import {
+  bootFailureMessage,
+  renderBootFailure,
+} from './terminal-boot-error.helpers'
 import { assetUrl } from './ghostty-wasm.helpers'
 import {
   type TerminalCallbacks,
@@ -200,6 +204,10 @@ export default function TerminalDom({
 
     boot(container).catch((err: unknown) => {
       console.error('[TerminalDom] wterm boot failed:', err)
+      // A console line is invisible in a release build, so a failed boot
+      // used to read as an app that renders nothing at all. Say what
+      // happened on the surface the terminal would have occupied.
+      renderBootFailure(container, bootFailureMessage(err))
     })
 
     return () => {
