@@ -230,6 +230,13 @@ async fn subscribe_receives_snapshot_and_live_bytes() {
         other => panic!("expected Bytes(seq=0), Bytes(seq=1), got {other:?}"),
     }
 
+    // The subscribe preamble closes with the grid the replayed state was
+    // rendered at.
+    match recv_frame(&mut ws).await {
+        ServerFrame::Resized { cols: 80, rows: 24, .. } => {}
+        other => panic!("expected Resized(80x24), got {other:?}"),
+    }
+
     // Now emit a live broadcast — should arrive as Bytes(seq=2).
     state.hub.broadcast("workspace-a:tab-1", b"live", "live");
     let live = recv_frame(&mut ws).await;
@@ -237,6 +244,76 @@ async fn subscribe_receives_snapshot_and_live_bytes() {
         ServerFrame::Bytes { seq: 2, .. } => {}
         other => panic!("expected Bytes(seq=2), got {other:?}"),
     }
+}
+
+/// A client is handed the screen and then told what width that screen
+/// actually is. `Resized` has been on the wire protocol and routed by the
+/// companion from the start; this side never constructed it, so a phone
+/// had nothing to render the authoritative grid from.
+#[tokio::test]
+async fn subscribe_yields_snapshot_then_resized() {
+    let (addr, state) = spawn_server("secret").await;
+    state.hub.ensure_tab("t:1", 80, 24);
+
+    let mut ws = auth_ok_client(addr, "secret").await;
+    send_frame(
+        &mut ws,
+        &ClientFrame::Subscribe {
+            tab_id: "t:1".to_string(),
+            scrollback: 500,
+        },
+    )
+    .await;
+
+    match recv_frame(&mut ws).await {
+        ServerFrame::Snapshot { tab_id, .. } => assert_eq!(tab_id, "t:1"),
+        other => panic!("expected Snapshot, got {other:?}"),
+    }
+    match recv_frame(&mut ws).await {
+        ServerFrame::Resized { tab_id, cols, rows } => {
+            assert_eq!(tab_id, "t:1");
+            assert_eq!((cols, rows), (80, 24));
+        }
+        other => panic!("expected Resized, got {other:?}"),
+    }
+}
+
+/// A remote client's own `Resize` is a declaration the hub may ignore, and
+/// what comes back is whatever the hub decided. With no desktop attached
+/// the phone's grid wins, so it is told its own dimensions; the point is
+/// that it learns them from the server rather than assuming them.
+#[tokio::test]
+async fn a_remote_resize_is_answered_with_the_decided_grid() {
+    let (addr, state) = spawn_server("secret").await;
+    state.hub.ensure_tab("t:1", 80, 24);
+
+    let mut ws = auth_ok_client(addr, "secret").await;
+    send_frame(
+        &mut ws,
+        &ClientFrame::Subscribe {
+            tab_id: "t:1".to_string(),
+            scrollback: 500,
+        },
+    )
+    .await;
+    let _ = recv_frame(&mut ws).await; // Snapshot
+    let _ = recv_frame(&mut ws).await; // Resized(80x24)
+
+    send_frame(
+        &mut ws,
+        &ClientFrame::Resize {
+            tab_id: "t:1".to_string(),
+            cols: 57,
+            rows: 20,
+        },
+    )
+    .await;
+    match recv_frame(&mut ws).await {
+        ServerFrame::Resized { cols, rows, .. } => assert_eq!((cols, rows), (57, 20)),
+        other => panic!("expected Resized, got {other:?}"),
+    }
+    // And the hub, not the client, is where that size now lives.
+    assert_eq!(state.hub.subscriber_count("t:1"), Some(1));
 }
 
 #[tokio::test]
@@ -281,7 +358,8 @@ async fn unsubscribe_removes_hub_state_and_stops_bytes() {
         },
     )
     .await;
-    // Consume the Snapshot.
+    // Consume the Snapshot + Resized preamble.
+    let _ = recv_frame(&mut ws).await;
     let _ = recv_frame(&mut ws).await;
 
     send_frame(
@@ -319,6 +397,8 @@ async fn client_disconnect_reaps_all_subscriptions() {
         },
     )
     .await;
+    // Snapshot + Resized per subscribe.
+    let _ = recv_frame(&mut ws).await;
     let _ = recv_frame(&mut ws).await;
     send_frame(
         &mut ws,
@@ -328,6 +408,7 @@ async fn client_disconnect_reaps_all_subscriptions() {
         },
     )
     .await;
+    let _ = recv_frame(&mut ws).await;
     let _ = recv_frame(&mut ws).await;
     assert_eq!(state.hub.subscriber_count("t:1"), Some(1));
     assert_eq!(state.hub.subscriber_count("t:2"), Some(1));

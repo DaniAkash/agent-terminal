@@ -200,6 +200,18 @@ struct TabState {
 }
 
 impl TabState {
+    /// The size a just-attached client has to start from: the tab's
+    /// current dimensions rather than the decision, so a client that
+    /// attaches before anyone has declared anything still learns the grid
+    /// its PTY was born at. Takes the state directly because callers hold
+    /// the subscribers lock and must not reach back into the tab map.
+    fn size(&self) -> Viewport {
+        Viewport {
+            cols: self.cols.load(Ordering::Acquire),
+            rows: self.rows.load(Ordering::Acquire),
+        }
+    }
+
     fn new(cols: u16, rows: u16, ring_cap_bytes: usize) -> Self {
         Self {
             next_seq: AtomicU64::new(0),
@@ -400,7 +412,28 @@ impl StreamHub {
         // One shadow serves every remote snapshot, so it is sized to the
         // authoritative viewport rather than to whoever asked last.
         self.resize_tab(tab_id, decided.cols, decided.rows);
+        self.announce_size(tab_id, decided);
     }
+
+    /// Tell every remote client what the grid actually is, so a phone can
+    /// render the authoritative width instead of the one it asked for.
+    /// Dead outboxes are left for `broadcast` to reap.
+    fn announce_size(&self, tab_id: &str, viewport: Viewport) {
+        let Some(state) = self.tabs.get(tab_id) else {
+            return;
+        };
+        let subs = state.subscribers.lock().expect("subscribers lock poisoned");
+        for entry in subs.iter() {
+            if let Subscriber::Remote { outbox, .. } = &entry.sink {
+                let _ = outbox.send(ServerFrame::Resized {
+                    tab_id: tab_id.to_string(),
+                    cols: viewport.cols,
+                    rows: viewport.rows,
+                });
+            }
+        }
+    }
+
 
     /// Broadcast one chunk of PTY output. Local subscribers receive the
     /// UTF-8 decoded string (matches the `PtyDataPayload { data: String }`
@@ -627,6 +660,12 @@ impl StreamHub {
                 return None;
             }
             let id = SubscriberId(state.next_sub_id.fetch_add(1, Ordering::Relaxed));
+            let size = state.size();
+            let _ = outbox.send(ServerFrame::Resized {
+                tab_id: tab_id.to_string(),
+                cols: size.cols,
+                rows: size.rows,
+            });
             subs.push(SubscriberEntry::new(
                 id,
                 Subscriber::Remote {
@@ -712,6 +751,16 @@ impl StreamHub {
         // sentinel when nothing concrete has gone out yet (empty snapshot,
         // empty ring — first broadcast will pass the dedup gate).
         let initial_ack = highest_delivered.unwrap_or(REMOTE_ACK_UNSET);
+
+        // The client has the screen; now tell it what width that screen
+        // is. It follows the replay so the dimensions describe the state
+        // the client has just taken on.
+        let size = state.size();
+        let _ = outbox.send(ServerFrame::Resized {
+            tab_id: tab_id.to_string(),
+            cols: size.cols,
+            rows: size.rows,
+        });
 
         let id = SubscriberId(state.next_sub_id.fetch_add(1, Ordering::Relaxed));
         subs.push(SubscriberEntry::new(
@@ -1269,7 +1318,7 @@ mod tests {
         let (tx, mut rx) = mpsc::unbounded_channel::<ServerFrame>();
         let _id = hub.subscribe_remote("t1", tx, 500).await;
         let frames = drain(&mut rx);
-        assert_eq!(frames.len(), 1, "exactly one Snapshot frame on subscribe");
+        assert_eq!(frames.len(), 2, "a Snapshot, then the grid it describes");
         match &frames[0] {
             ServerFrame::Snapshot {
                 tab_id,
@@ -1284,6 +1333,49 @@ mod tests {
             }
             other => panic!("expected Snapshot, got {other:?}"),
         }
+        match &frames[1] {
+            ServerFrame::Resized { tab_id, cols, rows } => {
+                assert_eq!(tab_id, "t1");
+                assert_eq!((*cols, *rows), (80, 24));
+            }
+            other => panic!("expected Resized, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn a_changed_decision_reaches_the_remote_outbox() {
+        // The frame has been on the wire protocol and routed by the
+        // companion all along; nothing on this side ever constructed it,
+        // so a phone could only ever guess at the real grid.
+        let hub = new_hub();
+        hub.ensure_tab("t1", 80, 24);
+        let (tx, mut rx) = mpsc::unbounded_channel::<ServerFrame>();
+        let remote = hub
+            .subscribe_remote("t1", tx, 500)
+            .await
+            .expect("subscribed");
+        let _ = drain(&mut rx);
+
+        let local = hub.subscribe_local("t1", Arc::new(Mutex::new(None)));
+        hub.declare_viewport("t1", local, DESKTOP);
+
+        let frames = drain(&mut rx);
+        assert_eq!(frames.len(), 1);
+        match &frames[0] {
+            ServerFrame::Resized { tab_id, cols, rows } => {
+                assert_eq!(tab_id, "t1");
+                assert_eq!((*cols, *rows), (DESKTOP.cols, DESKTOP.rows));
+            }
+            other => panic!("expected Resized, got {other:?}"),
+        }
+
+        // The remote's own declaration loses, and it is told so rather
+        // than left believing the grid is its own.
+        hub.declare_viewport("t1", remote, PHONE);
+        assert!(
+            drain(&mut rx).is_empty(),
+            "an unchanged decision is not re-announced"
+        );
     }
 
     #[tokio::test]
