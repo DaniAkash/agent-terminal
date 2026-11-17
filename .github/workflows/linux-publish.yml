@@ -12,31 +12,16 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  snap:
-    if: ${{ !github.event.release.prerelease && vars.PUBLISH_SNAP == 'true' }}
-    runs-on: ubuntu-22.04
-    steps:
-      - name: Validate credentials
-        env:
-          CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-        run: |
-          test -n "$CREDENTIALS" || { echo 'Missing SNAPCRAFT_STORE_CREDENTIALS'; exit 1; }
-          printf '%s' "$RELEASE_TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'
-      - name: Download released Snap
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-        run: |
-          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern '*.snap' --dir snap-release
-          test "$(find snap-release -name '*.snap' | wc -l)" -eq 1
-          mv snap-release/*.snap agent-terminal.snap
-      - uses: snapcore/action-publish@v1.2.0
-        env:
-          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
-        with:
-          snap: agent-terminal.snap
-          release: stable
+  # The Snap job is gone, not disabled behind its variable, because the
+  # store refuses the upload outright: the package ships `classic`
+  # confinement, and the Snap Store rejects that with NEEDS REVIEW unless
+  # the snap has been granted classic confinement. That grant is a store
+  # side request, so no change in this repository can make the upload
+  # succeed, and every release was spending a red job proving it.
+  #
+  # The .snap is still built and attached to the release, so the direct
+  # download keeps working. To publish to the store again, request classic
+  # confinement for this snap, then restore this job from history.
 
   aur:
     if: ${{ !github.event.release.prerelease && vars.PUBLISH_AUR == 'true' }}
