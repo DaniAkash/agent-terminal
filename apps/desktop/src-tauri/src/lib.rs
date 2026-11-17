@@ -262,8 +262,12 @@ fn install_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error + Send
         });
     // The bundle icon rather than a monochrome template image. A proper
     // macOS template asset is a follow-up, not a reason to ship no tray.
-    if let Some(icon) = app.default_window_icon().cloned() {
-        builder = builder.icon(icon);
+    // Without a bundle (a `cargo run` dev build) there is no icon, and a
+    // tray item carrying neither icon nor title is zero-width, so it
+    // exists but cannot be clicked. The title keeps it reachable.
+    match app.default_window_icon().cloned() {
+        Some(icon) => builder = builder.icon(icon),
+        None => builder = builder.title("AT"),
     }
     builder.build(app)?;
     Ok(())
