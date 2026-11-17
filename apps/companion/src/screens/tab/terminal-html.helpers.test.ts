@@ -49,14 +49,14 @@ describe('buildTerminalHtml', () => {
     expect(html).toContain('<script type="module">')
   })
 
-  test('embeds the starting grid and never measures its own', () => {
-    // The config grid is a placeholder until the desktop's first Resized
-    // frame lands. autoResize is what used to let this screen take the
-    // shared PTY, keyboard raise by keyboard raise.
+  test('embeds a starting grid and sizes itself from the screen', () => {
+    // The config grid is only a placeholder until the first frame lands.
+    // The screen measures itself because ownership follows focus: a
+    // focused phone owns the width, and its own measurement is the one
+    // to use. What it sends up is still a declaration the hub may ignore.
     expect(html).toContain('cols: 80')
     expect(html).toContain('rows: 24')
-    expect(html).toContain('autoResize: false')
-    expect(html).not.toContain('autoResize: true')
+    expect(html).toContain('autoResize: true')
   })
 
   test('installs the RN bridge as window.__terminal_bridge with write/clear/resize', () => {
@@ -232,7 +232,7 @@ describe('pan and zoom over the desktop grid', () => {
     )
     expect(html).toContain('overflow: auto;')
     expect(html).toContain('transform-origin: top left;')
-    expect(html).toContain('zoom.style.transform = "scale(" + scale + ")"')
+    expect(html).toContain('zoom.style.transform = ""')
   })
 
   test('leaves native scrolling alone while taking pinch off the browser', () => {

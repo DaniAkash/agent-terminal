@@ -157,14 +157,14 @@ try {
   const pan = document.getElementById("pan");
   const zoom = document.getElementById("zoom");
 
-  // The desktop decides the grid, so measuring this screen must not change
-  // it: autoResize would, and it would also read every soft-keyboard raise
-  // as a grid change, each of which used to reach the shared PTY.
+  // Ownership follows focus, so a focused phone owns the width and its
+  // own measurement is the right one. The declaration it sends is still
+  // only a declaration; the hub answers with the grid to use.
   const term = new WTerm(host, {
     core,
     cols: ${config.initialCols},
     rows: ${config.initialRows},
-    autoResize: false,
+    autoResize: true,
     cursorBlink: true,
     onData: function (data) { post({ type: "data", payload: data }); },
   });
@@ -334,10 +334,13 @@ try {
   }
 
   let scale = FULL_SCALE;
-  let fitting = true;
+  let fitting = false;
 
   function paintScale() {
-    zoom.style.transform = "scale(" + scale + ")";
+    // Scaling the grid misplaces the styled runs within a line, which
+    // reads as characters drawn on top of each other. A focused phone
+    // already has the width it measured, so there is nothing to shrink.
+    zoom.style.transform = "";
   }
 
   function relayout() {
