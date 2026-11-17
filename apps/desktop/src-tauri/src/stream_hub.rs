@@ -10,7 +10,8 @@
 // - A bytes-capped ring buffer of recent (seq, bytes) entries — used for
 //   replay-on-reconnect to remote clients (no consumers yet; sub-step 4
 //   wires this up).
-// - A list of subscribers. In this sub-step only `Subscriber::Local` exists;
+// - A list of subscribers, each carrying the viewport it declared. In
+//   this sub-step only `Subscriber::Local` exists;
 //   `Subscriber::Remote` arrives when the WSS server lands.
 // - Last-known cols/rows so future `subscribe_remote` calls know what size
 //   to ask the sidecar to serialise.
@@ -65,6 +66,24 @@ pub struct SubscriberId(u64);
 /// upper bound is far below.
 const REMOTE_ACK_UNSET: u64 = u64::MAX;
 
+/// A client's terminal grid in character cells. One per attached client,
+/// which is the whole point: the PTY has a single winsize, the clients do
+/// not.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Viewport {
+    pub cols: u16,
+    pub rows: u16,
+}
+
+/// How much say a subscriber's viewport has. Local is the desktop webview,
+/// which is the workstation; a phone attaches to check on an agent, not to
+/// reshape its workspace.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ViewportClaim {
+    Primary,
+    Secondary,
+}
+
 /// Per-tab fan-out target. `#[non_exhaustive]` so adding future variants
 /// (relay backends, notification sinks, etc.) stays non-breaking.
 #[non_exhaustive]
@@ -90,10 +109,39 @@ pub enum Subscriber {
     },
 }
 
+impl Subscriber {
+    pub fn claim(&self) -> ViewportClaim {
+        match self {
+            Subscriber::Local(_) => ViewportClaim::Primary,
+            Subscriber::Remote { .. } => ViewportClaim::Secondary,
+        }
+    }
+}
+
+/// One attached client: its id, where its bytes go, and the grid it says it
+/// is painting into.
+struct SubscriberEntry {
+    id: SubscriberId,
+    sink: Subscriber,
+    /// None until the client has declared one. A subscriber with no
+    /// viewport never influences the decision.
+    viewport: Option<Viewport>,
+}
+
+impl SubscriberEntry {
+    fn new(id: SubscriberId, sink: Subscriber) -> Self {
+        Self {
+            id,
+            sink,
+            viewport: None,
+        }
+    }
+}
+
 struct TabState {
     next_seq: AtomicU64,
     ring: Mutex<RingBuffer>,
-    subscribers: Mutex<Vec<(SubscriberId, Subscriber)>>,
+    subscribers: Mutex<Vec<SubscriberEntry>>,
     next_sub_id: AtomicU64,
     // Last-known terminal size. `resize_tab` updates this; future
     // `subscribe_remote` will read it to know what dimensions to ask the
@@ -196,7 +244,7 @@ impl StreamHub {
             .subscribers
             .lock()
             .expect("subscribers lock poisoned")
-            .push((id, Subscriber::Local(channel)));
+            .push(SubscriberEntry::new(id, Subscriber::Local(channel)));
         id
     }
 
@@ -206,8 +254,31 @@ impl StreamHub {
                 .subscribers
                 .lock()
                 .expect("subscribers lock poisoned")
-                .retain(|(id, _)| *id != sub_id);
+                .retain(|entry| entry.id != sub_id);
         }
+    }
+
+    /// Every attached subscriber that has declared a viewport, paired with
+    /// the weight its declaration carries.
+    pub fn viewport_claims(
+        &self,
+        tab_id: &str,
+    ) -> Vec<(SubscriberId, ViewportClaim, Viewport)> {
+        let Some(state) = self.tabs.get(tab_id) else {
+            return Vec::new();
+        };
+        let claims = state
+            .subscribers
+            .lock()
+            .expect("subscribers lock poisoned")
+            .iter()
+            .filter_map(|entry| {
+                entry
+                    .viewport
+                    .map(|vp| (entry.id, entry.sink.claim(), vp))
+            })
+            .collect();
+        claims
     }
 
     /// Broadcast one chunk of PTY output. Local subscribers receive the
@@ -265,8 +336,8 @@ impl StreamHub {
         let mut dead: Vec<SubscriberId> = Vec::new();
         let mut encoded: Option<String> = None;
 
-        for (sid, sub) in subs.iter() {
-            match sub {
+        for entry in subs.iter() {
+            match &entry.sink {
                 Subscriber::Local(shared) => {
                     if decoded_str.is_empty() {
                         continue;
@@ -319,13 +390,13 @@ impl StreamHub {
                         data,
                     }) {
                         Ok(()) => last_acked_seq.store(seq, Ordering::Release),
-                        Err(_) => dead.push(*sid),
+                        Err(_) => dead.push(entry.id),
                     }
                 }
             }
         }
         if !dead.is_empty() {
-            subs.retain(|(id, _)| !dead.contains(id));
+            subs.retain(|entry| !dead.contains(&entry.id));
         }
     }
 
@@ -431,7 +502,7 @@ impl StreamHub {
                 return None;
             }
             let id = SubscriberId(state.next_sub_id.fetch_add(1, Ordering::Relaxed));
-            subs.push((
+            subs.push(SubscriberEntry::new(
                 id,
                 Subscriber::Remote {
                     last_acked_seq: Arc::new(AtomicU64::new(highest_delivered)),
@@ -514,7 +585,7 @@ impl StreamHub {
         let initial_ack = highest_delivered.unwrap_or(REMOTE_ACK_UNSET);
 
         let id = SubscriberId(state.next_sub_id.fetch_add(1, Ordering::Relaxed));
-        subs.push((
+        subs.push(SubscriberEntry::new(
             id,
             Subscriber::Remote {
                 last_acked_seq: Arc::new(AtomicU64::new(initial_ack)),
@@ -797,6 +868,23 @@ mod tests {
         assert_eq!(hub.subscriber_count("t1"), Some(2));
         hub.unsubscribe("t1", id1);
         assert_eq!(hub.subscriber_count("t1"), Some(1));
+    }
+
+    #[test]
+    fn subscribers_start_with_no_declared_viewport() {
+        let hub = new_hub();
+        let _id = hub.subscribe_local("t1", Arc::new(Mutex::new(None)));
+        assert_eq!(hub.subscriber_count("t1"), Some(1));
+        assert!(
+            hub.viewport_claims("t1").is_empty(),
+            "a subscriber that never declared must not influence any decision"
+        );
+    }
+
+    #[test]
+    fn viewport_claims_of_unknown_tab_is_empty() {
+        let hub = new_hub();
+        assert!(hub.viewport_claims("ghost").is_empty());
     }
 
     #[test]
