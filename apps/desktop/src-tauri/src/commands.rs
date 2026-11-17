@@ -3,14 +3,16 @@ use crate::net;
 use crate::pairing::{PairedDevice, PairedTokens, PairingApprovals, PairingWindow};
 use crate::projects_cache::{ProjectsCache, StoredProject};
 use crate::protocol::ServerFrame;
-use crate::wss_server::{MobileOpInboxes, PairedConnMap};
+use crate::wss_server::{
+    MobileOpInboxes, MobileTabSubscriptions, MobileTabsSnapshot, PairedConnMap,
+};
 use crate::pty_manager::{spawn_pty, try_reattach, PtyDataPayload, PtyMap, ReattachResult};
 use crate::stream_hub::{StreamHub, Viewport};
 use serde::Serialize;
 use std::io::Write;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tauri::ipc::Channel;
 
 /// Explicit user-confirmed quit. An async command runs outside the webview's
@@ -163,6 +165,7 @@ pub async fn resize_pty(
 
 #[tauri::command]
 pub async fn close_tab(
+    app: tauri::AppHandle,
     pty_map: State<'_, PtyMap>,
     hub: State<'_, Arc<StreamHub>>,
     projects_cache: State<'_, Arc<ProjectsCache>>,
@@ -186,6 +189,14 @@ pub async fn close_tab(
     // Done after the PtyMap mutation so the reader thread's `closing`
     // check sees the same ordering it always did. Fire-and-forget.
     hub.close_tab(&tab_id);
+    // A phone that had this tab open is no longer on it. Without this the
+    // desktop keeps showing it there for as long as its socket lives.
+    // `try_state`: the registry is absent when the WSS server did not start.
+    if let Some(subs) = app.try_state::<Arc<MobileTabSubscriptions>>() {
+        if let Some(tabs) = subs.remove_tab(&tab_id) {
+            let _ = app.emit(crate::wss_server::MOBILE_SUBSCRIPTIONS_PRUNED_EVENT, tabs);
+        }
+    }
     // Notify WSS subscribers so mobile clients see the tab disappear.
     projects_cache.notify_spawn_change();
     Ok(())
@@ -576,6 +587,14 @@ pub async fn respond_pairing_approval(
     approved: bool,
 ) -> Result<bool, String> {
     Ok(approvals.respond(&request_id, approved))
+}
+
+/// Snapshot active mobile companion subscribers keyed by tab ID.
+#[tauri::command]
+pub async fn list_active_mobile_tabs(
+    subs: State<'_, Arc<MobileTabSubscriptions>>,
+) -> Result<MobileTabsSnapshot, String> {
+    Ok(subs.snapshot())
 }
 
 /// Derive the "Dani's MacBook Pro"-style hint from a `.local` hostname

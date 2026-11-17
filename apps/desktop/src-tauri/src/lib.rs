@@ -518,6 +518,7 @@ pub fn run() {
                         let pairing_window = Arc::new(PairingWindow::new());
                         let paired_conns = Arc::new(PairedConnMap::new());
                         let pairing_approvals = Arc::new(pairing::PairingApprovals::new());
+                        let mobile_tab_subs = Arc::new(wss_server::MobileTabSubscriptions::new());
 
                         // Phone escalation. Lives here rather than beside
                         // NotificationService because it needs the paired
@@ -559,6 +560,7 @@ pub fn run() {
                             app.manage(Arc::clone(&pairing_window));
                             app.manage(Arc::clone(&paired_conns));
                             app.manage(Arc::clone(&pairing_approvals));
+                            app.manage(Arc::clone(&mobile_tab_subs));
                             app.manage(auth);
                             break 'wss_setup;
                         }
@@ -639,6 +641,7 @@ pub fn run() {
                         app.manage(Arc::clone(&pairing_window));
                         app.manage(Arc::clone(&paired_conns));
                         app.manage(Arc::clone(&pairing_approvals));
+                        app.manage(Arc::clone(&mobile_tab_subs));
 
                         let server_state = Arc::new(ServerState {
                             hub: hub_for_wss,
@@ -653,6 +656,7 @@ pub fn run() {
                             pairing_window,
                             paired_conns,
                             pairing_approvals,
+                            mobile_tab_subs,
                             push: Some(push_service),
                         });
                         app.manage(auth);
@@ -736,6 +740,7 @@ pub fn run() {
             commands::list_paired_devices,
             commands::revoke_paired_device,
             commands::respond_pairing_approval,
+            commands::list_active_mobile_tabs,
             notifications::notif_set_projects,
             notifications::notif_set_active_tab,
             notifications::notif_set_app_focus,

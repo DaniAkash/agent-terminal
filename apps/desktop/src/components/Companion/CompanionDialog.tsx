@@ -23,6 +23,10 @@ import {
 } from '@/components/ui/dialog'
 import { $companion } from '@/modules/stores/$companion'
 import {
+  $activeMobileTabs,
+  devicePresence,
+} from '@/modules/stores/$mobileActivity'
+import {
   $pairingApproval,
   APPROVAL_TIMEOUT_MS,
   type PendingPairingApproval,
@@ -360,6 +364,7 @@ interface DeviceRowProps {
 
 function DeviceRow({ device, onRevoke }: DeviceRowProps) {
   const Icon = device.platform === 'android' ? Tablet : Smartphone
+  const presence = devicePresence(useStore($activeMobileTabs), device.id)
   const address = addressLine(device.last_ip)
   return (
     <li className="hover:bg-accent/40 flex items-center gap-3 rounded-md px-2 py-2">
@@ -377,7 +382,9 @@ function DeviceRow({ device, onRevoke }: DeviceRowProps) {
           </div>
         )}
         <div className="text-muted-foreground truncate text-[11px]">
-          {`Paired ${relativeTime(device.paired_at)} · Last seen ${relativeTime(device.last_seen)}`}
+          {presence
+            ? `${presence} · Paired ${relativeTime(device.paired_at)}`
+            : `Paired ${relativeTime(device.paired_at)} · Last seen ${relativeTime(device.last_seen)}`}
         </div>
       </div>
       <Button

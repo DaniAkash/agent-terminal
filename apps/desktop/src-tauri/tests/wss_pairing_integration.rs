@@ -85,6 +85,7 @@ async fn spawn_server_with(
         pairing_window: Arc::clone(&pairing_window),
         paired_conns: Arc::clone(&paired_conns),
         pairing_approvals,
+        mobile_tab_subs: Arc::new(wss_server::MobileTabSubscriptions::new()),
         push: None,
     });
 

@@ -115,6 +115,8 @@ pub struct ServerState {
     pub paired_conns: Arc<PairedConnMap>,
     /// Pending pairing approval requests waiting for user approval.
     pub pairing_approvals: Arc<crate::pairing::PairingApprovals>,
+    /// Active mobile tab subscriptions for sidebar indicator awareness.
+    pub mobile_tab_subs: Arc<MobileTabSubscriptions>,
     /// Phone escalation. `Option` so integration tests can build a
     /// ServerState without a Tauri runtime, matching `app_handle`.
     pub push: Option<Arc<crate::push::PushService>>,
@@ -393,6 +395,7 @@ pub async fn run_with_listener(
          Token in the companion-dev.json config file"
     );
 
+    tokio::spawn(sweep_mobile_presence(Arc::clone(&state)));
     let app = Router::new()
         .route("/stream", get(handle_stream_upgrade))
         .with_state(state);
@@ -441,6 +444,7 @@ pub async fn run_with_tls_from_listener(
         "[wss] listening on wss://{addr} — LAN-exposed with self-signed \
          TLS. Fingerprint reachable via get_tls_fingerprint Tauri command"
     );
+    tokio::spawn(sweep_mobile_presence(Arc::clone(&state)));
     let app = Router::new()
         .route("/stream", get(handle_stream_upgrade))
         .with_state(state);
@@ -529,30 +533,54 @@ async fn connection_task(
     // Companion dialog surfaces this for troubleshooting; without
     // this thread-through it stays `None` forever.
     let peer_ip = peer.ip().to_string();
-    let (session_device_name, device_id) =
-        match state.paired_tokens.check_and_touch(&token, Some(peer_ip)) {
-            Some(dev) => (dev.device_name.clone(), Some(dev.id.clone())),
+    // `greeting_name` goes back to the phone in AuthOk. `device_name` is
+    // what the desktop calls the phone. They are the same for a paired
+    // device. A dev-token session has no record of the phone, and its
+    // AuthOk carries the desktop's own name, which must not label the
+    // phone in the desktop UI.
+    let (greeting_name, device_name, device_id, platform, model) =
+        match state.paired_tokens.check_and_touch(&token, Some(peer_ip.clone())) {
+            Some(dev) => (
+                dev.device_name.clone(),
+                dev.device_name,
+                Some(dev.id),
+                dev.platform,
+                dev.model,
+            ),
+            None if state.auth.check(&token) => (
+                state.auth.device_name.clone(),
+                "Mobile device".to_string(),
+                None,
+                "mobile".to_string(),
+                None,
+            ),
             None => {
-                if state.auth.check(&token) {
-                    (state.auth.device_name.clone(), None)
-                } else {
-                    let _ = send_frame(
-                        &mut socket,
-                        &ServerFrame::AuthFail {
-                            reason: "bad token".to_string(),
-                        },
-                    )
-                    .await;
-                    return;
-                }
+                let _ = send_frame(
+                    &mut socket,
+                    &ServerFrame::AuthFail {
+                        reason: "bad token".to_string(),
+                    },
+                )
+                .await;
+                return;
             }
         };
+    let subscriber_info = MobileSubscriberInfo {
+        connection_id,
+        device_id: device_id.clone(),
+        device_name,
+        platform,
+        model,
+        peer_ip: Some(peer_ip),
+        status: MobilePresenceStatus::Online,
+        last_active_at: crate::usage::now(),
+    };
 
     // Step 3: auth-ok + immediate Projects push.
     if send_frame(
         &mut socket,
         &ServerFrame::AuthOk {
-            device_name: session_device_name,
+            device_name: greeting_name,
         },
     )
     .await
@@ -628,6 +656,16 @@ async fn connection_task(
             None => Some(abort_tx),
         };
 
+    // Liveness. A phone that drops off the network sends no close, so the
+    // socket would look open until the OS gives up on it, and the desktop
+    // would show a dead phone as present. Ping it and expect traffic back.
+    let liveness = Liveness::new();
+    let mut liveness_tick = tokio::time::interval_at(
+        tokio::time::Instant::now() + LIVENESS_PING_EVERY,
+        LIVENESS_PING_EVERY,
+    );
+    liveness_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+
     loop {
         tokio::select! {
             biased;
@@ -648,7 +686,7 @@ async fn connection_task(
             }
 
             // Client → server: read a frame, dispatch.
-            incoming = read_frame(&mut socket) => {
+            incoming = read_frame_live(&mut socket, &liveness) => {
                 let frame = match incoming {
                     Ok(Some(f)) => f,
                     Ok(None) => break,
@@ -664,8 +702,21 @@ async fn connection_task(
                     &mut subscriptions,
                     connection_id,
                     device_id.as_deref(),
+                    &subscriber_info,
                 )
                 .await;
+            }
+
+            // Ahead of the outbox so a busy terminal cannot starve it.
+            _ = liveness_tick.tick() => {
+                if liveness.is_dead(std::time::Instant::now()) {
+                    eprintln!("[wss] connection {connection_id} went silent; closing");
+                    break;
+                }
+                let ping = socket.send(Message::Ping(Default::default()));
+                if !matches!(within_send_timeout(ping).await, Some(Ok(()))) {
+                    break;
+                }
             }
 
             // Server → client: outbox drained onto the WebSocket. The
@@ -675,7 +726,8 @@ async fn connection_task(
             // case so the connection cleanly closes.
             frame = outbox_rx.recv() => {
                 let Some(frame) = frame else { break };
-                if send_frame(&mut socket, &frame).await.is_err() {
+                let sent = within_send_timeout(send_frame(&mut socket, &frame)).await;
+                if !matches!(sent, Some(Ok(()))) {
                     break;
                 }
             }
@@ -701,6 +753,7 @@ async fn connection_task(
         state.paired_conns.deregister(id, connection_id);
     }
     state.mobile_op_inboxes.reap_connection(connection_id);
+    emit_mobile_subscriptions(&state, state.mobile_tab_subs.remove_connection(connection_id));
     for (tab_id, sub_id) in subscriptions {
         state.hub.unsubscribe(&tab_id, sub_id);
     }
@@ -1010,6 +1063,7 @@ async fn dispatch_client_frame(
     subscriptions: &mut HashMap<String, SubscriberId>,
     connection_id: u64,
     device_id: Option<&str>,
+    subscriber_info: &MobileSubscriberInfo,
 ) {
     match frame {
         // The main auth path already handled the first Auth frame. A
@@ -1033,6 +1087,7 @@ async fn dispatch_client_frame(
                 .subscribe_remote(&tab_id, outbox_tx.clone(), scrollback)
                 .await
             {
+                emit_mobile_subscriptions(state, state.mobile_tab_subs.add(&tab_id, subscriber_info.clone()));
                 subscriptions.insert(tab_id, id);
             }
         }
@@ -1058,6 +1113,7 @@ async fn dispatch_client_frame(
                 .resume_remote(&tab_id, outbox_tx.clone(), last_seq, scrollback)
                 .await
             {
+                emit_mobile_subscriptions(state, state.mobile_tab_subs.add(&tab_id, subscriber_info.clone()));
                 subscriptions.insert(tab_id, id);
             }
         }
@@ -1066,6 +1122,7 @@ async fn dispatch_client_frame(
             if let Some(id) = subscriptions.remove(&tab_id) {
                 state.hub.unsubscribe(&tab_id, id);
             }
+            state.mobile_tab_subs.leave(&tab_id, connection_id);
         }
 
         ClientFrame::Write { tab_id, data } => {
@@ -1249,8 +1306,21 @@ fn dispatch_mobile_op<T: serde::Serialize>(
 /// on a clean close. Ignores WebSocket Ping/Pong control frames (axum
 /// handles those transparently but the loop still sees them).
 async fn read_frame(socket: &mut WebSocket) -> Result<Option<ClientFrame>, ReadFrameError> {
+    read_frame_live(socket, &Liveness::new()).await
+}
+
+/// [`read_frame`] that also records every message from the peer in
+/// `liveness`, control frames included.
+async fn read_frame_live(
+    socket: &mut WebSocket,
+    liveness: &Liveness,
+) -> Result<Option<ClientFrame>, ReadFrameError> {
     loop {
-        match socket.recv().await {
+        let message = socket.recv().await;
+        if let Some(Ok(message)) = &message {
+            liveness.heard(matches!(message, Message::Pong(_)), std::time::Instant::now());
+        }
+        match message {
             Some(Ok(Message::Text(text))) => {
                 let frame: ClientFrame = serde_json::from_str(text.as_str())
                     .map_err(ReadFrameError::BadJson)?;
@@ -1265,6 +1335,65 @@ async fn read_frame(socket: &mut WebSocket) -> Result<Option<ClientFrame>, ReadF
             Some(Ok(Message::Close(_))) | None => return Ok(None),
             Some(Err(e)) => return Err(ReadFrameError::Socket(e.to_string())),
         }
+    }
+}
+
+/// How often the server pings a connected phone.
+const LIVENESS_PING_EVERY: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// Silence after which a phone that answers pings counts as gone. Three
+/// missed pings: enough slack for a slow mobile link.
+const LIVENESS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Bound one send to the peer by [`LIVENESS_TIMEOUT`]. None when it ran
+/// out.
+///
+/// A phone that drops off the network stops reading. Once the TCP send
+/// buffer fills, a send never returns, and the loop that would notice the
+/// silence never runs again. A send that cannot finish in this long means
+/// the same thing as silence: the peer is gone.
+async fn within_send_timeout<F: std::future::Future>(send: F) -> Option<F::Output> {
+    tokio::time::timeout(LIVENESS_TIMEOUT, send).await.ok()
+}
+
+/// Whether the peer of one connection is still there.
+///
+/// Atomics, not plain fields, because the reader and the ping timer are
+/// two branches of one `select!` and both hold a reference.
+struct Liveness {
+    started: std::time::Instant,
+    /// Milliseconds after `started` at which the peer was last heard.
+    last_heard_ms: std::sync::atomic::AtomicU64,
+    /// The peer has answered a ping at least once. A client that never
+    /// does is not held to the timeout: the server cannot tell its
+    /// silence from an idle terminal.
+    answers_pings: std::sync::atomic::AtomicBool,
+}
+
+impl Liveness {
+    fn new() -> Self {
+        Self {
+            started: std::time::Instant::now(),
+            last_heard_ms: std::sync::atomic::AtomicU64::new(0),
+            answers_pings: std::sync::atomic::AtomicBool::new(false),
+        }
+    }
+
+    fn heard(&self, is_pong: bool, now: std::time::Instant) {
+        use std::sync::atomic::Ordering::Relaxed;
+        let ms = now.saturating_duration_since(self.started).as_millis() as u64;
+        self.last_heard_ms.store(ms, Relaxed);
+        if is_pong {
+            self.answers_pings.store(true, Relaxed);
+        }
+    }
+
+    fn is_dead(&self, now: std::time::Instant) -> bool {
+        use std::sync::atomic::Ordering::Relaxed;
+        let last_heard =
+            self.started + std::time::Duration::from_millis(self.last_heard_ms.load(Relaxed));
+        self.answers_pings.load(Relaxed)
+            && now.saturating_duration_since(last_heard) >= LIVENESS_TIMEOUT
     }
 }
 
@@ -1308,6 +1437,191 @@ fn first_op_name(frame: &ClientFrame) -> &'static str {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MobilePresenceStatus {
+    Online,
+    Idle,
+}
+
+/// Metadata for a connected mobile companion subscribed to a tab.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct MobileSubscriberInfo {
+    pub connection_id: u64,
+    pub device_id: Option<String>,
+    pub device_name: String,
+    pub platform: String,
+    pub model: Option<String>,
+    pub peer_ip: Option<String>,
+    pub status: MobilePresenceStatus,
+    pub last_active_at: i64,
+}
+
+/// Mobile subscribers per tab key, as sent to the desktop UI.
+pub type MobileTabsSnapshot = HashMap<String, Vec<MobileSubscriberInfo>>;
+
+/// How long a phone may sit off every terminal (connected, but with no
+/// tab open) before it shows as Idle. Long enough that moving from one
+/// tab to another never shows as a status change.
+const MOBILE_IDLE_AFTER: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// How often [`sweep_mobile_presence`] looks for phones that turned Idle.
+const MOBILE_IDLE_SWEEP_EVERY: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// One connection's presence on one tab.
+struct MobileSubscription {
+    info: MobileSubscriberInfo,
+    /// When the phone left this tab without closing its connection.
+    /// None while it has the tab open.
+    left_at: Option<std::time::Instant>,
+}
+
+/// Which terminal tabs have a mobile companion on them, and whether each
+/// one is Online or Idle. The single owner of that status: the desktop UI
+/// shows what this reports and applies no rules of its own.
+///
+/// - Online: the phone has the tab open.
+/// - Idle: the phone left the tab at least [`MOBILE_IDLE_AFTER`] ago and
+///   has opened no other tab since; it is still connected.
+/// - Absent: the connection closed, the phone opened another tab, or the
+///   tab was closed on the desktop.
+#[derive(Default)]
+pub struct MobileTabSubscriptions {
+    tabs: std::sync::Mutex<HashMap<String, HashMap<u64, MobileSubscription>>>,
+}
+
+type MobileTabsGuard<'a> =
+    std::sync::MutexGuard<'a, HashMap<String, HashMap<u64, MobileSubscription>>>;
+
+impl MobileTabSubscriptions {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    fn lock(&self) -> MobileTabsGuard<'_> {
+        self.tabs.lock().expect("mobile_tab_subs lock poisoned")
+    }
+
+    /// The phone opened `tab_id`. It is Online there, and it is dropped
+    /// from every tab it has left, so presence follows it from tab to tab.
+    pub fn add(&self, tab_id: &str, mut info: MobileSubscriberInfo) -> Option<MobileTabsSnapshot> {
+        let mut map = self.lock();
+        let conn_id = info.connection_id;
+        let mut changed = false;
+        map.retain(|existing_tab, conns| {
+            if existing_tab != tab_id && conns.get(&conn_id).is_some_and(|sub| sub.left_at.is_some())
+            {
+                conns.remove(&conn_id);
+                changed = true;
+            }
+            !conns.is_empty()
+        });
+
+        info.status = MobilePresenceStatus::Online;
+        info.last_active_at = crate::usage::now();
+        let previous = map
+            .entry(tab_id.to_string())
+            .or_default()
+            .insert(conn_id, MobileSubscription { info, left_at: None });
+        changed |= previous.is_none_or(|sub| sub.info.status == MobilePresenceStatus::Idle);
+        changed.then(|| Self::to_snapshot(&map))
+    }
+
+    /// The phone left `tab_id` but stays connected. Nothing visible
+    /// changes yet: it turns Idle in [`Self::sweep_idle`] if it opens no
+    /// other tab within [`MOBILE_IDLE_AFTER`].
+    pub fn leave(&self, tab_id: &str, conn_id: u64) {
+        self.leave_at(tab_id, conn_id, std::time::Instant::now());
+    }
+
+    fn leave_at(&self, tab_id: &str, conn_id: u64, now: std::time::Instant) {
+        if let Some(sub) = self.lock().get_mut(tab_id).and_then(|c| c.get_mut(&conn_id)) {
+            sub.left_at.get_or_insert(now);
+        }
+    }
+
+    /// Mark as Idle every phone that left its tab [`MOBILE_IDLE_AFTER`]
+    /// or longer before `now`. Returns the snapshot when any did.
+    pub fn sweep_idle(&self, now: std::time::Instant) -> Option<MobileTabsSnapshot> {
+        let mut map = self.lock();
+        let mut changed = false;
+        for sub in map.values_mut().flat_map(HashMap::values_mut) {
+            let overdue = sub
+                .left_at
+                .is_some_and(|left| now.saturating_duration_since(left) >= MOBILE_IDLE_AFTER);
+            if overdue && sub.info.status == MobilePresenceStatus::Online {
+                sub.info.status = MobilePresenceStatus::Idle;
+                sub.info.last_active_at = crate::usage::now();
+                changed = true;
+            }
+        }
+        changed.then(|| Self::to_snapshot(&map))
+    }
+
+    /// Remove `conn_id` from all tabs on WebSocket disconnect. Returns
+    /// `Some(snapshot)` if any tab changed.
+    pub fn remove_connection(&self, conn_id: u64) -> Option<MobileTabsSnapshot> {
+        let mut map = self.lock();
+        let mut changed = false;
+        map.retain(|_, conns| {
+            if conns.remove(&conn_id).is_some() {
+                changed = true;
+            }
+            !conns.is_empty()
+        });
+        changed.then(|| Self::to_snapshot(&map))
+    }
+
+    /// Forget `tab_id`, which was closed on the desktop. Returns
+    /// `Some(snapshot)` if a phone was on it.
+    pub fn remove_tab(&self, tab_id: &str) -> Option<MobileTabsSnapshot> {
+        let mut map = self.lock();
+        map.remove(tab_id).map(|_| Self::to_snapshot(&map))
+    }
+
+    pub fn snapshot(&self) -> MobileTabsSnapshot {
+        Self::to_snapshot(&self.lock())
+    }
+
+    fn to_snapshot(map: &HashMap<String, HashMap<u64, MobileSubscription>>) -> MobileTabsSnapshot {
+        map.iter()
+            .map(|(tab_id, conns)| {
+                let mut devices: Vec<MobileSubscriberInfo> =
+                    conns.values().map(|sub| sub.info.clone()).collect();
+                devices.sort_by_key(|d| d.connection_id);
+                (tab_id.clone(), devices)
+            })
+            .collect()
+    }
+}
+
+/// Event the desktop UI listens to for mobile presence changes.
+pub const MOBILE_SUBSCRIPTIONS_EVENT: &str = "wss:mobile_subscriptions";
+
+/// Same payload, for a change the desktop user made themselves (closing
+/// a tab a phone was on). The UI updates but announces nothing: the
+/// phone did not go anywhere.
+pub const MOBILE_SUBSCRIPTIONS_PRUNED_EVENT: &str = "wss:mobile_subscriptions_pruned";
+
+/// Turn phones Idle once they have been off every terminal for
+/// [`MOBILE_IDLE_AFTER`]. Runs for as long as the server does.
+async fn sweep_mobile_presence(state: Arc<ServerState>) {
+    let mut tick = tokio::time::interval(MOBILE_IDLE_SWEEP_EVERY);
+    loop {
+        tick.tick().await;
+        let idle = state.mobile_tab_subs.sweep_idle(std::time::Instant::now());
+        emit_mobile_subscriptions(&state, idle);
+    }
+}
+
+/// Tell the desktop UI about a presence change. `None` means the registry
+/// call was a no-op, so there is nothing to send.
+fn emit_mobile_subscriptions(state: &ServerState, tabs: Option<MobileTabsSnapshot>) {
+    if let Some(tabs) = tabs {
+        emit_event(state, MOBILE_SUBSCRIPTIONS_EVENT, tabs);
+    }
+}
+
 /// Emit a Tauri event to the desktop UI. No-op in tests and headless
 /// runs, where there is no app handle.
 fn emit_event<S: serde::Serialize + Clone>(state: &ServerState, event: &str, payload: S) {
@@ -1340,3 +1654,143 @@ impl ApprovalOutcome {
 }
 
 const PAIRING_APPROVAL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+
+#[cfg(test)]
+mod mobile_subs_tests {
+    use super::*;
+
+    fn dev(conn_id: u64, name: &str) -> MobileSubscriberInfo {
+        MobileSubscriberInfo {
+            connection_id: conn_id,
+            device_id: Some(format!("dev-{conn_id}")),
+            device_name: name.to_string(),
+            platform: "ios".to_string(),
+            model: Some("iPhone 16".to_string()),
+            peer_ip: Some("100.101.102.103".to_string()),
+            status: MobilePresenceStatus::Online,
+            last_active_at: crate::usage::now(),
+        }
+    }
+
+    fn status_on(snapshot: &MobileTabsSnapshot, tab: &str) -> Vec<MobilePresenceStatus> {
+        snapshot
+            .get(tab)
+            .map(|devices| devices.iter().map(|d| d.status).collect())
+            .unwrap_or_default()
+    }
+
+    #[test]
+    fn a_phone_is_online_on_the_tab_it_has_open() {
+        let subs = MobileTabSubscriptions::new();
+        assert!(subs.snapshot().is_empty());
+
+        let snap = subs.add("p1:t1", dev(1, "Phone")).expect("first subscriber");
+        assert_eq!(status_on(&snap, "p1:t1"), [MobilePresenceStatus::Online]);
+        // Opening the same tab again changes nothing the UI shows.
+        assert_eq!(subs.add("p1:t1", dev(1, "Phone")), None);
+
+        let snap = subs.add("p1:t1", dev(2, "Tablet")).expect("second subscriber");
+        assert_eq!(snap["p1:t1"].len(), 2);
+    }
+
+    #[test]
+    fn moving_between_tabs_moves_presence_without_an_idle_step() {
+        let subs = MobileTabSubscriptions::new();
+        let now = std::time::Instant::now();
+        subs.add("p1:t1", dev(1, "Phone"));
+
+        // Leaving a tab is not visible on its own...
+        subs.leave_at("p1:t1", 1, now);
+        assert_eq!(subs.sweep_idle(now), None);
+        assert_eq!(status_on(&subs.snapshot(), "p1:t1"), [MobilePresenceStatus::Online]);
+
+        // ...and opening the next one reports the move in one snapshot.
+        let moved = subs.add("p1:t2", dev(1, "Phone")).expect("moved");
+        assert!(!moved.contains_key("p1:t1"));
+        assert_eq!(status_on(&moved, "p1:t2"), [MobilePresenceStatus::Online]);
+    }
+
+    #[test]
+    fn reopening_a_tab_that_is_already_online_still_drops_the_tab_left_behind() {
+        let subs = MobileTabSubscriptions::new();
+        let now = std::time::Instant::now();
+        subs.add("p1:t1", dev(1, "Phone"));
+        subs.add("p1:t2", dev(1, "Phone"));
+        subs.leave_at("p1:t2", 1, now);
+
+        // t1 is unchanged, but t2 went away, and the UI must hear of it.
+        let snap = subs.add("p1:t1", dev(1, "Phone")).expect("t2 dropped");
+        assert!(!snap.contains_key("p1:t2"));
+    }
+
+    #[test]
+    fn a_phone_off_every_terminal_turns_idle_and_comes_back_online() {
+        let subs = MobileTabSubscriptions::new();
+        let left = std::time::Instant::now();
+        subs.add("p1:t1", dev(1, "Phone"));
+        subs.leave_at("p1:t1", 1, left);
+
+        let just_before = left + MOBILE_IDLE_AFTER - std::time::Duration::from_secs(1);
+        assert_eq!(subs.sweep_idle(just_before), None);
+
+        let idle = subs.sweep_idle(left + MOBILE_IDLE_AFTER).expect("turned idle");
+        assert_eq!(status_on(&idle, "p1:t1"), [MobilePresenceStatus::Idle]);
+        // Reported once, not on every sweep.
+        assert_eq!(subs.sweep_idle(left + MOBILE_IDLE_AFTER * 2), None);
+
+        let back = subs.add("p1:t1", dev(1, "Phone")).expect("back online");
+        assert_eq!(status_on(&back, "p1:t1"), [MobilePresenceStatus::Online]);
+    }
+
+    #[test]
+    fn a_phone_with_a_tab_open_never_turns_idle() {
+        let subs = MobileTabSubscriptions::new();
+        subs.add("p1:t1", dev(1, "Phone"));
+        let much_later = std::time::Instant::now() + MOBILE_IDLE_AFTER * 100;
+        assert_eq!(subs.sweep_idle(much_later), None);
+    }
+
+    #[test]
+    fn closing_a_tab_on_the_desktop_forgets_the_phones_on_it() {
+        let subs = MobileTabSubscriptions::new();
+        subs.add("p1:t1", dev(1, "Phone"));
+        subs.add("p1:t2", dev(2, "Tablet"));
+
+        let snap = subs.remove_tab("p1:t1").expect("a phone was on it");
+        assert!(!snap.contains_key("p1:t1"));
+        assert!(snap.contains_key("p1:t2"));
+        assert_eq!(subs.remove_tab("p1:t1"), None);
+    }
+
+    #[test]
+    fn a_silent_peer_is_dead_only_if_it_used_to_answer_pings() {
+        let start = std::time::Instant::now();
+        let long_after = start + LIVENESS_TIMEOUT * 3;
+
+        let never_answered = Liveness::new();
+        never_answered.heard(false, start);
+        assert!(!never_answered.is_dead(long_after));
+
+        let answered = Liveness::new();
+        answered.heard(true, start);
+        assert!(!answered.is_dead(start + LIVENESS_TIMEOUT / 2));
+        assert!(answered.is_dead(long_after));
+
+        // Any traffic counts, not only pongs.
+        answered.heard(false, long_after);
+        assert!(!answered.is_dead(long_after + LIVENESS_TIMEOUT / 2));
+    }
+
+    #[test]
+    fn remove_connection_clears_all_tabs_for_disconnected_client() {
+        let subs = MobileTabSubscriptions::new();
+        subs.add("p1:t1", dev(10, "Phone A"));
+        subs.add("p2:t2", dev(10, "Phone A"));
+        subs.add("p2:t2", dev(11, "Phone B"));
+
+        let after = subs.remove_connection(10).expect("p1:t1 cleared");
+        assert!(!after.contains_key("p1:t1"));
+        assert_eq!(after.get("p2:t2").map(|v| v.len()), Some(1));
+        assert!(subs.remove_connection(11).expect("all cleared").is_empty());
+    }
+}
