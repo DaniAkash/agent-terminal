@@ -277,7 +277,12 @@ fn install_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error + Send
         Some(icon) => builder = builder.icon(icon),
         None => builder = builder.title("AT"),
     }
-    builder.build(app)?;
+    // `build` hands back the tray, and dropping that value removes the
+    // status item again, which looks exactly like a tray that was never
+    // installed: no error, no icon. Hand it to the app so it outlives
+    // this function.
+    let tray = builder.build(app)?;
+    app.manage(tray);
     Ok(())
 }
 
