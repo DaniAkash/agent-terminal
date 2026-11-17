@@ -185,6 +185,35 @@ fn build_tls_sans() -> Vec<String> {
     sans
 }
 
+/// Hands a decided viewport to the real PTY. Resize has three consumers
+/// that have to stay in lockstep: the master's winsize, the mod engine,
+/// and the sidecar's shadow terminal. The hub owns the third, so this owns
+/// the first two and nothing else gets to call them.
+struct PtyViewportSink {
+    pty_map: PtyMap,
+    mod_handle: ModEngineHandle,
+}
+
+impl stream_hub::ViewportSink for PtyViewportSink {
+    fn apply(&self, tab_id: &str, viewport: stream_hub::Viewport) {
+        {
+            let map = self.pty_map.lock().expect("pty_map lock poisoned");
+            if let Some(handle) = map.get(tab_id) {
+                if let Err(e) = handle.master.resize(portable_pty::PtySize {
+                    rows: viewport.rows,
+                    cols: viewport.cols,
+                    pixel_width: 0,
+                    pixel_height: 0,
+                }) {
+                    eprintln!("[viewport] resize {tab_id} failed: {e}");
+                }
+            }
+        } // Lock released before dispatching to the MOD engine.
+        self.mod_handle
+            .on_resize(tab_id, viewport.cols, viewport.rows);
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let pty_map: PtyMap = Arc::new(Mutex::new(HashMap::new()));
@@ -315,7 +344,11 @@ pub fn run() {
             // threads have a stable broadcast target; the sidecar passed in
             // is the optional bit. State<'_, Arc<StreamHub>> is the handle
             // Tauri commands grab.
-            let hub = StreamHub::new(sidecar);
+            let viewport_sink = Arc::new(PtyViewportSink {
+                pty_map: Arc::clone(&pty_map_for_setup),
+                mod_handle: mod_engine_handle.clone(),
+            });
+            let hub = StreamHub::new(sidecar, viewport_sink);
             let hub_for_wss = Arc::clone(&hub);
             app.manage(hub);
 

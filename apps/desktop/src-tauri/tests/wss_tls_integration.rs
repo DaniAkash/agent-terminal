@@ -20,7 +20,7 @@ use agent_terminal_lib::ModEngineHandle;
 use agent_terminal_lib::projects_cache::ProjectsCache;
 use agent_terminal_lib::protocol::{ClientFrame, ServerFrame};
 use agent_terminal_lib::pty_manager::PtyMap;
-use agent_terminal_lib::stream_hub::StreamHub;
+use agent_terminal_lib::stream_hub::{NoopViewportSink, StreamHub};
 use agent_terminal_lib::tls::TlsMaterial;
 use agent_terminal_lib::wss_server::{self, ServerState};
 
@@ -70,7 +70,7 @@ async fn spawn_tls_server(
         addr,
     ));
 
-    let hub = StreamHub::new(None);
+    let hub = StreamHub::new(None, Arc::new(NoopViewportSink));
     let pty_map: PtyMap = Arc::new(Mutex::new(HashMap::new()));
     let projects_cache = Arc::new(ProjectsCache::new());
     let state = Arc::new(ServerState {

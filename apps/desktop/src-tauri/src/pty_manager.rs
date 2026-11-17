@@ -1,6 +1,6 @@
 use crate::mod_engine::{CwdTable, ModEngineHandle};
 use crate::projects_cache::ProjectsCache;
-use crate::stream_hub::StreamHub;
+use crate::stream_hub::{StreamHub, SubscriberId, Viewport};
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use serde::Serialize;
 use std::collections::HashMap;
@@ -49,6 +49,10 @@ pub struct PtyHandle {
     /// The live frontend channel. Swapped by open_tab on reconnect without
     /// touching the reader thread or the PTY process.
     pub channel: SharedChannel,
+    /// Hub id of this tab's Local subscriber, i.e. the desktop webview.
+    /// `resize_pty` needs it to declare the webview's viewport; the webview
+    /// itself has no idea the hub exists.
+    pub local_sub_id: SubscriberId,
     /// Set true by `close_tab` BEFORE the entry is removed from PtyMap. Reader
     /// thread checks this on EOF: true → user closed the tab, emit pty:exit
     /// and quit; false → shell exited on its own (typed `exit`, segfault,
@@ -271,14 +275,17 @@ fn respawn_in_place(ctx: &ReaderCtx) -> Result<RespawnOutcome, String> {
         .or_else(|| handle.spawn_cwd.clone())
         .or_else(|| dirs::home_dir().and_then(|p| p.to_str().map(String::from)));
 
-    // Carry the current PTY size across so full-screen apps in the new
-    // shell render correctly. Without this the replacement starts at the
-    // 80x24 default and stays there until the user manually resizes the
-    // pane (xterm doesn't fire a resize when its container size hasn't
-    // changed).
-    let size = handle
-        .master
-        .get_size()
+    // Size the replacement from the hub's decision rather than from the
+    // dying PTY, so a shell that self-exits while a phone was attached
+    // does not wake up phone-shaped. Falling back to the old winsize keeps
+    // full-screen apps rendering correctly when nobody has declared
+    // anything yet: the grid doesn't fire a resize when its container size
+    // hasn't changed, so the replacement would otherwise sit at 80x24.
+    let size = ctx
+        .hub
+        .decided_viewport(&ctx.tab_id)
+        .map(|vp| PtySize { rows: vp.rows, cols: vp.cols, pixel_width: 0, pixel_height: 0 })
+        .or_else(|| handle.master.get_size().ok())
         .unwrap_or(PtySize { rows: 24, cols: 80, pixel_width: 0, pixel_height: 0 });
 
     let pty_system = native_pty_system();
@@ -566,9 +573,21 @@ pub fn spawn_pty(
     shell: Option<String>,
     on_data: Option<Channel<PtyDataPayload>>,
 ) -> Result<(), String> {
+    // Born at whatever the hub has already decided for this tab id, so a
+    // client that declared before the PTY existed is not served 80x24
+    // until its next declaration.
+    let viewport = hub
+        .decided_viewport(&tab_id)
+        .unwrap_or(Viewport { cols: 80, rows: 24 });
+
     let pty_system = native_pty_system();
     let pair = pty_system
-        .openpty(PtySize { rows: 24, cols: 80, pixel_width: 0, pixel_height: 0 })
+        .openpty(PtySize {
+            rows: viewport.rows,
+            cols: viewport.cols,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
         .map_err(|e| e.to_string())?;
 
     let shell_path = shell.filter(|s| !s.is_empty()).unwrap_or_else(default_shell);
@@ -593,21 +612,6 @@ pub fn spawn_pty(
     let closing = Arc::new(AtomicBool::new(false));
     let respawn_history = Arc::new(Mutex::new(Vec::new()));
 
-    pty_map.lock().unwrap().insert(
-        tab_id.clone(),
-        PtyHandle {
-            master: pair.master,
-            writer,
-            child,
-            reader_alive: reader_alive.clone(),
-            channel: channel.clone(),
-            closing: closing.clone(),
-            shell_path,
-            spawn_cwd: cwd,
-            respawn_history,
-        },
-    );
-
     // Reset any stale hub state for this tab id before wiring the new
     // session. spawn_pty runs when try_reattach returned NotFound or
     // Expired — for Expired, the previous session left a TabState with
@@ -617,10 +621,28 @@ pub fn spawn_pty(
     // remote-resume sequence math once remote subscribers exist.
     //
     // close_tab is a no-op for the NotFound case, so this is safe to
-    // run unconditionally.
+    // run unconditionally. Runs before the PtyMap insert so the Local
+    // subscriber id is known by the time the handle is built; no reader
+    // thread exists yet, so nothing can broadcast into the gap.
     hub.close_tab(&tab_id);
-    hub.ensure_tab(&tab_id, 80, 24);
-    hub.subscribe_local(&tab_id, channel.clone());
+    hub.ensure_tab(&tab_id, viewport.cols, viewport.rows);
+    let local_sub_id = hub.subscribe_local(&tab_id, channel.clone());
+
+    pty_map.lock().unwrap().insert(
+        tab_id.clone(),
+        PtyHandle {
+            master: pair.master,
+            writer,
+            child,
+            reader_alive: reader_alive.clone(),
+            channel: channel.clone(),
+            local_sub_id,
+            closing: closing.clone(),
+            shell_path,
+            spawn_cwd: cwd,
+            respawn_history,
+        },
+    );
 
     spawn_reader_thread(
         ReaderCtx {

@@ -17,7 +17,7 @@ use agent_terminal_lib::pairing::{PairedTokens, PairingWindow};
 use agent_terminal_lib::projects_cache::ProjectsCache;
 use agent_terminal_lib::protocol::{ClientFrame, PairingStartBody, RegisterPushBody, ServerFrame};
 use agent_terminal_lib::pty_manager::PtyMap;
-use agent_terminal_lib::stream_hub::StreamHub;
+use agent_terminal_lib::stream_hub::{NoopViewportSink, StreamHub};
 use agent_terminal_lib::wss_server::{self, PairedConnMap, ServerState};
 use agent_terminal_lib::ModEngineHandle;
 
@@ -58,7 +58,7 @@ async fn spawn_server() -> (
     let paired_conns = Arc::new(PairedConnMap::new());
 
     let state = Arc::new(ServerState {
-        hub: StreamHub::new(None),
+        hub: StreamHub::new(None, Arc::new(NoopViewportSink)),
         auth,
         projects_cache: Arc::new(ProjectsCache::new()),
         pty_map: Arc::new(Mutex::new(HashMap::new())) as PtyMap,

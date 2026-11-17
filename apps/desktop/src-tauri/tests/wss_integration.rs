@@ -16,7 +16,7 @@ use agent_terminal_lib::ModEngineHandle;
 use agent_terminal_lib::projects_cache::ProjectsCache;
 use agent_terminal_lib::protocol::{ClientFrame, ServerFrame};
 use agent_terminal_lib::pty_manager::PtyMap;
-use agent_terminal_lib::stream_hub::StreamHub;
+use agent_terminal_lib::stream_hub::{NoopViewportSink, StreamHub};
 use agent_terminal_lib::wss_server::{self, ServerState};
 
 use futures_util::{SinkExt, StreamExt};
@@ -48,7 +48,7 @@ async fn spawn_server(token: &str) -> (SocketAddr, Arc<ServerState>) {
         addr,
     ));
 
-    let hub = StreamHub::new(None);
+    let hub = StreamHub::new(None, Arc::new(NoopViewportSink));
     let pty_map: PtyMap = Arc::new(Mutex::new(HashMap::new()));
     // Tests exercise the projects push shape with an empty cache. The
     // sync_projects_to_wss path (React → cache) is unit-tested in

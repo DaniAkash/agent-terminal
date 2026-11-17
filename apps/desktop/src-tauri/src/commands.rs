@@ -5,8 +5,7 @@ use crate::projects_cache::{ProjectsCache, StoredProject};
 use crate::protocol::ServerFrame;
 use crate::wss_server::{MobileOpInboxes, PairedConnMap};
 use crate::pty_manager::{spawn_pty, try_reattach, PtyDataPayload, PtyMap, ReattachResult};
-use crate::stream_hub::StreamHub;
-use portable_pty::PtySize;
+use crate::stream_hub::{StreamHub, Viewport};
 use serde::Serialize;
 use std::io::Write;
 use std::sync::Arc;
@@ -113,30 +112,25 @@ pub async fn write_pty(
     Ok(())
 }
 
+/// The desktop webview declares the grid it is painting into. It no longer
+/// writes the PTY's winsize: the hub arbitrates between every attached
+/// client and applies the result.
 #[tauri::command]
 pub async fn resize_pty(
     pty_map: State<'_, PtyMap>,
-    mod_engine: State<'_, ModEngine>,
     hub: State<'_, Arc<StreamHub>>,
     tab_id: String,
     cols: u16,
     rows: u16,
 ) -> Result<(), String> {
-    {
+    let sub_id = {
         let map = pty_map.lock().unwrap();
-        if let Some(handle) = map.get(&tab_id) {
-            handle
-                .master
-                .resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
-                .map_err(|e| e.to_string())?;
-        } else {
-            return Ok(()); // Tab already closed — no-op, not an error.
+        match map.get(&tab_id) {
+            Some(handle) => handle.local_sub_id,
+            None => return Ok(()), // Tab already closed — no-op, not an error.
         }
-    } // Lock released before dispatching to MOD engine.
-    mod_engine.handle().on_resize(&tab_id, cols, rows);
-    // Keep the sidecar's shadow xterm in sync so its future serialize
-    // payload reflects the right viewport dimensions. Fire-and-forget.
-    hub.resize_tab(&tab_id, cols, rows);
+    }; // Lock released before the hub may reach back into the PtyMap.
+    hub.declare_viewport(&tab_id, sub_id, Viewport { cols, rows });
     Ok(())
 }
 
