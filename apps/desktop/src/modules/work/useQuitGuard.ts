@@ -6,10 +6,7 @@ import { $projects } from '@/modules/stores/$projects'
 import { $tabMeta } from '@/modules/stores/$tabMeta'
 import { requestInterrupt } from '@/modules/work/$interrupt'
 import { collectActiveWork } from '@/modules/work/active-work'
-import {
-  handleCloseRequest,
-  quitNeedsConfirmation,
-} from '@/modules/work/close-guard'
+import { handleCloseRequest } from '@/modules/work/close-guard'
 import { quitApp } from '@/modules/work/quit-app'
 
 /** Emitted by the Rust side for a quit it has held back. */
@@ -29,9 +26,8 @@ function hasActiveWork(): boolean {
  * Cmd+Q, the menubar Quit, the dock and the tray terminate the application
  * instead and never reach that event at all, so Rust holds those back
  * and hands them here; nothing closes on that path unless this calls
- * `exit`, including when there is no work to protect. The tray marks its
- * request for confirmation, because it is the one route whose window the
- * user cannot see.
+ * `exit`. Confirmation depends on there being live work to lose, not on
+ * which route asked.
  */
 export function useQuitGuard(): void {
   // Two external event sources that have to outlive every render, which
@@ -55,8 +51,12 @@ export function useQuitGuard(): void {
       })
       .then(keep)
 
-    void listen(QUIT_REQUESTED, ({ payload }) => {
-      if (!quitNeedsConfirmation(payload) && !hasActiveWork()) {
+    void listen(QUIT_REQUESTED, () => {
+      // Nothing is running, so there is nothing to confirm. Asking here
+      // produces a dialog about work that does not exist, and the route
+      // the quit arrived from does not change that: every route that
+      // holds a quit back already shows the window before emitting.
+      if (!hasActiveWork()) {
         void quitApp().catch(() => requestInterrupt({ kind: 'quit' }))
         return
       }

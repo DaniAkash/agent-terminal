@@ -214,13 +214,6 @@ impl stream_hub::ViewportSink for PtyViewportSink {
     }
 }
 
-/// Asked for by a quit the backend is holding back. `confirm` marks the
-/// routes whose window the user cannot see, where the frontend's
-/// nothing-is-running shortcut would quit without ever showing itself.
-#[derive(Clone, serde::Serialize)]
-struct QuitRequest {
-    confirm: bool,
-}
 
 /// Bring the main window back into view. The close button now hides it, so
 /// every route that wants the user's attention has to say so.
@@ -263,8 +256,12 @@ fn install_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error + Send
         .on_menu_event(|app, event| match event.id().as_ref() {
             "tray-show" => show_main_window(app),
             "tray-quit" => {
+                // Showing the window is what this route owed the user,
+                // and it is done above. Whether to ask before quitting is
+                // the frontend's call, and it depends on there being work
+                // to lose rather than on which menu item was clicked.
                 show_main_window(app);
-                let _ = app.emit("app://quit-requested", QuitRequest { confirm: true });
+                let _ = app.emit("app://quit-requested", ());
             }
             _ => {}
         });
@@ -799,10 +796,7 @@ pub fn run() {
                     // away rather than ending the session. A confirmation
                     // dialog nobody can see is the whole trap here.
                     show_main_window(app);
-                    let _ = app.emit(
-                        "app://quit-requested",
-                        QuitRequest { confirm: false },
-                    );
+                    let _ = app.emit("app://quit-requested", ());
                 }
                 // Clicking the dock icon with every window hidden. Without
                 // this the only way back in would be the tray.

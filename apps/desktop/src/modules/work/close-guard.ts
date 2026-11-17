@@ -38,22 +38,3 @@ export function handleCloseRequest(
     void actions.quit().catch(actions.confirmQuit)
   }
 }
-
-/**
- * Whether a quit the backend held back must be confirmed even with nothing
- * running.
- *
- * Quit from the tray always asks, because the window it would close is one
- * the user cannot see: the usual "nothing is running, just go" shortcut
- * would make the menu item a one-click way to kill a session they had only
- * put away. Cmd+Q, the dock and the app menu keep that shortcut and send
- * no flag.
- */
-export function quitNeedsConfirmation(payload: unknown): boolean {
-  return (
-    typeof payload === 'object' &&
-    payload !== null &&
-    'confirm' in payload &&
-    (payload as { confirm: unknown }).confirm === true
-  )
-}

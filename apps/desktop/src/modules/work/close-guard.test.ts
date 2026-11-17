@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from 'bun:test'
-import { handleCloseRequest, quitNeedsConfirmation } from './close-guard'
+import { handleCloseRequest } from './close-guard'
 
 function actionSet() {
   return {
@@ -60,21 +60,5 @@ describe('window close guard', () => {
     await Promise.resolve()
     expect(actions.preventClose).toHaveBeenCalledTimes(1)
     expect(actions.confirmQuit).toHaveBeenCalledTimes(1)
-  })
-})
-
-describe('held-back quit payload', () => {
-  test('a confirm flag demands confirmation', () => {
-    expect(quitNeedsConfirmation({ confirm: true })).toBe(true)
-  })
-
-  test('everything else keeps the idle fast path', () => {
-    expect(quitNeedsConfirmation({ confirm: false })).toBe(false)
-    expect(quitNeedsConfirmation(null)).toBe(false)
-    expect(quitNeedsConfirmation(undefined)).toBe(false)
-    expect(quitNeedsConfirmation({})).toBe(false)
-    // Truthy is not true: a payload shape nobody meant must not start
-    // prompting on every Cmd+Q.
-    expect(quitNeedsConfirmation({ confirm: 'yes' })).toBe(false)
   })
 })
