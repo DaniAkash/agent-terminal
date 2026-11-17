@@ -5,6 +5,7 @@ import { saveDeviceToSecureStore } from '@/modules/stores/$devices'
 import { PinnedWebSocket } from '../../../modules/pinned-websocket'
 import {
   buildPairingAttemptUrls,
+  pairingUrlHost,
   parsePairingCompleteFrame,
 } from './pair.helpers'
 import type { PairingQrPayload } from './pair.types'
@@ -47,9 +48,15 @@ export async function completePairing(
         port: qr.port,
         fingerprint: qr.fingerprint,
         deviceHint: qr.device_hint,
-        lastIp: qr.ips[0] ?? null,
+        // Seed the reconnect cache with the endpoint that just worked,
+        // not the first enumerated address, which this phone may not
+        // be able to reach at all.
+        lastIp: pairingUrlHost(url) ?? qr.ips[0] ?? null,
         lastPort: qr.port,
         ...(qr.host === undefined ? {} : { host: qr.host }),
+        ...(qr.tailscale_host === undefined
+          ? {}
+          : { tailscaleHost: qr.tailscale_host }),
       }
       await saveDeviceToSecureStore(record)
       console.log(`[pair] success via ${maskUrl(url)}`)

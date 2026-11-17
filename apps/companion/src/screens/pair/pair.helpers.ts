@@ -13,12 +13,22 @@ import type { PairingQrPayload } from './pair.types'
 export function buildPairingAttemptUrls(qr: PairingQrPayload): string[] {
   const urls: string[] = []
   const hosts: string[] = []
+  // Tailscale MagicDNS and IPs connect directly across mesh
+  if (qr.tailscale_host) hosts.push(qr.tailscale_host)
   if (qr.host) hosts.push(qr.host)
   for (const ip of qr.ips) hosts.push(ip)
   for (const host of hosts) {
     urls.push(`wss://${host}:${qr.port}/stream`)
   }
   return urls
+}
+
+/**
+ * Host part of a `wss://<host>:<port>/stream` pairing URL, as built by
+ * {@link buildPairingAttemptUrls}. Null when the URL has another shape.
+ */
+export function pairingUrlHost(url: string): string | null {
+  return /^wss:\/\/(.+):\d+\/stream$/.exec(url)?.[1] ?? null
 }
 
 /**
@@ -86,6 +96,8 @@ function isPairingPayload(value: unknown): value is PairingQrPayload {
   if (!Array.isArray(v.ips)) return false
   if (!v.ips.every((ip): ip is string => typeof ip === 'string')) return false
   if (v.host !== undefined && typeof v.host !== 'string') return false
+  if (v.tailscale_host !== undefined && typeof v.tailscale_host !== 'string')
+    return false
   return true
 }
 

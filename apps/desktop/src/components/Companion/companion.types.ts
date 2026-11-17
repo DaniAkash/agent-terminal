@@ -10,7 +10,9 @@ export interface PairingQrPayload {
   v: number
   /** `.local` mDNS hostname; absent when hostname resolution failed. */
   host?: string
-  /** Every RFC 1918 IPv4 the desktop is currently bound to. */
+  /** Tailscale MagicDNS FQDN when present, e.g. "desk.tailnet.ts.net". */
+  tailscale_host?: string
+  /** Every RFC 1918 or Tailscale IPv4 the desktop is currently bound to. */
   ips: string[]
   /** Currently bound WSS port (one of 47823 / 28617 / 39482). */
   port: number

@@ -46,6 +46,16 @@ impl TlsMaterial {
     /// by the caller since it depends on which interface the user's
     /// desktop happens to be on.
     pub fn load_or_generate(dir: &Path, subject_alt_names: Vec<String>) -> Result<Self> {
+        Self::load_or_generate_with(dir, || subject_alt_names)
+    }
+
+    /// Like [`Self::load_or_generate`], but only builds the SAN list
+    /// when a new cert is generated. SAN discovery shells out to
+    /// `tailscale status`, which is wasted work when the cert exists.
+    pub fn load_or_generate_with(
+        dir: &Path,
+        subject_alt_names: impl FnOnce() -> Vec<String>,
+    ) -> Result<Self> {
         fs::create_dir_all(dir).with_context(|| format!("mkdir {}", dir.display()))?;
         let cert_path = dir.join("cert.pem");
         let key_path = dir.join("key.pem");
@@ -58,7 +68,7 @@ impl TlsMaterial {
                     .with_context(|| format!("read {}", key_path.display()))?,
             )
         } else {
-            let CertifiedKey { cert, signing_key } = generate_simple_self_signed(subject_alt_names)
+            let CertifiedKey { cert, signing_key } = generate_simple_self_signed(subject_alt_names())
                 .context("rcgen generate_simple_self_signed")?;
             let cert_pem = cert.pem();
             let key_pem = signing_key.serialize_pem();

@@ -10,21 +10,25 @@ import type { DeviceRecord } from '@/modules/stores/$devices'
  * The ladder rungs:
  *
  * 1. **Cached IP + cached port** — steady-state fast path.
- * 2. **`.local` + cached port** — handles a same-LAN IP change
- *    (DHCP renewal, network switch). System resolver on both iOS
- *    and Android handles mDNS `.local` transparently, so no
+ * 2. **Named hosts + cached port** — Tailscale MagicDNS first (works
+ *    off-LAN over the mesh), then `.local` (handles a same-LAN IP
+ *    change: DHCP renewal, network switch). System resolver on both
+ *    iOS and Android handles mDNS `.local` transparently, so no
  *    dev-client zeroconf plugin is required.
- * 3. **`.local` + each of the three standard ports** — handles a
+ * 3. **Named hosts + each of the three standard ports** — handles a
  *    desktop reboot that landed on a different port from the trio.
- *    Skips the port already tried at rung 2 so we don't burn a
- *    duplicate attempt.
+ *    Port by port, both names per port, so a dead tailnet path costs a
+ *    same-LAN phone one extra probe per port, not three up front.
+ *    `push` dedupes, so the port already tried at rung 2 is skipped.
  * 4. **QR-known IPs + each standard port** — belt-and-suspenders
  *    for the case where the phone's mDNS resolution is broken
  *    (some carriers block .local, some corporate WiFi disables
  *    mDNS entirely). Falls back to whatever IPs the QR carried.
  *
- * Callers apply a 2s per-attempt timeout so the whole ladder
- * finishes in ~10s worst case even when everything fails.
+ * Callers apply a 2s per-attempt timeout and try the candidates one at
+ * a time, so a ladder where everything fails takes 2s per candidate:
+ * about 24s for a desktop with a Tailscale name, a `.local` name and
+ * two addresses (12 candidates).
  */
 
 /** Standardised WSS port trio. Must match Rust `net::STANDARD_PORTS`. */
@@ -38,7 +42,7 @@ export function resolveWssCandidates(device: DeviceRecord): string[] {
   // Every candidate is wss://. PinnedWebSocket rejects other schemes,
   // so a ws:// entry here would never open; symmetric with
   // buildPairingAttemptUrls in pair.helpers.ts.
-  const push = (host: string, port: number) => {
+  const push = (host: string | undefined, port: number) => {
     if (!host) return
     const url = `wss://${host}:${port}/stream`
     if (seen.has(url)) return
@@ -47,28 +51,16 @@ export function resolveWssCandidates(device: DeviceRecord): string[] {
   }
 
   const cachedPort = device.lastPort ?? device.port
-  const cachedIp = device.lastIp ?? device.ips[0]
+  const namedHosts = [device.tailscaleHost, device.host]
 
   // Rung 1: cached IP + cached port.
-  if (cachedIp) push(cachedIp, cachedPort)
-
-  // Rung 2: .local + cached port.
-  if (device.host) push(device.host, cachedPort)
-
-  // Rung 3: .local + each standard port (excluding cachedPort).
-  if (device.host) {
-    for (const p of STANDARD_PORTS) {
-      if (p === cachedPort) continue
-      push(device.host, p)
-    }
-  }
-
+  push(device.lastIp ?? device.ips[0], cachedPort)
+  // Rung 2: named hosts + cached port.
+  for (const host of namedHosts) push(host, cachedPort)
+  // Rung 3: named hosts + each standard port.
+  for (const p of STANDARD_PORTS) for (const host of namedHosts) push(host, p)
   // Rung 4: QR-known IPs + each standard port.
-  for (const ip of device.ips) {
-    for (const p of STANDARD_PORTS) {
-      push(ip, p)
-    }
-  }
+  for (const ip of device.ips) for (const p of STANDARD_PORTS) push(ip, p)
 
   return candidates
 }
@@ -83,12 +75,24 @@ export function resolveWssCandidates(device: DeviceRecord): string[] {
 export function classifyRung(
   device: DeviceRecord,
   resolvedUrl: string,
-): 'cached' | 'local' | 'standard-port' | 'ip-fallback' | 'unknown' {
+):
+  | 'cached'
+  | 'tailscale'
+  | 'local'
+  | 'standard-port'
+  | 'ip-fallback'
+  | 'unknown' {
   const candidates = resolveWssCandidates(device)
   const idx = candidates.indexOf(resolvedUrl)
   if (idx === -1) return 'unknown'
   if (idx === 0) return 'cached'
   const cachedPort = device.lastPort ?? device.port
+  if (
+    device.tailscaleHost &&
+    resolvedUrl.includes(`${device.tailscaleHost}:`)
+  ) {
+    return 'tailscale'
+  }
   const usesLocal = device.host && resolvedUrl.includes(`${device.host}:`)
   if (usesLocal && resolvedUrl.includes(`:${cachedPort}/`)) return 'local'
   if (usesLocal) return 'standard-port'
