@@ -6,7 +6,10 @@ import { $projects } from '@/modules/stores/$projects'
 import { $tabMeta } from '@/modules/stores/$tabMeta'
 import { requestInterrupt } from '@/modules/work/$interrupt'
 import { collectActiveWork } from '@/modules/work/active-work'
-import { handleCloseRequest } from '@/modules/work/close-guard'
+import {
+  handleCloseRequest,
+  quitNeedsConfirmation,
+} from '@/modules/work/close-guard'
 import { quitApp } from '@/modules/work/quit-app'
 
 /** Emitted by the Rust side for a quit it has held back. */
@@ -20,12 +23,15 @@ function hasActiveWork(): boolean {
  * Hold the app open when leaving would kill live work.
  *
  * Two routes in, because macOS has two. Closing the window raises the
- * window's own close-requested event. On Linux, quit explicitly while the
- * webview is still alive rather than leaving an exit request without a listener.
- * Cmd+Q, the menubar Quit and the dock terminate the application
+ * window's own close-requested event, which hides the window everywhere
+ * but Linux. On Linux, quit explicitly while the webview is still alive
+ * rather than leaving an exit request without a listener.
+ * Cmd+Q, the menubar Quit, the dock and the tray terminate the application
  * instead and never reach that event at all, so Rust holds those back
  * and hands them here; nothing closes on that path unless this calls
- * `exit`, including when there is no work to protect.
+ * `exit`, including when there is no work to protect. The tray marks its
+ * request for confirmation, because it is the one route whose window the
+ * user cannot see.
  */
 export function useQuitGuard(): void {
   // Two external event sources that have to outlive every render, which
@@ -42,14 +48,15 @@ export function useQuitGuard(): void {
       .onCloseRequested((event) => {
         handleCloseRequest(isLinux, hasActiveWork(), {
           preventClose: () => event.preventDefault(),
+          hide: () => getCurrentWindow().hide(),
           confirmQuit: () => requestInterrupt({ kind: 'quit' }),
           quit: quitApp,
         })
       })
       .then(keep)
 
-    void listen(QUIT_REQUESTED, () => {
-      if (!hasActiveWork()) {
+    void listen(QUIT_REQUESTED, ({ payload }) => {
+      if (!quitNeedsConfirmation(payload) && !hasActiveWork()) {
         void quitApp().catch(() => requestInterrupt({ kind: 'quit' }))
         return
       }

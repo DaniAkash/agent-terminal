@@ -74,13 +74,13 @@ use mod_engine::{
 use notifications::NotificationService;
 use shell_integration::setup_shell_integration;
 use tauri::Manager;
-// macOS uses events for native menu actions and the application quit guard.
-#[cfg(target_os = "macos")]
+// The tray quit is handed to the frontend as an event, same as the native
+// menu actions and the application quit guard.
 use tauri::Emitter;
+use tauri::menu::{MenuBuilder, MenuItemBuilder};
 #[cfg(target_os = "macos")]
-use tauri::menu::{MenuBuilder, SubmenuBuilder};
-#[cfg(all(target_os = "macos", not(feature = "dev-instance")))]
-use tauri::menu::MenuItemBuilder;
+use tauri::menu::SubmenuBuilder;
+use tauri::tray::TrayIconBuilder;
 use auth_stub::AuthStub;
 use pairing::{PairedTokens, PairingWindow};
 use projects_cache::ProjectsCache;
@@ -214,6 +214,61 @@ impl stream_hub::ViewportSink for PtyViewportSink {
     }
 }
 
+/// Asked for by a quit the backend is holding back. `confirm` marks the
+/// routes whose window the user cannot see, where the frontend's
+/// nothing-is-running shortcut would quit without ever showing itself.
+#[derive(Clone, serde::Serialize)]
+struct QuitRequest {
+    confirm: bool,
+}
+
+/// Bring the main window back into view. The close button now hides it, so
+/// every route that wants the user's attention has to say so.
+fn show_main_window(app: &tauri::AppHandle) {
+    let Some(window) = app.get_webview_window("main") else {
+        eprintln!("[tray] cannot show: main window is missing");
+        return;
+    };
+    if let Err(error) = window.show() {
+        eprintln!("[tray] failed to show main window: {error}");
+    }
+    if let Err(error) = window.set_focus() {
+        eprintln!("[tray] failed to focus main window: {error}");
+    }
+}
+
+/// Menu-bar presence, so a window put away by its close button is still
+/// reachable.
+///
+/// Quit goes back out to the frontend rather than exiting here: it is the
+/// only action that can kill running agents, and the answer to "is anything
+/// running" lives in the webview. The window is shown first because a
+/// confirmation dialog drawn behind a hidden window asks nobody.
+fn install_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let show = MenuItemBuilder::with_id("tray-show", "Show Agent Terminal").build(app)?;
+    let quit = MenuItemBuilder::with_id("tray-quit", "Quit Agent Terminal…").build(app)?;
+    let menu = MenuBuilder::new(app).items(&[&show, &quit]).build()?;
+
+    let mut builder = TrayIconBuilder::with_id("main")
+        .menu(&menu)
+        .show_menu_on_left_click(true)
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "tray-show" => show_main_window(app),
+            "tray-quit" => {
+                show_main_window(app);
+                let _ = app.emit("app://quit-requested", QuitRequest { confirm: true });
+            }
+            _ => {}
+        });
+    // The bundle icon rather than a monochrome template image. A proper
+    // macOS template asset is a follow-up, not a reason to ship no tray.
+    if let Some(icon) = app.default_window_icon().cloned() {
+        builder = builder.icon(icon);
+    }
+    builder.build(app)?;
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let pty_map: PtyMap = Arc::new(Mutex::new(HashMap::new()));
@@ -281,6 +336,12 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             if let Err(e) = install_app_menu(app) {
                 eprintln!("[agent-terminal] menu setup failed: {e}");
+            }
+
+            // Without this the close button would put the window somewhere
+            // with no way back, so a failure here is logged loudly.
+            if let Err(e) = install_tray(app) {
+                eprintln!("[agent-terminal] tray setup failed: {e}");
             }
 
             // Forward the "Check for Updates…" menu click to the renderer
@@ -708,8 +769,22 @@ pub fn run() {
                         return;
                     }
                     api.prevent_exit();
-                    let _ = app.emit("app://quit-requested", ());
+                    // The window may be hidden: the close button puts it
+                    // away rather than ending the session. A confirmation
+                    // dialog nobody can see is the whole trap here.
+                    show_main_window(app);
+                    let _ = app.emit(
+                        "app://quit-requested",
+                        QuitRequest { confirm: false },
+                    );
                 }
+                // Clicking the dock icon with every window hidden. Without
+                // this the only way back in would be the tray.
+                #[cfg(target_os = "macos")]
+                tauri::RunEvent::Reopen {
+                    has_visible_windows: false,
+                    ..
+                } => show_main_window(app),
                 tauri::RunEvent::Exit => {
                     app.state::<usage::UsageService>().stop();
                 }
