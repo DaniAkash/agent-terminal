@@ -2,7 +2,12 @@ import { deriveTabVisual } from '@agent-terminal/core-ui'
 import { useStore } from '@nanostores/react'
 import { tabVisualInput } from '@/components/agent.helpers'
 import { DangerBadge } from '@/components/DangerBadge'
+import { MobileSessionIndicator } from '@/components/MobileSessionIndicator'
 import { TabStatusIcon } from '@/components/TabStatusIcon'
+import {
+  $activeMobileTabs,
+  getTabMobileDevices,
+} from '@/modules/stores/$mobileActivity'
 import { $tabMeta } from '@/modules/stores/$tabMeta'
 
 /**
@@ -50,6 +55,8 @@ export function TabChip({
   active = false,
 }: Props) {
   const allMeta = useStore($tabMeta)
+  const activeMobileTabs = useStore($activeMobileTabs)
+  const mobileDevices = getTabMobileDevices(activeMobileTabs, tabId)
   const visual = deriveTabVisual(
     tabVisualInput(allMeta[tabId], active),
     Date.now(),
@@ -60,6 +67,10 @@ export function TabChip({
     // DangerBadge and TabStatusIcon (8px). Invisible for surfaces that
     // opt out of DangerBadge (only one child renders, gap does not apply).
     <span className="inline-flex items-center gap-2">
+      <MobileSessionIndicator
+        devices={mobileDevices}
+        side={density === 'medium' ? 'bottom' : 'right'}
+      />
       {showDanger && visual.showDanger && <DangerBadge size={11} />}
       <TabStatusIcon visual={visual} size={SIZE_BY_DENSITY[density]} />
     </span>
