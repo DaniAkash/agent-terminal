@@ -27,6 +27,7 @@ import {
   listenForPairingComplete,
   revokeDevice,
 } from './companion.data'
+import { isCgnatIpv4 } from './companion.helpers'
 import type { PairedDevice } from './companion.types'
 
 /**
@@ -196,11 +197,25 @@ function PairingSection({ payload, error, loading }: PairingSectionProps) {
     )
   }
   const qrValue = JSON.stringify(payload)
+  const isTailscaleActive =
+    Boolean(payload.tailscale_host) || payload.ips.some(isCgnatIpv4)
+
   return (
     <div className="flex flex-col items-center gap-3">
       <div className="border-border/60 rounded-md border bg-white p-3">
         <QRCodeSVG value={qrValue} size={192} level="M" />
       </div>
+      {isTailscaleActive && (
+        <div className="flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+          <span className="size-1.5 rounded-full bg-emerald-500" />
+          <span>Tailscale mesh active</span>
+          {payload.tailscale_host && (
+            <span className="text-muted-foreground text-[10px]">
+              ({payload.tailscale_host})
+            </span>
+          )}
+        </div>
+      )}
       <div className="w-full space-y-1 text-center">
         <div className="text-muted-foreground text-[11px]">
           Fingerprint (verify matches on your phone)

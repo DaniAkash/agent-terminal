@@ -6,6 +6,7 @@
 export interface PairingQrPayload {
   v: number
   host?: string
+  tailscale_host?: string
   ips: string[]
   port: number
   fingerprint: string

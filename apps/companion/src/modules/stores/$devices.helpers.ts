@@ -20,6 +20,8 @@ export function isDeviceRecord(v: unknown): v is DeviceRecord {
   if (typeof r.fingerprint !== 'string') return false
   if (typeof r.deviceHint !== 'string') return false
   if (r.host !== undefined && typeof r.host !== 'string') return false
+  if (r.tailscaleHost !== undefined && typeof r.tailscaleHost !== 'string')
+    return false
   if (!Array.isArray(r.ips)) return false
   if (!r.ips.every((ip) => typeof ip === 'string')) return false
   if (r.lastIp !== null && typeof r.lastIp !== 'string') return false

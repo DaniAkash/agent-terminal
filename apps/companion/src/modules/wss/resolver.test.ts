@@ -50,6 +50,17 @@ describe('resolveWssCandidates', () => {
     expect(candidates.every((c) => c.startsWith('wss://'))).toBe(true)
   })
 
+  it('includes Tailscale MagicDNS candidates when available', () => {
+    const candidates = resolveWssCandidates(
+      fakeDevice({
+        tailscaleHost: 'desk.tailnet.ts.net',
+      }),
+    )
+    expect(candidates).toContain('wss://desk.tailnet.ts.net:47823/stream')
+    expect(candidates).toContain('wss://desk.tailnet.ts.net:28617/stream')
+    expect(candidates).toContain('wss://desk.tailnet.ts.net:39482/stream')
+  })
+
   it('deduplicates URLs across rungs', () => {
     const candidates = resolveWssCandidates(fakeDevice())
     const unique = new Set(candidates)

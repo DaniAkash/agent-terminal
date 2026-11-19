@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test'
 import {
   buildPairingAttemptUrls,
   formatFingerprintForVisualCompare,
+  pairingUrlHost,
   parsePairingCompleteFrame,
   parsePairingQr,
   shouldOfferPush,
@@ -173,5 +174,20 @@ describe('shouldOfferPush', () => {
     expect(
       shouldOfferPush({ support: 'unsupported', permission: 'undetermined' }),
     ).toBe(false)
+  })
+})
+
+describe('pairingUrlHost', () => {
+  it('returns the host of a pairing attempt URL', () => {
+    expect(pairingUrlHost('wss://192.168.1.42:47823/stream')).toBe(
+      '192.168.1.42',
+    )
+    expect(pairingUrlHost('wss://mac.tail1234.ts.net:28617/stream')).toBe(
+      'mac.tail1234.ts.net',
+    )
+  })
+
+  it('returns null for any other shape', () => {
+    expect(pairingUrlHost('https://example.com/')).toBeNull()
   })
 })

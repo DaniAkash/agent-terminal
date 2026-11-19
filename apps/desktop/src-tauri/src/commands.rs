@@ -349,6 +349,16 @@ pub async fn list_projects() -> Result<serde_json::Value, String> {
 /// directly. Use [`BoundNet::current`]: a machine that changes network
 /// keeps these stale, and a QR built from them advertises an address
 /// nothing answers on.
+/// The endpoints to put in a pairing QR, from [`BoundNet::current`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CurrentNet {
+    /// `.local` mDNS name.
+    pub local_host: Option<String>,
+    /// Tailscale MagicDNS name.
+    pub tailscale_host: Option<String>,
+    pub ips: Vec<String>,
+}
+
 #[derive(Debug, Clone)]
 pub struct BoundNet {
     pub hostname: Option<String>,
@@ -370,11 +380,22 @@ impl BoundNet {
     /// Enumerating interfaces is cheap and this runs once per pairing QR,
     /// so there is no reason to cache it. Falls back to the startup values
     /// if enumeration comes back empty, which beats handing out nothing.
-    pub fn current(&self) -> (Option<String>, Vec<String>) {
-        self.resolve(
-            net::local_hostname(),
-            net::lan_ipv4s().iter().map(ToString::to_string).collect(),
-        )
+    ///
+    /// The lookup asks the Tailscale CLI, a child process, so it runs on
+    /// the blocking pool and never stalls an async worker.
+    pub async fn current(&self) -> CurrentNet {
+        let live = tokio::task::spawn_blocking(net::advertised)
+            .await
+            .unwrap_or_default();
+        let (local_host, ips) = self.resolve(
+            live.local_host,
+            live.ips.iter().map(ToString::to_string).collect(),
+        );
+        CurrentNet {
+            local_host,
+            tailscale_host: live.tailscale_host,
+            ips,
+        }
     }
 
     /// Choose between what the machine reports now and the startup
@@ -411,8 +432,12 @@ pub struct PairingQrPayload {
     /// mobile clients fall back to IP-only in that case.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub host: Option<String>,
-    /// Every RFC 1918 IPv4 the desktop is currently bound to. Mobile
-    /// stores the first one as its fast-path address.
+    /// MagicDNS FQDN when Tailscale is connected and MagicDNS is on,
+    /// e.g. `desk.tail1234.ts.net`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tailscale_host: Option<String>,
+    /// Every RFC 1918 IPv4 the desktop is bound to, then its tailnet
+    /// IPv4s when Tailscale is connected.
     pub ips: Vec<String>,
     /// Currently-bound WSS port. Mobile stores it and iterates through
     /// the standardised trio on failure.
@@ -447,16 +472,16 @@ pub async fn open_pairing_window(
         .clone()
         .ok_or_else(|| "TLS fingerprint unavailable; cannot pair".to_string())?;
     let pairing_token = window.open();
-    let (hostname, ips) = net.current();
-    let device_hint = derive_device_hint(&hostname);
+    let current = net.current().await;
     Ok(PairingQrPayload {
         v: 1,
-        host: hostname,
-        ips,
+        device_hint: derive_device_hint(&current.local_host),
+        host: current.local_host,
+        tailscale_host: current.tailscale_host,
+        ips: current.ips,
         port: net.port,
         fingerprint: fp,
         pairing_token,
-        device_hint,
     })
 }
 
@@ -494,12 +519,13 @@ pub async fn get_pairing_qr_payload(
     let Some(fp) = fingerprint.0.clone() else {
         return Ok(None);
     };
-    let (hostname, ips) = net.current();
+    let current = net.current().await;
     Ok(Some(PairingQrPayload {
         v: 1,
-        device_hint: derive_device_hint(&hostname),
-        host: hostname,
-        ips,
+        device_hint: derive_device_hint(&current.local_host),
+        host: current.local_host,
+        tailscale_host: current.tailscale_host,
+        ips: current.ips,
         port: net.port,
         fingerprint: fp,
         pairing_token: token,
