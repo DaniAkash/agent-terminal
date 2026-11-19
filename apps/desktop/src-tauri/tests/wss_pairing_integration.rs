@@ -22,6 +22,7 @@ use agent_terminal_lib::wss_server::{self, PairedConnMap, ServerState};
 use agent_terminal_lib::ModEngineHandle;
 
 use futures_util::{SinkExt, StreamExt};
+use agent_terminal_lib::pairing::PairingApprovals;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
@@ -33,7 +34,21 @@ use tokio_tungstenite::tungstenite::Message;
 /// paired_tokens + paired_conns wired in. Returns the addr for the test
 /// client and the shared Arcs so tests can drive the pairing window +
 /// inspect the paired-devices map directly.
+///
+/// Pairing requests are approved at once, standing in for the desktop
+/// user. Tests of the approval gate itself use [`spawn_server_with`].
 async fn spawn_server() -> (
+    SocketAddr,
+    Arc<PairingWindow>,
+    Arc<PairedTokens>,
+    Arc<PairedConnMap>,
+) {
+    spawn_server_with(Arc::new(PairingApprovals::auto_approving())).await
+}
+
+async fn spawn_server_with(
+    pairing_approvals: Arc<PairingApprovals>,
+) -> (
     SocketAddr,
     Arc<PairingWindow>,
     Arc<PairedTokens>,
@@ -69,6 +84,7 @@ async fn spawn_server() -> (
         paired_tokens: Arc::clone(&paired_tokens),
         pairing_window: Arc::clone(&pairing_window),
         paired_conns: Arc::clone(&paired_conns),
+        pairing_approvals,
         push: None,
     });
 
@@ -550,4 +566,187 @@ async fn an_out_of_range_delay_is_clamped_not_rejected() {
     let stored = paired.get(&device_id).expect("device");
     assert_eq!(stored.push_delay_seconds, agent_terminal_lib::push::DELAY_MAX_SECONDS);
     assert!(stored.push_redact_names);
+}
+
+// ---------- Desktop approval gate ----------
+
+/// Connect, present the pairing token and send `PairingStart`, leaving
+/// the socket waiting on the desktop's answer. Returns the socket and
+/// the id of the approval request the server raised.
+async fn start_pairing(
+    addr: SocketAddr,
+    pairing_token: &str,
+    approvals: &PairingApprovals,
+) -> (
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
+    String,
+) {
+    let mut ws = connect(addr).await;
+    send_frame(
+        &mut ws,
+        &ClientFrame::Auth {
+            token: format!("PAIRING:{pairing_token}"),
+        },
+    )
+    .await;
+    match recv_frame(&mut ws).await {
+        ServerFrame::AuthOk { .. } => {}
+        other => panic!("expected AuthOk during pairing, got {other:?}"),
+    }
+    send_frame(
+        &mut ws,
+        &ClientFrame::PairingStart {
+            op_id: 1,
+            body: PairingStartBody {
+                device_name: "Phone".into(),
+                platform: "android".into(),
+                model: None,
+            },
+        },
+    )
+    .await;
+    let request_id = wait_for_request(approvals).await;
+    (ws, request_id)
+}
+
+async fn wait_for_request(approvals: &PairingApprovals) -> String {
+    for _ in 0..400 {
+        if let Some(id) = approvals.pending_ids().pop() {
+            return id;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    panic!("server never raised an approval request");
+}
+
+async fn wait_until_no_request(approvals: &PairingApprovals) {
+    for _ in 0..400 {
+        if approvals.pending_ids().is_empty() {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    panic!("approval request was never withdrawn");
+}
+
+fn expect_refusal(frame: ServerFrame, code: &str) {
+    match frame {
+        ServerFrame::AuthFail { reason } => {
+            assert!(reason.starts_with(code), "expected {code}, got {reason:?}")
+        }
+        other => panic!("expected AuthFail {code}, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn pairing_waits_for_desktop_approval() {
+    let approvals = Arc::new(PairingApprovals::new());
+    let (addr, window, paired, _conns) = spawn_server_with(Arc::clone(&approvals)).await;
+    let (mut ws, request_id) = start_pairing(addr, &window.open(), &approvals).await;
+
+    assert!(paired.list().is_empty(), "nothing is stored before approval");
+    assert!(approvals.respond(&request_id, true));
+    match recv_frame(&mut ws).await {
+        ServerFrame::PairingComplete { .. } => {}
+        other => panic!("expected PairingComplete, got {other:?}"),
+    }
+    assert_eq!(paired.list().len(), 1);
+}
+
+#[tokio::test]
+async fn a_declined_request_is_refused_and_stores_nothing() {
+    let approvals = Arc::new(PairingApprovals::new());
+    let (addr, window, paired, _conns) = spawn_server_with(Arc::clone(&approvals)).await;
+    let (mut ws, request_id) = start_pairing(addr, &window.open(), &approvals).await;
+
+    assert!(approvals.respond(&request_id, false));
+    // The code tells the phone this is the desktop's final answer, so it
+    // must not try its next endpoint and prompt the user again.
+    expect_refusal(recv_frame(&mut ws).await, "pairing_declined");
+    assert!(paired.list().is_empty());
+}
+
+#[tokio::test]
+async fn closing_the_pairing_window_cancels_a_pending_request() {
+    let approvals = Arc::new(PairingApprovals::new());
+    let (addr, window, paired, _conns) = spawn_server_with(Arc::clone(&approvals)).await;
+    let (mut ws, request_id) = start_pairing(addr, &window.open(), &approvals).await;
+
+    // What `close_pairing_window` does when the user closes the dialog.
+    window.close();
+    approvals.cancel_all();
+
+    expect_refusal(recv_frame(&mut ws).await, "pairing_canceled");
+    assert!(!approvals.respond(&request_id, true), "nothing left to approve");
+    assert!(paired.list().is_empty());
+}
+
+#[tokio::test]
+async fn an_approval_does_not_outlive_its_pairing_window() {
+    let approvals = Arc::new(PairingApprovals::new());
+    let (addr, window, paired, _conns) = spawn_server_with(Arc::clone(&approvals)).await;
+    let (mut ws, request_id) = start_pairing(addr, &window.open(), &approvals).await;
+
+    // The window goes away but the request is still answered "yes".
+    window.close();
+    assert!(approvals.respond(&request_id, true));
+
+    expect_refusal(recv_frame(&mut ws).await, "pairing_canceled");
+    assert!(paired.list().is_empty());
+}
+
+#[tokio::test]
+async fn a_phone_that_gives_up_withdraws_its_request() {
+    let approvals = Arc::new(PairingApprovals::new());
+    let (addr, window, paired, _conns) = spawn_server_with(Arc::clone(&approvals)).await;
+    let (ws, request_id) = start_pairing(addr, &window.open(), &approvals).await;
+
+    drop(ws);
+    wait_until_no_request(&approvals).await;
+
+    // Approving now must not store a device whose token nobody received.
+    assert!(!approvals.respond(&request_id, true));
+    assert!(paired.list().is_empty());
+}
+
+#[tokio::test]
+async fn a_newer_request_supersedes_the_older_one() {
+    let approvals = Arc::new(PairingApprovals::new());
+    let (addr, window, paired, _conns) = spawn_server_with(Arc::clone(&approvals)).await;
+    let token = window.open();
+    let (mut first, first_id) = start_pairing(addr, &token, &approvals).await;
+
+    let mut second = connect(addr).await;
+    send_frame(
+        &mut second,
+        &ClientFrame::Auth {
+            token: format!("PAIRING:{token}"),
+        },
+    )
+    .await;
+    let _ = recv_frame(&mut second).await;
+    send_frame(
+        &mut second,
+        &ClientFrame::PairingStart {
+            op_id: 1,
+            body: PairingStartBody {
+                device_name: "Phone".into(),
+                platform: "android".into(),
+                model: None,
+            },
+        },
+    )
+    .await;
+
+    expect_refusal(recv_frame(&mut first).await, "pairing_canceled");
+    assert!(!approvals.respond(&first_id, true));
+
+    let second_id = wait_for_request(&approvals).await;
+    assert_ne!(second_id, first_id);
+    assert!(approvals.respond(&second_id, true));
+    match recv_frame(&mut second).await {
+        ServerFrame::PairingComplete { .. } => {}
+        other => panic!("expected PairingComplete, got {other:?}"),
+    }
+    assert_eq!(paired.list().len(), 1);
 }

@@ -1,5 +1,5 @@
 import { useStore } from '@nanostores/react'
-import { Smartphone, Tablet, XCircle } from 'lucide-react'
+import { Check, Smartphone, Tablet, X, XCircle } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import { useEffect, useState } from 'react'
 import {
@@ -23,10 +23,17 @@ import {
 } from '@/components/ui/dialog'
 import { $companion } from '@/modules/stores/$companion'
 import {
+  $pairingApproval,
+  APPROVAL_TIMEOUT_MS,
+  type PendingPairingApproval,
+  respondPairingApproval,
+} from '@/modules/stores/$pairingApproval'
+import {
   closeCompanionDialog,
   listenForPairingComplete,
   revokeDevice,
 } from './companion.data'
+import { addressLine, deviceLine, isCgnatIpv4 } from './companion.helpers'
 import type { PairedDevice } from './companion.types'
 
 /**
@@ -39,6 +46,7 @@ import type { PairedDevice } from './companion.types'
  */
 export function CompanionDialog() {
   const { open, payload, devices, error, loading } = useStore($companion)
+  const pending = useStore($pairingApproval)
   const [confirmRevokeId, setConfirmRevokeId] = useState<string | null>(null)
 
   useEffect(() => {
@@ -84,16 +92,28 @@ export function CompanionDialog() {
       >
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Pair a mobile device</DialogTitle>
+            <DialogTitle>
+              {pending
+                ? `${pending.deviceName} wants to pair`
+                : 'Pair a mobile device'}
+            </DialogTitle>
             <DialogDescription>
-              Scan the QR from Agent Terminal on your phone. Verify the
-              fingerprint matches on both sides before confirming.
+              {pending
+                ? 'Approve only if this is your phone and it shows the same fingerprint.'
+                : 'Scan the QR from Agent Terminal on your phone. Verify the fingerprint matches on both sides before confirming.'}
             </DialogDescription>
           </DialogHeader>
 
-          <PairingSection payload={payload} error={error} loading={loading} />
+          {pending ? (
+            <PendingApprovalView
+              pending={pending}
+              fingerprint={payload?.fingerprint}
+            />
+          ) : (
+            <PairingSection payload={payload} error={error} loading={loading} />
+          )}
 
-          <div className="border-border/60 mt-4 border-t pt-3">
+          <div className="border-border/60 mt-4 min-w-0 border-t pt-3">
             <div className="mb-2 flex items-center justify-between">
               <h3 className="text-muted-foreground text-[11px] font-semibold tracking-[0.16em] uppercase">
                 Paired Devices
@@ -173,6 +193,92 @@ export function CompanionDialog() {
   )
 }
 
+function PendingApprovalView({
+  pending,
+  fingerprint,
+}: {
+  pending: PendingPairingApproval
+  fingerprint: string | undefined
+}) {
+  const [now, setNow] = useState(Date.now)
+  useEffect(() => {
+    const interval = window.setInterval(() => setNow(Date.now()), 250)
+    return () => window.clearInterval(interval)
+  }, [])
+
+  const remainingMs = Math.max(0, pending.expiresAt - now)
+  const pct = Math.min(100, (remainingMs / APPROVAL_TIMEOUT_MS) * 100)
+  const remainingSec = Math.ceil(remainingMs / 1000)
+  const isTablet = /ipad|tablet/i.test(
+    `${pending.platform} ${pending.model ?? ''}`,
+  )
+  const DeviceIcon = isTablet ? Tablet : Smartphone
+  const address = addressLine(pending.peerIp)
+
+  return (
+    <div className="border-primary/30 bg-primary/5 flex flex-col gap-4 rounded-lg border p-5">
+      {/* The identity the phone sent and the address it came from: the
+          same name, model and route the phone shows on its waiting
+          sheet, so the person approving can match the two. */}
+      <div className="border-border/60 flex items-start gap-3 rounded-md border p-3">
+        <div className="bg-primary/15 text-primary flex size-10 shrink-0 items-center justify-center rounded-full">
+          <DeviceIcon className="size-5" />
+        </div>
+        <div className="min-w-0 space-y-0.5 text-left">
+          <div className="text-foreground text-[14px] font-semibold">
+            {pending.deviceName}
+          </div>
+          <div className="text-muted-foreground text-[12px]">
+            {deviceLine(pending.platform, pending.model)}
+          </div>
+          {address && (
+            <div className="text-muted-foreground text-[12px]">{address}</div>
+          )}
+          {fingerprint && (
+            <div className="text-muted-foreground font-mono text-[11px] break-all">
+              Fingerprint {fingerprint}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="w-full space-y-1.5">
+        <div className="bg-muted h-1.5 w-full overflow-hidden rounded-full">
+          <div
+            className="bg-primary h-full transition-[width] duration-200 ease-linear"
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+        <div className="text-muted-foreground text-[11px]">
+          {pending.responding
+            ? 'Completing handshake…'
+            : `${remainingSec} s left. The phone shows the same countdown.`}
+        </div>
+      </div>
+
+      <div className="flex w-full items-center justify-end gap-2.5">
+        <Button
+          variant="outline"
+          disabled={pending.responding}
+          className="border-destructive/40 text-destructive hover:bg-destructive/10 gap-1.5"
+          onClick={() => void respondPairingApproval(pending.requestId, false)}
+        >
+          <X className="size-4" />
+          Decline
+        </Button>
+        <Button
+          disabled={pending.responding}
+          className="gap-1.5"
+          onClick={() => void respondPairingApproval(pending.requestId, true)}
+        >
+          <Check className="size-4" />
+          Approve
+        </Button>
+      </div>
+    </div>
+  )
+}
+
 interface PairingSectionProps {
   payload: ReturnType<typeof useStore<typeof $companion>>['payload']
   error: string | null
@@ -196,11 +302,25 @@ function PairingSection({ payload, error, loading }: PairingSectionProps) {
     )
   }
   const qrValue = JSON.stringify(payload)
+  const isTailscaleActive =
+    Boolean(payload.tailscale_host) || payload.ips.some(isCgnatIpv4)
+
   return (
     <div className="flex flex-col items-center gap-3">
       <div className="border-border/60 rounded-md border bg-white p-3">
         <QRCodeSVG value={qrValue} size={192} level="M" />
       </div>
+      {isTailscaleActive && (
+        <div className="flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+          <span className="size-1.5 rounded-full bg-emerald-500" />
+          <span>Tailscale mesh active</span>
+          {payload.tailscale_host && (
+            <span className="text-muted-foreground text-[10px]">
+              ({payload.tailscale_host})
+            </span>
+          )}
+        </div>
+      )}
       <div className="w-full space-y-1 text-center">
         <div className="text-muted-foreground text-[11px]">
           Fingerprint (verify matches on your phone)
@@ -240,6 +360,7 @@ interface DeviceRowProps {
 
 function DeviceRow({ device, onRevoke }: DeviceRowProps) {
   const Icon = device.platform === 'android' ? Tablet : Smartphone
+  const address = addressLine(device.last_ip)
   return (
     <li className="hover:bg-accent/40 flex items-center gap-3 rounded-md px-2 py-2">
       <Icon size={18} className="text-muted-foreground shrink-0" />
@@ -248,9 +369,15 @@ function DeviceRow({ device, onRevoke }: DeviceRowProps) {
           {device.device_name}
         </div>
         <div className="text-muted-foreground truncate text-[11px]">
-          {`Paired ${relativeTime(device.paired_at)} · Last seen ${relativeTime(
-            device.last_seen,
-          )}`}
+          {deviceLine(device.platform, device.model)}
+        </div>
+        {address && (
+          <div className="text-muted-foreground truncate text-[11px]">
+            {address}
+          </div>
+        )}
+        <div className="text-muted-foreground truncate text-[11px]">
+          {`Paired ${relativeTime(device.paired_at)} · Last seen ${relativeTime(device.last_seen)}`}
         </div>
       </div>
       <Button

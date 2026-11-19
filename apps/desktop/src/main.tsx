@@ -1,5 +1,6 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
+import { Toaster } from '@/components/ui/sonner'
 import { startAgentUsage } from '@/modules/agent-usage/store'
 import { IPC } from '@/modules/ipc/commands'
 import { startCwdPersist } from '@/modules/mods/cwd-persist'
@@ -7,6 +8,7 @@ import { startModListener } from '@/modules/mods/mod-listener'
 import { startNotificationsBridge } from '@/modules/notifications/notificationsBridge'
 import { syncNotificationsEnabledToBackend } from '@/modules/notifications/preferences'
 import { initNavigation } from '@/modules/stores/$navigation'
+import { installPairingApprovalListener } from '@/modules/stores/$pairingApproval'
 import { $projects } from '@/modules/stores/$projects'
 import { initSidebarViewFromStorage } from '@/modules/stores/$sidebarView'
 import { initSidebarVisibleFromStorage } from '@/modules/stores/$sidebarVisible'
@@ -53,6 +55,10 @@ async function bootstrap() {
   // moment the first WSS connection auth-succeeds.
   await installMobileOpsListener()
 
+  // Install the pairing approval listener so scanned devices trigger
+  // permission prompts both in the Companion dialog and via toast.
+  installPairingApprovalListener()
+
   initNavigation()
   initThemeFromStorage()
   initSidebarVisibleFromStorage()
@@ -83,6 +89,7 @@ async function bootstrap() {
   ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
     <React.StrictMode>
       <WorkspaceLayout />
+      <Toaster position="bottom-right" richColors />
     </React.StrictMode>,
   )
 }

@@ -13,12 +13,38 @@ import type { PairingQrPayload } from './pair.types'
 export function buildPairingAttemptUrls(qr: PairingQrPayload): string[] {
   const urls: string[] = []
   const hosts: string[] = []
+  // Tailscale MagicDNS and IPs connect directly across mesh
+  if (qr.tailscale_host) hosts.push(qr.tailscale_host)
   if (qr.host) hosts.push(qr.host)
   for (const ip of qr.ips) hosts.push(ip)
   for (const host of hosts) {
     urls.push(`wss://${host}:${qr.port}/stream`)
   }
   return urls
+}
+
+/**
+ * Host part of a `wss://<host>:<port>/stream` pairing URL, as built by
+ * {@link buildPairingAttemptUrls}. Null when the URL has another shape.
+ */
+export function pairingUrlHost(url: string): string | null {
+  return /^wss:\/\/(.+):\d+\/stream$/.exec(url)?.[1] ?? null
+}
+
+/**
+ * How the desktop refused a pairing request, read from an `auth_fail`
+ * reason. The desktop prefixes its answer with one of these codes
+ * (`wss_server.rs` `pairing_flow`). Null for every other failure.
+ *
+ * A refusal is the desktop's final answer, so the caller must stop and
+ * not try the next endpoint: each further attempt would raise a fresh
+ * approval prompt for a request the user already settled.
+ */
+export function pairingRefusal(
+  reason: string,
+): 'declined' | 'timeout' | 'canceled' | null {
+  const code = /pairing_(declined|timeout|canceled)\b/.exec(reason)?.[1]
+  return (code as 'declined' | 'timeout' | 'canceled' | undefined) ?? null
 }
 
 /**
@@ -86,6 +112,8 @@ function isPairingPayload(value: unknown): value is PairingQrPayload {
   if (!Array.isArray(v.ips)) return false
   if (!v.ips.every((ip): ip is string => typeof ip === 'string')) return false
   if (v.host !== undefined && typeof v.host !== 'string') return false
+  if (v.tailscale_host !== undefined && typeof v.tailscale_host !== 'string')
+    return false
   return true
 }
 

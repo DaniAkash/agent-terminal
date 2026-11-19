@@ -12,7 +12,7 @@ import {
   ScanStage,
 } from './pair.components'
 import { completePairing } from './pair.data'
-import { parsePairingQr, shouldOfferPush } from './pair.helpers'
+import { pairingRefusal, parsePairingQr, shouldOfferPush } from './pair.helpers'
 import type { PairError, PairingQrPayload } from './pair.types'
 
 type PairStage =
@@ -129,6 +129,9 @@ export function PairScreen() {
 
 function mapPairErrorFromException(e: unknown): PairError {
   const msg = e instanceof Error ? e.message : String(e)
+  const refusal = pairingRefusal(msg)
+  if (refusal)
+    return { kind: refusal === 'declined' ? 'declined' : 'not-approved' }
   if (msg.includes('mismatch')) return { kind: 'pairing-token-expired' }
   if (msg.includes('timeout')) return { kind: 'timeout' }
   return { kind: 'connection-failed', reason: msg }

@@ -113,6 +113,8 @@ pub struct ServerState {
     /// Live connections tagged by paired-device id. Revoke walks this
     /// map to force-close every active session under a device_id.
     pub paired_conns: Arc<PairedConnMap>,
+    /// Pending pairing approval requests waiting for user approval.
+    pub pairing_approvals: Arc<crate::pairing::PairingApprovals>,
     /// Phone escalation. `Option` so integration tests can build a
     /// ServerState without a Tauri runtime, matching `app_handle`.
     pub push: Option<Arc<crate::push::PushService>>,
@@ -518,7 +520,7 @@ async fn connection_task(
 
     // Step 2: dispatch to the right auth branch.
     if let Some(pairing_token) = token.strip_prefix(PAIRING_PREFIX) {
-        pairing_flow(socket, &state, pairing_token).await;
+        pairing_flow(socket, &state, pairing_token, peer).await;
         return;
     }
 
@@ -717,7 +719,12 @@ async fn connection_task(
 /// permission prompt on first-run refuses the write) so the mobile
 /// can retry the same token without the user reopening the desktop
 /// dialog. Ends with a PairingComplete + close.
-async fn pairing_flow(mut socket: WebSocket, state: &Arc<ServerState>, pairing_token: &str) {
+async fn pairing_flow(
+    mut socket: WebSocket,
+    state: &Arc<ServerState>,
+    pairing_token: &str,
+    peer: SocketAddr,
+) {
     // Validate up-front but do NOT burn: `paired_tokens.insert` can
     // fail (e.g. transient keychain refusal on the dev macOS build)
     // and burning the token before the insert would strand the user
@@ -802,10 +809,89 @@ async fn pairing_flow(mut socket: WebSocket, state: &Arc<ServerState>, pairing_t
         }
     };
 
+    let request_id = uuid::Uuid::new_v4().to_string();
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    state.pairing_approvals.register(request_id.clone(), tx);
+
+    // Ask the desktop UI to approve (dialog + toast notification).
+    emit_event(
+        state,
+        "pairing:request_approval",
+        serde_json::json!({
+            "request_id": &request_id,
+            "device_name": &body.device_name,
+            "platform": &body.platform,
+            "model": &body.model,
+            // Where the request came from, so the person approving can
+            // tell their phone (and its route) from someone else's.
+            "peer_ip": peer.ip().to_string(),
+        }),
+    );
+
+    // Wait for the desktop's answer, and watch the socket meanwhile: a
+    // phone that gave up must not leave a request the user can still
+    // approve, because that would store a device whose token was never
+    // delivered.
+    let deadline = tokio::time::sleep(PAIRING_APPROVAL_TIMEOUT);
+    tokio::pin!(deadline);
+    let mut rx = rx;
+    let outcome = loop {
+        tokio::select! {
+            answer = &mut rx => break match answer {
+                Ok(true) => ApprovalOutcome::Approved,
+                Ok(false) => ApprovalOutcome::Declined,
+                // Sender dropped: superseded by a newer request, or the
+                // pairing window was closed or replaced.
+                Err(_) => ApprovalOutcome::Canceled,
+            },
+            _ = &mut deadline => break ApprovalOutcome::TimedOut,
+            msg = socket.recv() => match msg {
+                Some(Ok(Message::Close(_))) | Some(Err(_)) | None => {
+                    break ApprovalOutcome::ClientGone
+                }
+                Some(Ok(_)) => {}
+            },
+        }
+    };
+    state.pairing_approvals.remove(&request_id);
+    if let Some(reason) = outcome.closed_reason() {
+        emit_event(
+            state,
+            "pairing:approval_closed",
+            serde_json::json!({ "request_id": &request_id, "reason": reason }),
+        );
+    }
+
+    // The window may have been closed or replaced while the request was
+    // pending; an approval must not outlive the window it was made under.
+    let refusal = match outcome {
+        ApprovalOutcome::Approved => (!state.pairing_window.is_token_of_open_window(pairing_token))
+            .then_some("pairing_canceled: the pairing window was closed on the desktop"),
+        ApprovalOutcome::Declined => Some("pairing_declined: the request was declined on the desktop"),
+        ApprovalOutcome::TimedOut => {
+            Some("pairing_timeout: the request was not approved on the desktop in time")
+        }
+        ApprovalOutcome::Canceled => Some("pairing_canceled: the request was canceled on the desktop"),
+        ApprovalOutcome::ClientGone => return,
+    };
+    if let Some(reason) = refusal {
+        eprintln!("[wss] pairing request {request_id} refused: {reason}");
+        let _ = send_frame(
+            &mut socket,
+            &ServerFrame::AuthFail {
+                reason: reason.to_string(),
+            },
+        )
+        .await;
+        return;
+    }
+
+    let device_name = body.device_name.clone();
     let info = crate::pairing::DeviceInfo {
         device_name: body.device_name,
         platform: body.platform,
         model: body.model,
+        peer_ip: Some(peer.ip().to_string()),
     };
     let (device_id, device_token) = match state.paired_tokens.insert(info) {
         Ok(v) => v,
@@ -824,23 +910,23 @@ async fn pairing_flow(mut socket: WebSocket, state: &Arc<ServerState>, pairing_t
             return;
         }
     };
-    // Insert succeeded, burn the pair token now.
+    // Insert succeeded, burn the pair token now. An error here means the
+    // window's TTL ran out while the user was deciding; the window is
+    // cleared either way, and the paired device stands.
     if let Err(e) = state.pairing_window.consume(pairing_token) {
-        // Race: another client burned it between our validate and
-        // this consume. Log for diagnostics; the paired device is
-        // still inserted, so this connection continues to
-        // PairingComplete. Practical impact zero for a single-user
-        // desktop.
-        eprintln!("[wss] pair window burn lost a race: {e:?}");
+        eprintln!("[wss] pair window not burned: {e:?}");
     }
 
     // Notify the desktop UI so the paired-devices list refreshes.
-    if let Some(app) = state.app_handle.as_ref() {
-        let _ = app.emit(
-            "pairing:complete",
-            serde_json::json!({ "device_id": &device_id }),
-        );
-    }
+    emit_event(
+        state,
+        "pairing:complete",
+        serde_json::json!({
+            "device_id": &device_id,
+            "device_name": &device_name,
+            "peer_ip": peer.ip().to_string(),
+        }),
+    );
 
     let _ = send_frame(
         &mut socket,
@@ -1221,3 +1307,36 @@ fn first_op_name(frame: &ClientFrame) -> &'static str {
         ClientFrame::PairingStart { .. } => "pairing_start",
     }
 }
+
+/// Emit a Tauri event to the desktop UI. No-op in tests and headless
+/// runs, where there is no app handle.
+fn emit_event<S: serde::Serialize + Clone>(state: &ServerState, event: &str, payload: S) {
+    if let Some(app) = state.app_handle.as_ref() {
+        let _ = app.emit(event, payload);
+    }
+}
+
+/// How long `pairing_flow` waits for the desktop user to approve a new
+/// device. The desktop's `$pairingApproval` store mirrors this value.
+/// How a pending pairing approval ended.
+enum ApprovalOutcome {
+    Approved,
+    Declined,
+    TimedOut,
+    Canceled,
+    ClientGone,
+}
+
+impl ApprovalOutcome {
+    /// Reason for the `pairing:approval_closed` event, for the endings
+    /// the desktop UI did not cause itself and so must be told about.
+    fn closed_reason(&self) -> Option<&'static str> {
+        match self {
+            Self::Approved | Self::Declined => None,
+            Self::TimedOut => Some("timeout"),
+            Self::Canceled | Self::ClientGone => Some("canceled"),
+        }
+    }
+}
+
+const PAIRING_APPROVAL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);

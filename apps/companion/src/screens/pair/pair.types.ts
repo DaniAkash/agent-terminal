@@ -6,6 +6,7 @@
 export interface PairingQrPayload {
   v: number
   host?: string
+  tailscale_host?: string
   ips: string[]
   port: number
   fingerprint: string
@@ -29,4 +30,6 @@ export type PairError =
   | { kind: 'fingerprint-mismatch' }
   | { kind: 'pairing-token-expired' }
   | { kind: 'timeout' }
+  | { kind: 'declined' }
+  | { kind: 'not-approved' }
   | { kind: 'unknown'; reason: string }

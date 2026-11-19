@@ -159,27 +159,19 @@ async fn try_spawn_sidecar(app: &tauri::AppHandle) -> Option<SidecarClient> {
 /// lands with the dev-client migration.
 fn build_tls_sans() -> Vec<String> {
     let mut sans = vec!["localhost".to_string(), "127.0.0.1".to_string()];
-    // Include the `.local` mDNS hostname so the mobile client's
-    // fast-path attempt (`wss://<host>.local:<port>/stream`) passes
-    // TLS name verification. Without this SAN, iOS + Android reject
-    // the handshake before we get to the PAIRING: auth exchange —
-    // matches openssl's "no matching subjectAltName" behaviour.
-    if let Some(host) = net::local_hostname() {
-        if !sans.contains(&host) {
-            sans.push(host);
-        }
-    }
-    let Ok(ifaces) = local_ip_address::list_afinet_netifas() else {
-        return sans;
-    };
-    for (_, ip) in ifaces {
-        if let std::net::IpAddr::V4(v4) = ip {
-            if v4.is_private() {
-                let s = v4.to_string();
-                if !sans.contains(&s) {
-                    sans.push(s);
-                }
-            }
+    // The names and addresses below are exactly what the pairing QR
+    // advertises. A name the phone dials must be a SAN, or iOS and
+    // Android reject the handshake before we get to the PAIRING: auth
+    // exchange; that matches openssl's "no matching subjectAltName".
+    let net::Advertised {
+        local_host,
+        tailscale_host,
+        ips,
+    } = net::advertised();
+    let names = local_host.into_iter().chain(tailscale_host);
+    for san in names.chain(ips.iter().map(ToString::to_string)) {
+        if !sans.contains(&san) {
+            sans.push(san);
         }
     }
     sans
@@ -490,9 +482,11 @@ pub fn run() {
                         // ws://, which would silently drop the pin
                         // enforcement the mobile client requires.
                         let tls_dir = dir.join("tls");
-                        let sans = build_tls_sans();
-                        eprintln!("[wss] TLS SANs: {sans:?}");
-                        let tls_bundle = tls::TlsMaterial::load_or_generate(&tls_dir, sans)
+                        let tls_bundle = tls::TlsMaterial::load_or_generate_with(&tls_dir, || {
+                            let sans = build_tls_sans();
+                            eprintln!("[wss] TLS SANs: {sans:?}");
+                            sans
+                        })
                             .map_err(|e| e.to_string())
                             .and_then(|mat| {
                                 let server_cfg = mat.to_server_config().map_err(|e| e.to_string())?;
@@ -523,6 +517,7 @@ pub fn run() {
                         };
                         let pairing_window = Arc::new(PairingWindow::new());
                         let paired_conns = Arc::new(PairedConnMap::new());
+                        let pairing_approvals = Arc::new(pairing::PairingApprovals::new());
 
                         // Phone escalation. Lives here rather than beside
                         // NotificationService because it needs the paired
@@ -563,6 +558,7 @@ pub fn run() {
                             app.manage(Arc::clone(&paired_tokens));
                             app.manage(Arc::clone(&pairing_window));
                             app.manage(Arc::clone(&paired_conns));
+                            app.manage(Arc::clone(&pairing_approvals));
                             app.manage(auth);
                             break 'wss_setup;
                         }
@@ -642,6 +638,7 @@ pub fn run() {
                         app.manage(Arc::clone(&paired_tokens));
                         app.manage(Arc::clone(&pairing_window));
                         app.manage(Arc::clone(&paired_conns));
+                        app.manage(Arc::clone(&pairing_approvals));
 
                         let server_state = Arc::new(ServerState {
                             hub: hub_for_wss,
@@ -655,6 +652,7 @@ pub fn run() {
                             paired_tokens,
                             pairing_window,
                             paired_conns,
+                            pairing_approvals,
                             push: Some(push_service),
                         });
                         app.manage(auth);
@@ -737,6 +735,7 @@ pub fn run() {
             commands::get_pairing_qr_payload,
             commands::list_paired_devices,
             commands::revoke_paired_device,
+            commands::respond_pairing_approval,
             notifications::notif_set_projects,
             notifications::notif_set_active_tab,
             notifications::notif_set_app_focus,
