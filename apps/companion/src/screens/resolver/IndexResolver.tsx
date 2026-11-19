@@ -1,10 +1,13 @@
 import { useStore } from '@nanostores/react'
 import { Redirect } from 'expo-router'
 import { ActivityIndicator, View } from 'react-native'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { ConnectionStatus } from '@/components/ui/ConnectionStatus'
 import { $push, takePendingRoute } from '@/modules/push'
 import { handlePushData } from '@/modules/push/push.routing'
 import { $activeDevice } from '@/modules/stores/$devices'
 import { $lastSession } from '@/modules/stores/$lastSession'
+import { $removal } from '@/modules/stores/$removal'
 import { $session } from '@/modules/stores/$session'
 import { landingInput, resolveLanding } from './resolver.helpers'
 
@@ -19,6 +22,7 @@ export function IndexResolver() {
   const push = useStore($push)
   const session = useStore($session)
   const lastSessions = useStore($lastSession)
+  const removal = useStore($removal)
 
   // A notification tap that launched the app resolves before
   // SecureStore has hydrated the device store, so it was parked rather
@@ -29,14 +33,32 @@ export function IndexResolver() {
     return <Spinner />
   }
 
-  const target = resolveLanding(landingInput(device, session, lastSessions))
-  if (!target) return <Spinner />
+  const target = resolveLanding(
+    landingInput(device, session, lastSessions, removal !== null),
+  )
+  // A paired phone waiting for its desktop is in the Connecting state of
+  // the design: say so, with the route it is trying, rather than spin.
+  if (!target) return <Waiting paired={device.record !== null} />
   return <Redirect href={target} />
 }
 
 function replayPendingRoute(): void {
   const pending = takePendingRoute()
   if (pending) void handlePushData(pending)
+}
+
+function Waiting({ paired }: { paired: boolean }) {
+  return paired ? <Connecting /> : <Spinner />
+}
+
+/** The full-screen Connecting state; this route has no header of its own. */
+function Connecting() {
+  const insets = useSafeAreaInsets()
+  return (
+    <View className="bg-background flex-1" style={{ paddingTop: insets.top }}>
+      <ConnectionStatus size="screen" />
+    </View>
+  )
 }
 
 function Spinner() {

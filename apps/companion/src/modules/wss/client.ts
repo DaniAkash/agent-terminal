@@ -10,10 +10,10 @@ import type {
   ClientFrame,
   CreateProjectBody,
   CreateTabBody,
+  RegisterPushBody,
   RemoveProjectBody,
   RemoveTabBody,
   RenameProjectBody,
-  RegisterPushBody,
   RenameTabBody,
   ReorderTabsBody,
   ServerFrame,
@@ -22,13 +22,14 @@ import type {
   TabStateSummary,
 } from '@/modules/wss/protocol.gen'
 import { PinnedWebSocket } from '../../../modules/pinned-websocket'
-import { computeBackoffDelay } from './client.helpers'
+import { computeBackoffDelay, walkLadder } from './client.helpers'
 import {
   drainWrites,
   enqueueWrite,
   type QueuedWrite,
   tallyByTab,
 } from './outbox.helpers'
+import { routeOfUrl } from './route.helpers'
 
 export type TabHandlers = {
   onSnapshot: (payload: string, seq: number) => void
@@ -107,12 +108,38 @@ function connect(url: string, token: string): void {
     tokenLen: token.length,
   })
   clearTimers()
+  // One connection at a time: a socket still open or opening from before
+  // is closed, not left beside the new one.
+  dropSocket()
   state.url = url
   state.token = token
   state.intentionallyDisconnected = false
   state.reconnectAttempts = 0
   openSocket()
 }
+
+/** Close the current socket, if any, and ignore whatever it says next. */
+function dropSocket(): void {
+  const old = state.socket
+  if (!old) return
+  state.socket = null
+  state.socketGeneration += 1
+  try {
+    old.close()
+  } catch {
+    /* already gone */
+  }
+}
+
+/**
+ * Bumped by every ladder run and by disconnect(). A run only acts while
+ * it is the newest; see walkLadder.
+ */
+let ladderRun = 0
+let ladderRetryTimer: ReturnType<typeof setTimeout> | null = null
+
+/** How long after an exhausted ladder the next run starts. */
+const LADDER_RETRY_MS = 15_000
 
 /**
  * Kick the resolver ladder against a persisted DeviceRecord. Walks
@@ -128,6 +155,9 @@ function connect(url: string, token: string): void {
 export async function autoConnect(
   device: import('@/modules/stores/$devices').DeviceRecord,
 ): Promise<void> {
+  const run = ++ladderRun
+  if (ladderRetryTimer) clearTimeout(ladderRetryTimer)
+  ladderRetryTimer = null
   const { resolveWssCandidates } = await import('./resolver')
   const candidates = resolveWssCandidates(device)
   // Log a count + the desktop hint but never the actual candidate
@@ -137,22 +167,35 @@ export async function autoConnect(
     rungs: candidates.length,
     hint: device.deviceHint,
   })
-  for (let i = 0; i < candidates.length; i++) {
-    const candidate = candidates[i]
-    if (candidate === undefined) continue
-    const reachable = await probeSocket(candidate, 2000)
-    if (reachable) {
-      console.log('[wss.client] autoConnect rung hit', { rung: i + 1 })
-      connect(candidate, device.token)
-      return
-    }
+  // Wanted only while this is the newest run, nothing has connected in
+  // the meantime (the socket's own backoff retry can win the race), and
+  // nobody disconnected on purpose.
+  const stillWanted = () =>
+    run === ladderRun && $session.get().status !== 'connected'
+  const hit = await walkLadder(
+    candidates,
+    (url) => probeSocket(url, 2000),
+    stillWanted,
+  )
+  if (hit) {
+    console.log('[wss.client] autoConnect rung hit', {
+      rung: candidates.indexOf(hit) + 1,
+    })
+    connect(hit, device.token)
+    return
+  }
+  if (!stillWanted()) {
+    console.log('[wss.client] autoConnect run superseded', { run })
+    return
   }
   console.warn('[wss.client] autoConnect: all rungs failed')
   $session.setKey('status', 'unreachable')
-  $session.setKey(
-    'lastError',
-    `Can't find desktop on this network (${device.deviceHint})`,
-  )
+  $session.setKey('lastError', `no route to ${device.deviceHint} answered`)
+  // Keep trying in the background; the unreachable screen says so.
+  ladderRetryTimer = setTimeout(() => {
+    ladderRetryTimer = null
+    if (run === ladderRun) void autoConnect(device)
+  }, LADDER_RETRY_MS)
 }
 
 function probeSocket(url: string, timeoutMs: number): Promise<boolean> {
@@ -205,6 +248,10 @@ function probeSocket(url: string, timeoutMs: number): Promise<boolean> {
 
 export function disconnect(): void {
   state.intentionallyDisconnected = true
+  // Stops any ladder run in flight and its scheduled retry.
+  ladderRun += 1
+  if (ladderRetryTimer) clearTimeout(ladderRetryTimer)
+  ladderRetryTimer = null
   clearTimers()
   state.socket?.close()
   state.socket = null
@@ -318,6 +365,7 @@ let outbox: QueuedWrite[] = []
 export function writeToTab(tabId: string, data: string): void {
   if (!canSend()) {
     outbox = enqueueWrite(outbox, { tabId, data })
+    $session.setKey('queued', outbox.length)
     return
   }
   send({ op: 'write', body: { tab_id: tabId, data } })
@@ -680,6 +728,11 @@ function forceCloseAndReconnect(reason: string): void {
   // socket on a frame it cannot deserialise.
   clearDesktopPushStatus()
   if (state.intentionallyDisconnected) return
+  // The moment a working connection was lost: Reconnecting is counted
+  // from here, across every retry, until one connects again.
+  if ($session.get().status === 'connected') {
+    $session.setKey('downSince', Date.now())
+  }
   if ($session.get().status !== 'auth_failed') {
     $session.setKey('status', 'unreachable')
     if (reason) $session.setKey('lastError', reason)
@@ -807,6 +860,10 @@ function handleAuthOk(deviceName: string): void {
     projectsLoaded: false,
     lastError: null,
     lastConnectedAt: Date.now(),
+    route: routeOfUrl(state.url),
+    downSince: null,
+    // flushOutbox below sends or drops every queued keystroke.
+    queued: 0,
   })
   // Remember which resolver rung actually worked so the next cold
   // start goes straight to the fast path. Parses out the host+port

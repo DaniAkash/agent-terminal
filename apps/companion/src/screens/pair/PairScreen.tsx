@@ -1,41 +1,69 @@
 import { useCameraPermissions } from 'expo-camera'
 import { Redirect, useRouter } from 'expo-router'
-import { useCallback, useEffect, useState } from 'react'
-import { View } from 'react-native'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { AppState, View } from 'react-native'
 import { $push, enablePush } from '@/modules/push'
+import { clearRemoval } from '@/modules/stores/$removal'
 import {
   ConfirmStage,
   ErrorStage,
-  NotifyStage,
-  PairingStage,
+  NotifySheet,
   PermissionBlockedStage,
+  ReachingSheet,
+  ResultStage,
   ScanStage,
+  WaitingSheet,
 } from './pair.components'
-import { completePairing } from './pair.data'
-import { parsePairingQr, shouldOfferPush } from './pair.helpers'
+import {
+  completePairing,
+  deviceMeta,
+  type PairFailure,
+  PairingFailed,
+  type WaitingInfo,
+} from './pair.data'
+import {
+  CanceledError,
+  initialTries,
+  type PairTry,
+  buildPairingAttemptUrls,
+  parsePairingQr,
+  shouldOfferPush,
+} from './pair.helpers'
 import type { PairError, PairingQrPayload } from './pair.types'
 
 type PairStage =
-  | { kind: 'scanning' }
+  /** `note` replaces the instructions, e.g. after the person canceled. */
+  | { kind: 'scanning'; note?: string }
   | { kind: 'confirm'; payload: PairingQrPayload }
-  | { kind: 'pairing'; payload: PairingQrPayload }
+  | {
+      kind: 'reaching'
+      payload: PairingQrPayload
+      tries: PairTry[]
+      startedAt: number
+    }
+  | { kind: 'waiting'; payload: PairingQrPayload; info: WaitingInfo }
   /** Offer push, now that the user has a desktop and the ask makes
    *  sense. Asking at boot gets denied, and Android never prompts a
    *  second time. */
-  | { kind: 'notify' }
+  | { kind: 'notify'; payload: PairingQrPayload }
   | { kind: 'done' }
+  | { kind: 'result'; payload: PairingQrPayload; failure: PairFailure }
   | { kind: 'error'; error: PairError }
 
+const CANCELED_NOTE = 'Request canceled. Scan the QR to try again.'
+
 /**
- * QR pairing entry point. Camera scanner → fingerprint visual confirm
- * → PAIRING: handshake → persisted DeviceRecord. On done redirects to
- * `/`, where the auto-connect flow picks up. Stage-to-view routing is
- * a plain switch; the presentational surface lives in
- * `pair.components.tsx`.
+ * QR pairing: Scanning → Confirming → Reaching desktop → Waiting for
+ * approval → Paired, or one of the ended states (Declined, Canceled,
+ * Timed out, QR expired, Unreachable). The middle three are sheets over
+ * the scanner; leaving the app or canceling withdraws the request at
+ * once and returns to Scanning. On done redirects to `/`, where the
+ * auto-connect flow picks up.
  */
 export function PairScreen() {
   const [permission, requestPermission] = useCameraPermissions()
   const [stage, setStage] = useState<PairStage>({ kind: 'scanning' })
+  const attempt = useRef<AbortController | null>(null)
   const router = useRouter()
 
   useEffect(() => {
@@ -44,6 +72,28 @@ export function PairScreen() {
       void requestPermission()
     }
   }, [permission, requestPermission])
+
+  const cancelAttempt = useCallback(() => {
+    attempt.current?.abort()
+    attempt.current = null
+  }, [])
+
+  // Leaving the app is a decision too: the request is withdrawn at once
+  // (the desktop prompt closes) and the phone is back on the scanner when
+  // it returns, instead of a "Pairing with…" screen for a request that is
+  // no longer pending anywhere. useEffect exception: an external event
+  // source (AppState), subscribed while a request is in flight.
+  const inFlight = stage.kind === 'reaching' || stage.kind === 'waiting'
+  useEffect(() => {
+    if (!inFlight) return
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'background') cancelAttempt()
+    })
+    return () => sub.remove()
+  }, [inFlight, cancelAttempt])
+
+  // Unmounting (Back) withdraws the request as well.
+  useEffect(() => cancelAttempt, [cancelAttempt])
 
   const handleScan = useCallback(
     ({ data }: { data: string }) => {
@@ -61,15 +111,65 @@ export function PairScreen() {
     [stage],
   )
 
-  const startPairing = useCallback(async (payload: PairingQrPayload) => {
-    setStage({ kind: 'pairing', payload })
-    try {
-      await completePairing(payload)
-      setStage({ kind: shouldOfferPush($push.get()) ? 'notify' : 'done' })
-    } catch (e) {
-      setStage({ kind: 'error', error: mapPairErrorFromException(e) })
-    }
-  }, [])
+  const startPairing = useCallback(
+    async (payload: PairingQrPayload) => {
+      cancelAttempt()
+      const controller = new AbortController()
+      attempt.current = controller
+      const startedAt = Date.now()
+      setStage({
+        kind: 'reaching',
+        payload,
+        tries: initialTries(buildPairingAttemptUrls(payload)),
+        startedAt,
+      })
+      // Every update is for this attempt only; a canceled one says nothing.
+      const current = () => attempt.current === controller
+      try {
+        await completePairing(payload, {
+          signal: controller.signal,
+          onReaching: (tries) => {
+            if (current()) {
+              setStage({ kind: 'reaching', payload, tries, startedAt })
+            }
+          },
+          onWaiting: (info) => {
+            if (current()) setStage({ kind: 'waiting', payload, info })
+          },
+        })
+        if (!current()) return
+        attempt.current = null
+        clearRemoval()
+        setStage(
+          shouldOfferPush($push.get())
+            ? { kind: 'notify', payload }
+            : { kind: 'done' },
+        )
+      } catch (e) {
+        if (e instanceof CanceledError) {
+          // Unless a newer attempt (Try again) is what canceled this one.
+          if (attempt.current === null) {
+            setStage({ kind: 'scanning', note: CANCELED_NOTE })
+          }
+          return
+        }
+        if (!current()) return
+        attempt.current = null
+        setStage(
+          e instanceof PairingFailed
+            ? { kind: 'result', payload, failure: e.failure }
+            : {
+                kind: 'error',
+                error: {
+                  kind: 'unknown',
+                  reason: e instanceof Error ? e.message : String(e),
+                },
+              },
+        )
+      }
+    },
+    [cancelAttempt],
+  )
 
   const answerNotify = useCallback(async (yes: boolean) => {
     if (yes) await enablePush()
@@ -88,48 +188,78 @@ export function PairScreen() {
     )
   }
 
-  return (
-    <View className="bg-background flex-1">
-      {stage.kind === 'scanning' && (
-        <ScanStage
-          hasPermission={permission?.granted ?? false}
-          onScan={handleScan}
-        />
-      )}
-      {stage.kind === 'notify' && (
-        <NotifyStage
-          onEnable={() => void answerNotify(true)}
-          onSkip={() => void answerNotify(false)}
-        />
-      )}
-      {stage.kind === 'confirm' && (
+  const scanAgain = () => setStage({ kind: 'scanning' })
+  const hasCamera = permission?.granted ?? false
+
+  switch (stage.kind) {
+    case 'confirm':
+      return (
         <ConfirmStage
           payload={stage.payload}
-          onConfirm={() => {
-            void startPairing(stage.payload)
-          }}
-          onCancel={() => setStage({ kind: 'scanning' })}
+          meta={deviceMeta()}
+          onConfirm={() => void startPairing(stage.payload)}
+          onCancel={scanAgain}
         />
-      )}
-      {stage.kind === 'pairing' && (
-        <PairingStage hint={stage.payload.device_hint} />
-      )}
-      {stage.kind === 'error' && (
+      )
+    case 'result':
+      return (
+        <ResultStage
+          failure={stage.failure}
+          desk={stage.payload.device_hint}
+          onScanAgain={scanAgain}
+          onTryAgain={() => void startPairing(stage.payload)}
+        />
+      )
+    case 'error':
+      return (
         <ErrorStage
           error={stage.error}
-          onRetry={() => setStage({ kind: 'scanning' })}
+          onRetry={scanAgain}
           {...(__DEV__
             ? { onOpenManualConnect: () => router.replace('/connect') }
             : {})}
         />
-      )}
-    </View>
-  )
-}
-
-function mapPairErrorFromException(e: unknown): PairError {
-  const msg = e instanceof Error ? e.message : String(e)
-  if (msg.includes('mismatch')) return { kind: 'pairing-token-expired' }
-  if (msg.includes('timeout')) return { kind: 'timeout' }
-  return { kind: 'connection-failed', reason: msg }
+      )
+    case 'scanning':
+      return (
+        <View className="bg-background flex-1">
+          <ScanStage
+            hasPermission={hasCamera}
+            onScan={handleScan}
+            note={stage.note}
+          />
+        </View>
+      )
+    case 'reaching':
+      return (
+        <ScanStage hasPermission={hasCamera}>
+          <ReachingSheet
+            desk={stage.payload.device_hint}
+            tries={stage.tries}
+            startedAt={stage.startedAt}
+            onCancel={cancelAttempt}
+          />
+        </ScanStage>
+      )
+    case 'waiting':
+      return (
+        <ScanStage hasPermission={hasCamera}>
+          <WaitingSheet
+            desk={stage.payload.device_hint}
+            info={stage.info}
+            onCancel={cancelAttempt}
+          />
+        </ScanStage>
+      )
+    case 'notify':
+      return (
+        <ScanStage hasPermission={hasCamera}>
+          <NotifySheet
+            desk={stage.payload.device_hint}
+            onEnable={() => void answerNotify(true)}
+            onSkip={() => void answerNotify(false)}
+          />
+        </ScanStage>
+      )
+  }
 }

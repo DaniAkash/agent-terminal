@@ -1,5 +1,6 @@
 import { map } from 'nanostores'
 import type { ProjectSummary } from '@/modules/wss/protocol.gen'
+import type { Route } from '@/modules/wss/route.helpers'
 
 type SessionStatus =
   | 'disconnected'
@@ -23,6 +24,16 @@ type Session = {
   projectsLoaded: boolean
   lastError: string | null
   lastConnectedAt: number | null
+  /** Route of the current or, during an outage, the last connection. */
+  route: Route | null
+  /**
+   * When the last working connection was lost, while it stays lost. Null
+   * when connected and on a cold start that has not connected yet: the
+   * difference between Reconnecting and Connecting.
+   */
+  downSince: number | null
+  /** Keystrokes typed during an outage, waiting for the connection. */
+  queued: number
 }
 
 export const $session = map<Session>({
@@ -32,6 +43,9 @@ export const $session = map<Session>({
   projectsLoaded: false,
   lastError: null,
   lastConnectedAt: null,
+  route: null,
+  downSince: null,
+  queued: 0,
 })
 
 export function resetSession(): void {
@@ -42,5 +56,8 @@ export function resetSession(): void {
     projectsLoaded: false,
     lastError: null,
     lastConnectedAt: null,
+    route: null,
+    downSince: null,
+    queued: 0,
   })
 }

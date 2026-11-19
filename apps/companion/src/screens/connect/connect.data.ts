@@ -3,6 +3,7 @@ import { useStore } from '@nanostores/react'
 import { useForm } from 'react-hook-form'
 import { savePairingConfig } from '@/modules/env/dev-config'
 import { saveDeviceToSecureStore } from '@/modules/stores/$devices'
+import { clearRemoval } from '@/modules/stores/$removal'
 import { $session } from '@/modules/stores/$session'
 import { disconnect } from '@/modules/wss/client'
 import {
@@ -55,6 +56,7 @@ export function useConnectData() {
       form.setError('root', { message: `Failed to save credentials, ${msg}` })
       return
     }
+    clearRemoval()
     // No direct connect() here on purpose. The subscriber owns the single
     // connection path, so the resolver cannot race a socket this handler
     // opened behind its back.

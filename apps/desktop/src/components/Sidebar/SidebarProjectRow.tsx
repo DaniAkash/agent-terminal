@@ -17,6 +17,7 @@ import { useStore } from '@nanostores/react'
 import { ChevronRight, Folder, Pin } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { DangerBadge } from '@/components/DangerBadge'
+import { MobileSessionIndicator } from '@/components/MobileSessionIndicator'
 import { RunningDot } from '@/components/RunningDot'
 import { SidebarTabItem } from '@/components/Sidebar/SidebarTabItem'
 import {
@@ -27,6 +28,10 @@ import {
 } from '@/components/ui/context-menu'
 import { cn } from '@/lib/utils'
 import { $metaHeld } from '@/modules/stores/$keyboard'
+import {
+  $activeMobileTabs,
+  getProjectMobileDevices,
+} from '@/modules/stores/$mobileActivity'
 import {
   $activeProjectId,
   navigateToProject,
@@ -61,6 +66,7 @@ export function SidebarProjectRow({ project }: { project: Project }) {
   const activeProjectId = useStore($activeProjectId)
   const isActive = activeProjectId === project.id
   const allTabMeta = useStore($tabMeta)
+  const activeMobileTabs = useStore($activeMobileTabs)
   const [renaming, setRenaming] = useState(false)
 
   const {
@@ -86,6 +92,11 @@ export function SidebarProjectRow({ project }: { project: Project }) {
     const meta = allTabMeta[makeTabKey(project.id, t.id)]
     return meta?.type === 'agent' && hasDangerFlag(meta.agentCmd)
   })
+  const mobileDevices = getProjectMobileDevices(
+    activeMobileTabs,
+    project.id,
+    project.tabs.map((t) => t.id),
+  )
 
   function handleTabDragEnd(event: DragEndEvent) {
     const { active, over } = event
@@ -201,6 +212,9 @@ export function SidebarProjectRow({ project }: { project: Project }) {
               )}
               {anyRunning && !isOpen && !renaming && <RunningDot />}
               {anyDanger && !isOpen && !renaming && <DangerBadge size={11} />}
+              {!isOpen && !renaming && (
+                <MobileSessionIndicator devices={mobileDevices} />
+              )}
               {project.pinned && !renaming && (
                 <span
                   title="Unpin project"

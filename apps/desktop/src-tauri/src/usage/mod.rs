@@ -8,6 +8,7 @@ mod types;
 
 pub use service::UsageService;
 pub use types::{Preferences, UsageSnapshot};
+pub(crate) use types::now;
 
 #[tauri::command]
 pub fn usage_snapshot(service: tauri::State<'_, UsageService>) -> UsageSnapshot {

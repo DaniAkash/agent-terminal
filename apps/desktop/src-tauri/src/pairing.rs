@@ -118,6 +118,11 @@ pub struct DeviceInfo {
     pub device_name: String,
     pub platform: String,
     pub model: Option<String>,
+    /// Address the pairing request came from. Seeds `last_ip`, so the
+    /// paired devices list shows where the phone is from the moment it
+    /// is paired rather than only after its first session.
+    #[serde(default)]
+    pub peer_ip: Option<String>,
 }
 
 /// Persistent per-device token store. All mutations flush the whole
@@ -245,7 +250,7 @@ impl PairedTokens {
             model: info.model,
             paired_at,
             last_seen: paired_at,
-            last_ip: None,
+            last_ip: info.peer_ip,
             push_token: None,
             push_platform: None,
             push_registered_at: None,
@@ -439,6 +444,18 @@ impl PairingWindow {
         Ok(())
     }
 
+    /// Whether `presented` is still the token of the open window,
+    /// whatever its age. For a request that began inside the TTL and is
+    /// answered after it: the TTL bounds how long a QR may be scanned,
+    /// and must not void an approval the user gives a moment later.
+    /// False once the window was closed or replaced.
+    pub fn is_token_of_open_window(&self, presented: &str) -> bool {
+        let slot = self.inner.lock().expect("pairing_window lock poisoned");
+        slot.as_ref().is_some_and(|session| {
+            constant_time_eq(session.pairing_token.as_bytes(), presented.as_bytes())
+        })
+    }
+
     /// Validate the token without burning it. Same semantics as
     /// `consume` except the window stays open on success. Used by
     /// `pairing_flow` to check the token up-front then defer the
@@ -476,6 +493,82 @@ pub enum PairingError {
     Mismatch,
 }
 
+/// Pairing requests waiting for the desktop user to approve or decline.
+///
+/// At most one request is pending at a time, matching the single prompt
+/// the UI shows. Registering a new request, or cancelling, drops the
+/// older senders; the waiting `pairing_flow` sees that as "canceled" and
+/// refuses the pairing.
+#[derive(Default)]
+pub struct PairingApprovals {
+    pending: Mutex<HashMap<String, tokio::sync::oneshot::Sender<bool>>>,
+    /// Approve every request at once. For tests and headless runs, where
+    /// there is no desktop UI to answer.
+    auto_approve: bool,
+}
+
+impl PairingApprovals {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Approvals that answer "yes" to every request immediately.
+    pub fn auto_approving() -> Self {
+        Self {
+            auto_approve: true,
+            ..Self::default()
+        }
+    }
+
+    /// Start waiting on `request_id`. Supersedes any older pending request.
+    pub fn register(&self, request_id: String, tx: tokio::sync::oneshot::Sender<bool>) {
+        if self.auto_approve {
+            let _ = tx.send(true);
+            return;
+        }
+        let mut map = self.pending.lock().expect("pairing approvals lock poisoned");
+        map.clear();
+        map.insert(request_id, tx);
+    }
+
+    pub fn respond(&self, request_id: &str, approved: bool) -> bool {
+        let tx = self
+            .pending
+            .lock()
+            .expect("pairing approvals lock poisoned")
+            .remove(request_id);
+        tx.map(|tx| {
+            let _ = tx.send(approved);
+        })
+        .is_some()
+    }
+
+    pub fn remove(&self, request_id: &str) {
+        let mut map = self.pending.lock().expect("pairing approvals lock poisoned");
+        map.remove(request_id);
+    }
+
+    /// Cancel every pending request. Called when the pairing window is
+    /// closed or replaced, so a request made under the old window cannot
+    /// be approved afterwards.
+    pub fn cancel_all(&self) {
+        self.pending
+            .lock()
+            .expect("pairing approvals lock poisoned")
+            .clear();
+    }
+
+    /// Ids of the requests still waiting for an answer.
+    pub fn pending_ids(&self) -> Vec<String> {
+        self.pending
+            .lock()
+            .expect("pairing approvals lock poisoned")
+            .keys()
+            .cloned()
+            .collect()
+    }
+}
+
 /// SHA-256 hex of the input. Lowercase; the Keychain blob is
 /// programmatic and never displayed to users.
 fn sha256_hex(input: &str) -> String {
@@ -494,12 +587,37 @@ fn now_unix() -> i64 {
 mod tests {
     use super::*;
 
+    #[test]
+    fn an_open_window_knows_its_token_until_closed_or_replaced() {
+        let window = PairingWindow::new();
+        assert!(!window.is_token_of_open_window("anything"));
+
+        let first = window.open();
+        assert!(window.is_token_of_open_window(&first));
+        assert!(!window.is_token_of_open_window("some-other-token"));
+
+        let second = window.open();
+        assert!(!window.is_token_of_open_window(&first), "replaced");
+        assert!(window.is_token_of_open_window(&second));
+
+        window.close();
+        assert!(!window.is_token_of_open_window(&second), "closed");
+    }
+
     fn info(name: &str, platform: &str) -> DeviceInfo {
         DeviceInfo {
             device_name: name.to_string(),
             platform: platform.to_string(),
             model: Some("iPhone 15 Pro".to_string()),
+            peer_ip: Some("100.64.0.7".to_string()),
         }
+    }
+
+    #[test]
+    fn a_new_device_remembers_the_address_it_paired_from() {
+        let tokens = PairedTokens::new_ephemeral();
+        let (id, _) = tokens.insert(info("Galaxy M52 5G", "android")).expect("insert");
+        assert_eq!(tokens.get(&id).and_then(|d| d.last_ip).as_deref(), Some("100.64.0.7"));
     }
 
     #[test]

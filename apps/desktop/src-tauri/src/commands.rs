@@ -1,16 +1,18 @@
 use crate::mod_engine::ModEngine;
 use crate::net;
-use crate::pairing::{PairedDevice, PairedTokens, PairingWindow};
+use crate::pairing::{PairedDevice, PairedTokens, PairingApprovals, PairingWindow};
 use crate::projects_cache::{ProjectsCache, StoredProject};
 use crate::protocol::ServerFrame;
-use crate::wss_server::{MobileOpInboxes, PairedConnMap};
+use crate::wss_server::{
+    MobileOpInboxes, MobileTabSubscriptions, MobileTabsSnapshot, PairedConnMap,
+};
 use crate::pty_manager::{spawn_pty, try_reattach, PtyDataPayload, PtyMap, ReattachResult};
 use crate::stream_hub::{StreamHub, Viewport};
 use serde::Serialize;
 use std::io::Write;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tauri::ipc::Channel;
 
 /// Explicit user-confirmed quit. An async command runs outside the webview's
@@ -163,6 +165,7 @@ pub async fn resize_pty(
 
 #[tauri::command]
 pub async fn close_tab(
+    app: tauri::AppHandle,
     pty_map: State<'_, PtyMap>,
     hub: State<'_, Arc<StreamHub>>,
     projects_cache: State<'_, Arc<ProjectsCache>>,
@@ -186,6 +189,14 @@ pub async fn close_tab(
     // Done after the PtyMap mutation so the reader thread's `closing`
     // check sees the same ordering it always did. Fire-and-forget.
     hub.close_tab(&tab_id);
+    // A phone that had this tab open is no longer on it. Without this the
+    // desktop keeps showing it there for as long as its socket lives.
+    // `try_state`: the registry is absent when the WSS server did not start.
+    if let Some(subs) = app.try_state::<Arc<MobileTabSubscriptions>>() {
+        if let Some(tabs) = subs.remove_tab(&tab_id) {
+            let _ = app.emit(crate::wss_server::MOBILE_SUBSCRIPTIONS_PRUNED_EVENT, tabs);
+        }
+    }
     // Notify WSS subscribers so mobile clients see the tab disappear.
     projects_cache.notify_spawn_change();
     Ok(())
@@ -349,6 +360,16 @@ pub async fn list_projects() -> Result<serde_json::Value, String> {
 /// directly. Use [`BoundNet::current`]: a machine that changes network
 /// keeps these stale, and a QR built from them advertises an address
 /// nothing answers on.
+/// The endpoints to put in a pairing QR, from [`BoundNet::current`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CurrentNet {
+    /// `.local` mDNS name.
+    pub local_host: Option<String>,
+    /// Tailscale MagicDNS name.
+    pub tailscale_host: Option<String>,
+    pub ips: Vec<String>,
+}
+
 #[derive(Debug, Clone)]
 pub struct BoundNet {
     pub hostname: Option<String>,
@@ -370,11 +391,22 @@ impl BoundNet {
     /// Enumerating interfaces is cheap and this runs once per pairing QR,
     /// so there is no reason to cache it. Falls back to the startup values
     /// if enumeration comes back empty, which beats handing out nothing.
-    pub fn current(&self) -> (Option<String>, Vec<String>) {
-        self.resolve(
-            net::local_hostname(),
-            net::lan_ipv4s().iter().map(ToString::to_string).collect(),
-        )
+    ///
+    /// The lookup asks the Tailscale CLI, a child process, so it runs on
+    /// the blocking pool and never stalls an async worker.
+    pub async fn current(&self) -> CurrentNet {
+        let live = tokio::task::spawn_blocking(net::advertised)
+            .await
+            .unwrap_or_default();
+        let (local_host, ips) = self.resolve(
+            live.local_host,
+            live.ips.iter().map(ToString::to_string).collect(),
+        );
+        CurrentNet {
+            local_host,
+            tailscale_host: live.tailscale_host,
+            ips,
+        }
     }
 
     /// Choose between what the machine reports now and the startup
@@ -411,8 +443,12 @@ pub struct PairingQrPayload {
     /// mobile clients fall back to IP-only in that case.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub host: Option<String>,
-    /// Every RFC 1918 IPv4 the desktop is currently bound to. Mobile
-    /// stores the first one as its fast-path address.
+    /// MagicDNS FQDN when Tailscale is connected and MagicDNS is on,
+    /// e.g. `desk.tail1234.ts.net`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tailscale_host: Option<String>,
+    /// Every RFC 1918 IPv4 the desktop is bound to, then its tailnet
+    /// IPv4s when Tailscale is connected.
     pub ips: Vec<String>,
     /// Currently-bound WSS port. Mobile stores it and iterates through
     /// the standardised trio on failure.
@@ -438,6 +474,7 @@ pub async fn open_pairing_window(
     fingerprint: State<'_, TlsFingerprint>,
     net: State<'_, BoundNet>,
     window: State<'_, Arc<PairingWindow>>,
+    approvals: State<'_, Arc<PairingApprovals>>,
 ) -> Result<PairingQrPayload, String> {
     if net.port == 0 {
         return Err("WSS bind failed at startup; restart the desktop".into());
@@ -446,17 +483,19 @@ pub async fn open_pairing_window(
         .0
         .clone()
         .ok_or_else(|| "TLS fingerprint unavailable; cannot pair".to_string())?;
+    // A new window replaces the old token, so requests made under it end.
+    approvals.cancel_all();
     let pairing_token = window.open();
-    let (hostname, ips) = net.current();
-    let device_hint = derive_device_hint(&hostname);
+    let current = net.current().await;
     Ok(PairingQrPayload {
         v: 1,
-        host: hostname,
-        ips,
+        device_hint: derive_device_hint(&current.local_host),
+        host: current.local_host,
+        tailscale_host: current.tailscale_host,
+        ips: current.ips,
         port: net.port,
         fingerprint: fp,
         pairing_token,
-        device_hint,
     })
 }
 
@@ -466,8 +505,10 @@ pub async fn open_pairing_window(
 #[tauri::command]
 pub async fn close_pairing_window(
     window: State<'_, Arc<PairingWindow>>,
+    approvals: State<'_, Arc<PairingApprovals>>,
 ) -> Result<(), String> {
     window.close();
+    approvals.cancel_all();
     Ok(())
 }
 
@@ -494,12 +535,13 @@ pub async fn get_pairing_qr_payload(
     let Some(fp) = fingerprint.0.clone() else {
         return Ok(None);
     };
-    let (hostname, ips) = net.current();
+    let current = net.current().await;
     Ok(Some(PairingQrPayload {
         v: 1,
-        device_hint: derive_device_hint(&hostname),
-        host: hostname,
-        ips,
+        device_hint: derive_device_hint(&current.local_host),
+        host: current.local_host,
+        tailscale_host: current.tailscale_host,
+        ips: current.ips,
         port: net.port,
         fingerprint: fp,
         pairing_token: token,
@@ -535,6 +577,24 @@ pub async fn revoke_paired_device(
     }
     let closed = conns.revoke_and_close(&device_id);
     Ok(closed)
+}
+
+/// Respond to a pending mobile pairing approval request.
+#[tauri::command]
+pub async fn respond_pairing_approval(
+    approvals: State<'_, Arc<PairingApprovals>>,
+    request_id: String,
+    approved: bool,
+) -> Result<bool, String> {
+    Ok(approvals.respond(&request_id, approved))
+}
+
+/// Snapshot active mobile companion subscribers keyed by tab ID.
+#[tauri::command]
+pub async fn list_active_mobile_tabs(
+    subs: State<'_, Arc<MobileTabSubscriptions>>,
+) -> Result<MobileTabsSnapshot, String> {
+    Ok(subs.snapshot())
 }
 
 /// Derive the "Dani's MacBook Pro"-style hint from a `.local` hostname

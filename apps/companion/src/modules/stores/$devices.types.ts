@@ -8,6 +8,7 @@ export interface DeviceRecord {
   token: string
   deviceId: string
   host?: string
+  tailscaleHost?: string
   ips: string[]
   port: number
   fingerprint: string

@@ -2,33 +2,38 @@ import { useStore } from '@nanostores/react'
 import { router } from 'expo-router'
 import { Alert } from 'react-native'
 import { $activeDevice, clearDevice } from '@/modules/stores/$devices'
+import { $removal, clearRemoval } from '@/modules/stores/$removal'
 import { $session } from '@/modules/stores/$session'
 import { autoConnect, disconnect } from '@/modules/wss/client'
+import { useConnection } from '@/modules/wss/connection.hooks'
 
 /**
- * Home screen state. Three-way split driven by `$activeDevice` (has a
- * paired record?) + `$session.status` (WSS live?):
+ * Home screen state, in the connection vocabulary:
  *
+ * - `removed`: the desktop revoked this phone. Say so, offer to pair again.
  * - `unpaired`: no DeviceRecord in secure-store; show the CTA.
- * - `connecting`: device present but the resolver ladder is still
- *   working (or the client is mid-auth). Show a spinner + hint.
- * - `connected`: WSS is up; show the projects/stats/disconnect UI.
- * - `unreachable`: device present, ladder exhausted or auth failed.
- *   Show retry.
+ * - `connecting`: a cold start whose ladder is still working.
+ * - `connected`: up, or briefly reconnecting (the header chip says which).
+ * - `unreachable`: given up for now; the full screen with Retry now.
  */
 export function useHomeData() {
   const session = useStore($session)
   const device = useStore($activeDevice)
+  const removal = useStore($removal)
+  const connection = useConnection()
   const record = device.record
-  const status = session.status
 
-  const isConnected = status === 'connected'
-  const hasDevice = record !== null
-  const kind: 'unpaired' | 'connecting' | 'connected' | 'unreachable' = (() => {
-    if (!hasDevice) return 'unpaired'
-    if (isConnected) return 'connected'
-    if (status === 'unreachable' || status === 'auth_failed')
-      return 'unreachable'
+  const kind:
+    | 'removed'
+    | 'unpaired'
+    | 'connecting'
+    | 'connected'
+    | 'unreachable' = (() => {
+    if (removal) return 'removed'
+    if (record === null) return 'unpaired'
+    if (connection.state === 'connected') return 'connected'
+    if (connection.state === 'reconnecting') return 'connected'
+    if (connection.state === 'unreachable') return 'unreachable'
     return 'connecting'
   })()
 
@@ -46,6 +51,13 @@ export function useHomeData() {
     retry: () => {
       if (record) void autoConnect(record)
     },
+    /** Leave the Removed screen for the scanner. */
+    pairAgain: () => {
+      clearRemoval()
+      router.replace('/pair')
+    },
+    /** Leave the Removed screen for the first-run one. */
+    dismissRemoval: clearRemoval,
     /**
      * Escape from any bricked state (unreachable, or connecting-and-
      * stuck). Confirms via native Alert because the token is destroyed

@@ -53,19 +53,31 @@ describe('nextNotice', () => {
     expect(said).toHaveLength(1)
   })
 
-  test('announces the outage even when it begins without a clean drop', () => {
-    expect(narrate(['connecting', 'unreachable'])).toEqual([
-      'desktop unreachable, still retrying',
-    ])
+  test('a cold start that never connected adds no line', () => {
+    // The banner and the full screen say Connecting and Unreachable; the
+    // scrollback only records outages of a connection that worked.
+    expect(narrate(['connecting', 'unreachable'])).toEqual([])
+  })
+
+  test('one line when the outage starts and one when it ends', () => {
+    expect(
+      narrate([
+        'connected',
+        'unreachable',
+        'connecting',
+        'unreachable',
+        'connected',
+      ]),
+    ).toEqual(['connection lost, keystrokes are queued', 'reconnected'])
   })
 
   test('reports coming back, and what is about to be replayed', () => {
     expect(narrate(['connected', 'disconnected', 'connected'], 0)).toEqual([
-      'connection lost, keystrokes will be queued',
+      'connection lost, keystrokes are queued',
       'reconnected',
     ])
     const said = narrate(['connected', 'disconnected', 'connected'], 3)
-    expect(said[1]).toContain('3 queued')
+    expect(said[1]).toBe('reconnected, sent 3 queued keystrokes')
   })
 
   test('stays quiet about a reconnect the user never noticed', () => {
@@ -84,18 +96,18 @@ describe('nextNotice', () => {
     expect(said).toHaveLength(4)
   })
 
-  test('raises the tone for a connection that gave up', () => {
-    let state = nextNotice(INITIAL_NOTICE_STATE, 'connecting', 0).state
-    expect(nextNotice(state, 'unreachable', 0).notice?.tone).toBe('alarm')
-    state = nextNotice(INITIAL_NOTICE_STATE, 'connected', 0).state
-    expect(nextNotice(state, 'auth_failed', 0).notice?.tone).toBe('alarm')
+  test('unreachable and refused add no line of their own', () => {
+    // The banner carries Unreachable and the Removed screen a refusal.
+    expect(narrate(['connected', 'unreachable', 'auth_failed'])).toEqual([
+      'connection lost, keystrokes are queued',
+    ])
   })
 
   test('treats any departure from connected as a loss worth announcing', () => {
     // Deliberate: whatever a future status is called, leaving `connected`
     // means keystrokes start queuing, and the user should know that.
     expect(narrate(['connected', 'something-new'])).toEqual([
-      'connection lost, keystrokes will be queued',
+      'connection lost, keystrokes are queued',
     ])
   })
 

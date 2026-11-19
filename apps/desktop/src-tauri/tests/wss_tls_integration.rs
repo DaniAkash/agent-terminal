@@ -85,6 +85,8 @@ async fn spawn_tls_server(
         paired_tokens: Arc::new(agent_terminal_lib::pairing::PairedTokens::new_ephemeral()),
         pairing_window: Arc::new(agent_terminal_lib::pairing::PairingWindow::new()),
         paired_conns: Arc::new(wss_server::PairedConnMap::new()),
+        pairing_approvals: Arc::new(agent_terminal_lib::pairing::PairingApprovals::new()),
+        mobile_tab_subs: Arc::new(wss_server::MobileTabSubscriptions::new()),
         push: None,
     });
 

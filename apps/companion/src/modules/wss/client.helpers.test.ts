@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { computeBackoffDelay } from './client.helpers'
+import { computeBackoffDelay, walkLadder } from './client.helpers'
 
 describe('computeBackoffDelay', () => {
   // Zero-jitter random for deterministic assertions on the exponential
@@ -50,5 +50,76 @@ describe('computeBackoffDelay', () => {
       expect(d).toBeGreaterThanOrEqual(1_000)
       expect(d).toBeLessThanOrEqual(1_249)
     }
+  })
+})
+
+describe('walkLadder', () => {
+  const ladder = ['wss://name:1/stream', 'wss://ip:1/stream']
+
+  test('returns the first candidate that answers', async () => {
+    const tried: string[] = []
+    const hit = await walkLadder(
+      ladder,
+      async (url) => {
+        tried.push(url)
+        return url.includes('ip')
+      },
+      () => true,
+    )
+    expect(hit).toBe('wss://ip:1/stream')
+    expect(tried).toEqual(ladder)
+  })
+
+  test('null when nothing answers', async () => {
+    expect(
+      await walkLadder(
+        ladder,
+        async () => false,
+        () => true,
+      ),
+    ).toBeNull()
+  })
+
+  test('two runs started by one network change connect once', async () => {
+    // The 18752 shape: two reconnects fire together. Each run is wanted
+    // only while it is the newest one and nothing is connected yet.
+    let newest = 0
+    let connected = null as string | null
+    const run = async (answers: (url: string) => boolean) => {
+      const id = ++newest
+      const hit = await walkLadder(
+        ladder,
+        async (url) => {
+          await Promise.resolve()
+          return answers(url)
+        },
+        () => id === newest && connected === null,
+      )
+      if (hit) connected = hit
+      return hit
+    }
+    const [first, second] = await Promise.all([
+      run(() => true),
+      run(() => true),
+    ])
+    expect(first).toBeNull()
+    expect(second).toBe('wss://name:1/stream')
+    expect(connected).toBe('wss://name:1/stream')
+  })
+
+  test('a run stops once a connection came up another way', async () => {
+    let up = false
+    const tried: string[] = []
+    const hit = await walkLadder(
+      ladder,
+      async (url) => {
+        tried.push(url)
+        up = true
+        return false
+      },
+      () => !up,
+    )
+    expect(hit).toBeNull()
+    expect(tried).toEqual(['wss://name:1/stream'])
   })
 })

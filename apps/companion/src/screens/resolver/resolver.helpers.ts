@@ -13,6 +13,8 @@ export interface LandingInput {
   projects: ProjectSummary[]
   /** Composed wire id of the session last worked in on this desktop. */
   lastTabId: string | null
+  /** The desktop removed this phone: home says so before anything else. */
+  removed: boolean
 }
 
 /**
@@ -26,6 +28,7 @@ export interface LandingInput {
  */
 export function resolveLanding(input: LandingInput): Href | null {
   if (!input.deviceLoaded) return null
+  if (input.removed) return '/home'
   if (!input.hasDevice) return '/pair'
 
   // Terminal failures stop the wait; anything else is still in flight.
@@ -69,6 +72,7 @@ export function landingInput(
     projectsLoaded: boolean
   },
   lastSessions: Record<string, string>,
+  removed = false,
 ): LandingInput {
   const deviceId = device.record?.deviceId
   return {
@@ -78,5 +82,6 @@ export function landingInput(
     projectsLoaded: session.projectsLoaded,
     projects: session.projects,
     lastTabId: deviceId ? (lastSessions[deviceId] ?? null) : null,
+    removed,
   }
 }

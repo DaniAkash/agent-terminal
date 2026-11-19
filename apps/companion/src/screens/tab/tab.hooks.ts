@@ -13,7 +13,13 @@ import {
   type ActiveTabInfo,
   activeTabInfo,
   activeTabSummary,
+  type OtherTab,
+  rememberTab,
+  remainingTabs,
+  type SeenTab,
+  tabClosedOnDesktop,
 } from './tab-info.helpers'
+import { sessionLabel } from './tab-label.helpers'
 import { doneExpiresAt } from './tab-status.helpers'
 
 /**
@@ -48,6 +54,43 @@ export function useActiveTabInfo(
   }, [expiresAt])
 
   return info
+}
+
+/**
+ * Whether the desktop closed the tab on screen, and where to go instead.
+ *
+ * Remembers the tab's name while the tree still has it, so a closed tab
+ * keeps its own name ("/home") rather than falling back to its raw id
+ * ("shell"), and so a tab only counts as closed once it was seen.
+ */
+export function useClosedTab(
+  projectId: string,
+  composedTabId: string,
+): { closed: boolean; label: string | null; remaining: OtherTab[] } {
+  const session = useStore($session)
+  const summary = activeTabSummary(session.projects, projectId, composedTabId)
+  const [seen, setSeen] = useState<SeenTab | null>(null)
+  // Derived during render, React's pattern for state that follows props:
+  // switching to another tab starts over.
+  const next = rememberTab(seen, composedTabId, labelOf(summary))
+  if (next !== seen) setSeen(next)
+  const closed = tabClosedOnDesktop({
+    connected: session.status === 'connected',
+    projectsLoaded: session.projectsLoaded,
+    present: summary !== undefined,
+    seen: next !== null,
+  })
+  return {
+    closed,
+    label: next?.label ?? null,
+    remaining: remainingTabs(session.projects, projectId, composedTabId),
+  }
+}
+
+function labelOf(
+  summary: Parameters<typeof sessionLabel>[0] | undefined,
+): string | null {
+  return summary ? sessionLabel(summary) : null
 }
 
 /**

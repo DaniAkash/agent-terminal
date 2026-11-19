@@ -32,3 +32,26 @@ export function computeBackoffDelay(
   const base = Math.min(raw, BACKOFF_MAX_MS)
   return base + Math.floor(random() * JITTER_MAX_MS)
 }
+
+/**
+ * Walk the resolver ladder: probe each candidate in turn and return the
+ * first that answers, or null.
+ *
+ * `stillWanted` is asked before every probe and once more after a hit.
+ * A newer ladder run, a connection that came up another way, or an
+ * intentional disconnect all make it false, and the walk stops without
+ * connecting. Without that, two runs started by one network change both
+ * connected: the MagicDNS name first and then, 12 s later, the IP, which
+ * replaced a working connection with a second one (finding 18752).
+ */
+export async function walkLadder(
+  candidates: readonly string[],
+  probe: (url: string) => Promise<boolean>,
+  stillWanted: () => boolean,
+): Promise<string | null> {
+  for (const candidate of candidates) {
+    if (!stillWanted()) return null
+    if (await probe(candidate)) return stillWanted() ? candidate : null
+  }
+  return null
+}
