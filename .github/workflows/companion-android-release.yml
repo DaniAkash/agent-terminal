@@ -168,7 +168,7 @@ jobs:
         # `bundler: latest` rather than the stock bundler, because the
         # committed Gemfile.lock records a newer BUNDLED WITH than the one
         # shipping with this Ruby, and the stock bundler refuses it.
-        uses: ruby/setup-ruby@v1.338.0
+        uses: ruby/setup-ruby@v1.342.0
         with:
           ruby-version: '3.3'
           bundler: latest

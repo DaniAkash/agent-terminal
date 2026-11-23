@@ -19,14 +19,14 @@ workflows:
         - 'actions/setup-java@v4.9.1'
         - 'orhun/git-cliff-action@v4.9.1'
         - 'oven-sh/setup-bun@v2.2.0'
-        - 'ruby/setup-ruby@v1.338.0'
+        - 'ruby/setup-ruby@v1.342.0'
         - 'softprops/action-gh-release@v2.6.2'
     '.github/workflows/companion-ios-release.yml':
         - 'actions/cache@v4.3.0'
         - 'actions/checkout@v4.4.0'
         - 'orhun/git-cliff-action@v4.9.1'
         - 'oven-sh/setup-bun@v2.2.0'
-        - 'ruby/setup-ruby@v1.338.0'
+        - 'ruby/setup-ruby@v1.342.0'
     '.github/workflows/linux-publish.yml':
         - 'actions/checkout@v4.4.0'
     '.github/workflows/release.yml':
@@ -46,8 +46,8 @@ workflows:
     '.github/workflows/scorecard.yml':
         - 'actions/checkout@v7.0.1'
         - 'actions/upload-artifact@v7.0.2'
-        - 'github/codeql-action@v4.38.3'
-        - 'ossf/scorecard-action@v2.5.0'
+        - 'github/codeql-action@v4.39.3'
+        - 'ossf/scorecard-action@v2.6.0'
     '.github/workflows/tap-dispatch.yml': []
 dependencies:
     'actions/cache@v4.3.0':
@@ -95,9 +95,9 @@ dependencies:
         commit: 'sha1-683b588c487a69d01f6c6ddf40f036ff682cc2c8'
         owner_id: 1940490
         repo_id: 260749683
-    'github/codeql-action@v4.38.3':
-        ref: 'v4.38.3'
-        commit: 'sha1-24c54180a607b1449ed407dd24f251e4e9147c8d'
+    'github/codeql-action@v4.39.3':
+        ref: 'v4.39.3'
+        commit: 'sha1-33d7b85da1a04171e211befe2c739303b9a4c066'
         owner_id: 9919
         repo_id: 259445878
     'orhun/git-cliff-action@v4.9.1':
@@ -105,9 +105,9 @@ dependencies:
         commit: 'sha1-a9a95522b26fe6403f7bb24031f21fb573d0f5ff'
         owner_id: 24392180
         repo_id: 377964066
-    'ossf/scorecard-action@v2.5.0':
-        ref: 'v2.5.0'
-        commit: 'sha1-fa7117db83c52d787ae5a89f350999701505d78e'
+    'ossf/scorecard-action@v2.6.0':
+        ref: 'v2.6.0'
+        commit: 'sha1-23f22cd43608bae7a1f1fa2603d7314dee9538a5'
         owner_id: 67707773
         repo_id: 421101922
     'oven-sh/setup-bun@v2.2.0':
@@ -120,9 +120,9 @@ dependencies:
         commit: 'sha1-84c30a85c19949d7eee79c4ff27748b70285e453'
         owner_id: 30958501
         repo_id: 187915200
-    'ruby/setup-ruby@v1.338.0':
-        ref: 'v1.338.0'
-        commit: 'sha1-b3aaceaef7e0ee231b499e7b5f49c03fc1d32199'
+    'ruby/setup-ruby@v1.342.0':
+        ref: 'v1.342.0'
+        commit: 'sha1-f9c4492e86def3e644ab32a0ef185eda5b0c20d0'
         owner_id: 210414
         repo_id: 231208785
     'snapcore/action-build@v1.3.0':
